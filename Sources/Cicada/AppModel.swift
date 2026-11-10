@@ -2215,6 +2215,13 @@ final class AppModel: ObservableObject {
         // stall:<seconds> blocks the main thread, to check the watchdog samples it.
         case "stall": Thread.sleep(forTimeInterval: Double(arg) ?? 3)
         case "speakVP": speak.echoCancel = arg != "off"
+        case "aecDump":
+            // aecDump:<seconds>: what the Mac plays and the plain mic, host-timed, to /tmp (EchoDump).
+            let dump = EchoDump()
+            dump.run(seconds: Double(arg) ?? 10, device: AudioDevices.roomMic) { info in
+                _ = dump
+                debugLog("aecDump: \(info)")
+            }
         case "voiceMicRun":
             // voiceMicRun:<on|off> runs the echo-cancelling unit with nobody listening (what it does to the rest).
             if arg == "off" { voiceMic.detach("debug") } else if let d = AudioDevices.roomMic {

@@ -50,6 +50,9 @@ enum SystemAudioAccess: Equatable {
 final class SystemAudioTap {
     /// Called on the real-time audio thread. Must not block.
     var onAudio: ((AVAudioPCMBuffer) -> Void)?
+    /// The same buffers with the host time of their first frame, for echo cancellation: what the Mac
+    /// plays has to be lined up with the mic that hears it. Real-time thread too.
+    var onTimedAudio: ((AVAudioPCMBuffer, UInt64) -> Void)?
     /// Called on the main queue when the output device changes its sample rate. A Bluetooth headset
     /// drops to 16 or 24 kHz when a meeting opens its mic: the tap's format no longer matches and it
     /// hears nothing, so it must start again.
@@ -302,6 +305,7 @@ final class SystemAudioTap {
             memcpy(dst[0], src[0], n * MemoryLayout<Float>.size)
         }
         onAudio?(mono)
+        onTimedAudio?(mono, timestamp.pointee.mHostTime)
         return noErr
     }
 

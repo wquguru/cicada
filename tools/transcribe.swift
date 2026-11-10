@@ -1,5 +1,8 @@
+import Foundation
 import Speech
 import AVFoundation
+// Line-buffered: written to a file, the transcript was lost when the process exited.
+setvbuf(stdout, nil, _IOLBF, 0)
 let path = CommandLine.arguments[1], loc = CommandLine.arguments[2]
 let t = SpeechTranscriber(locale: Locale(identifier: loc), transcriptionOptions: [], reportingOptions: [], attributeOptions: [])
 let f = try AVAudioFile(forReading: URL(fileURLWithPath: path))

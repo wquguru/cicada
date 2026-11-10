@@ -52,5 +52,6 @@
 - `toggle-key`：模拟按一下 ⌃⌥S。
 - `winall <pid>`：列出某个进程的窗口 ID，配合 `screencapture -l <ID>` 截图。
 - `transcribe <音频> <locale>`：用本机模型转写一个文件，用来核对输出。
+- `aec-lab/`：用 WebRTC AEC3 代替系统回声消除的试验台（iPhone 当会议室里的人、按 Ming 打分），见其 README。
 
 

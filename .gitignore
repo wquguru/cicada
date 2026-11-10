@@ -22,6 +22,11 @@ tools/*
 !tools/README.md
 !tools/macos-vm/
 !tools/audio-probe/
+!tools/aec-lab/
+tools/aec-lab/work/
+tools/aec-lab/aec
+tools/aec-lab/rec
+tools/aec-lab/transcribe
 
 # Windows: build output, spike results and clips (windows/spike/make-clips.sh, ming_asr.py)
 windows/**/bin/
