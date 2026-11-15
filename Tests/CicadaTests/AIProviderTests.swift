@@ -26,6 +26,24 @@ struct AIProviderTests {
         #expect(plain["chat_template_kwargs"] == nil)
     }
 
+    @Test func minimaxShapesItsTwoModelsDifferently() {
+        func shape(_ model: String) -> [String: Any] {
+            var body: [String: Any] = [:]
+            AIConfig(provider: .minimax, base: AIProvider.minimax.base, textModel: model).shape(&body, maxTokens: 50)
+            return body
+        }
+        // M3.1-Flash always thinks: lowest effort, and the reasoning kept out of `content`.
+        let flash = shape("MiniMax-M3.1-Flash")
+        #expect((flash["thinking"] as? [String: String])?["type"] == "adaptive")
+        #expect(flash["reasoning_effort"] as? String == "low" && flash["reasoning_split"] as? Bool == true)
+        #expect(flash["max_completion_tokens"] as? Int == 50 && flash["max_tokens"] == nil)
+        // M3 can skip thinking, which a live subtitle wants.
+        let plain = shape(AIProvider.minimaxPlain)
+        #expect((plain["thinking"] as? [String: String])?["type"] == "disabled")
+        #expect(plain["reasoning_effort"] == nil && plain["reasoning_split"] == nil)
+        #expect(plain["max_completion_tokens"] as? Int == 50)
+    }
+
     @Test func aThinkingModelIsSeenFromItsReply() {
         func reply(_ message: [String: Any], usage: [String: Any]? = nil) -> [String: Any] {
             var r: [String: Any] = ["choices": [["message": message]]]

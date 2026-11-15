@@ -56,6 +56,7 @@ struct AICheckTests {
         #expect(AICheck.owner(ofKey: "sk-or-v1-abc")! == (.openrouter, false))
         #expect(AICheck.owner(ofKey: " sk-payg-abc\n")! == (.zenmux, false))
         #expect(AICheck.owner(ofKey: "sk-mgmt-abc")! == (.zenmux, true))
+        #expect(AICheck.owner(ofKey: "eyJhbGciOi.abc")! == (.minimax, false))
         #expect(AICheck.owner(ofKey: "sk-abc") == nil)
     }
 

@@ -353,9 +353,11 @@ final class LingClient: ObservableObject {
             case .openai:
                 _ = try await get("models", key: key)
                 r.pass(upTo: .key, seconds: Date().timeIntervalSince(started))
-            case .zenmux:
+            case .zenmux, .minimax:
                 var body: [String: Any] = ["model": c.textModel, "messages": [["role": "user", "content": "hi"]]]
-                c.shape(&body, maxTokens: 1)
+                // MiniMax counts thinking tokens toward the cap: 16, not 1, so a thinking model still
+                // gets its answer in.
+                c.shape(&body, maxTokens: c.provider.id == .minimax ? 16 : 1)
                 _ = try await post("chat/completions", body: body, key: key, timeout: 20)
                 r.pass(upTo: .text, seconds: Date().timeIntervalSince(started))
             case .custom:

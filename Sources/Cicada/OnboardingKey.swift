@@ -19,7 +19,7 @@ struct OnboardingKeyStep: View {
     /// while this step is open (or a reused window) never leaves the Ling title over another service.
     private var other: Bool { settings.provider.id != .ling }
 
-    private static let others: [AIProvider] = [.openrouter, .zenmux, .openai]
+    private static let others: [AIProvider] = [.minimax, .openrouter, .zenmux, .openai]
 
     static let platform = URL(string: "https://chat.ant-ling.com/platform/api")!
 
@@ -59,7 +59,7 @@ struct OnboardingKeyStep: View {
                             .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                         Spacer()
                         if !Recognition.cloudOnly {
-                            Button(L("用不了 Ling？")) { switchTo(.openrouter) }.buttonStyle(.plain)
+                            Button(L("用不了 Ling？")) { switchTo(Self.others[0]) }.buttonStyle(.plain)
                                 .font(.system(size: 12)).foregroundStyle(Palette.secondary).underline()
                         }
                     }

@@ -596,6 +596,7 @@ struct AISettingsView: View {
     private var keyPlaceholder: String {
         switch provider.id {
         case .openrouter: "sk-or-…"
+        case .minimax: "eyJ…"
         case .custom: AIProvider.isNearby(baseDraft) ? L("本机和局域网服务可不填") : "sk-…"
         default: "sk-…"
         }
