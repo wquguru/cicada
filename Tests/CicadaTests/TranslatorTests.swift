@@ -17,6 +17,13 @@ import Testing
         #expect(TranslationService.cleanTranslation("“我们周五发布。”", target: "zh-CN") == "我们周五发布。")
     }
 
+    @Test func anUnterminatedThinkBlockLeavesNothing() {
+        // A thinking model (MiniMax M3.1-Flash) can leak reasoning into the reply; a reply cut
+        // off inside it must not become the subtitle.
+        #expect(TranslationService.cleanTranslation("<think>用户在说发布时间", target: "zh-CN") == nil)
+        #expect(TranslationService.cleanTranslation("<think>嗯</think>我们周五发布。", target: "zh-CN") == "我们周五发布。")
+    }
+
     @Test func translatedInstructionIsDropped() {
         // Ling answered "Translate this into Chinese please." and an empty subtitle with "翻译。":
         // the fixed "Translate." instruction, translated.
