@@ -1,5 +1,22 @@
 [
   {
+    "version": "1.11.0",
+    "date": null,
+    "title": "用不了 Ling，还能用 MiniMax",
+    "summary": "设置 › AI 服务新增 MiniMax：纪要和整句翻译都能用，国内直连不用代理。",
+    "image": null,
+    "items": [
+      {
+        "kind": "new",
+        "platforms": [
+          "mac"
+        ],
+        "title": "AI 服务可以换成 MiniMax：纪要和整句翻译都能用，国内直连不用代理。",
+        "text": "在“设置 › AI 服务”右上角或引导页点“用不了 Ling？”即可切换。默认选好 MiniMax-M3.1-Flash（更准）和 MiniMax-M3（不思考、更快）两个模型，key 只保存在这台 Mac 上。贴错地方的 key 会认出来，一键改用。同传声音等其余功能不变：换 Ling 才有。"
+      }
+    ]
+  },
+  {
     "version": "1.10.1",
     "date": "2026-11-14",
     "title": "Windows 听电脑声音更稳了",
