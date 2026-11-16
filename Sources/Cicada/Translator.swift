@@ -413,8 +413,10 @@ final class TranslationService {
         let about = ["translat", "subtitle", "garbled", "transcri", "asr", "speech recognition", "best-effort"]
         // The same in Chinese: "请提供需要翻译的字幕内容", "您似乎忘记提供……".
         let zhAbout = ["字幕", "翻译"], zhRemark = ["请提供", "似乎", "看起来", "无法", "乱码", "没有附上", "您只发送"]
-        // Reasoning that leaked into the reply ("…</think>") goes; the answer follows it.
-        let answer = reply.components(separatedBy: "</think>").last ?? reply
+        // Reasoning that leaked into the reply ("…</think>") goes; the answer follows it. An
+        // unterminated block (the reply cut off inside it) leaves nothing to show.
+        var answer = reply.components(separatedBy: "</think>").last ?? reply
+        if let open = answer.range(of: "<think>") { answer = String(answer[answer.startIndex..<open.lowerBound]) }
         var kept: [String] = []
         for raw in answer.components(separatedBy: .newlines) {
             var line = raw.trimmingCharacters(in: .whitespaces)

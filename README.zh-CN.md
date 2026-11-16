@@ -129,7 +129,7 @@ Mac 版用到什么功能才要什么权限，拒了也不耽误别的功能：
 1. 去 [Ling 开放平台](https://chat.ant-ling.com/platform/api) 注册登录，创建令牌，复制 `sk-` 开头的 key。
 2. 打开知了“设置 › AI 服务”（或纪要窗口顶部提示框），粘贴保存即可。
 
-**注册不了 Ling？** 在“设置 › AI 服务”右上角（或引导页点“用不了 Ling？”）可以换成 OpenRouter、ZenMux、OpenAI，或任何 OpenAI 兼容服务（包括 Ollama、vLLM、SGLang、Qwen3-ASR、Whisper 等本机或局域网服务）。
+**注册不了 Ling？** 在“设置 › AI 服务”右上角（或引导页点“用不了 Ling？”）可以换成 MiniMax、OpenRouter、ZenMux、OpenAI，或任何 OpenAI 兼容服务（包括 Ollama、vLLM、SGLang、Qwen3-ASR、Whisper 等本机或局域网服务）。MiniMax 国内直连，不用代理。
 
 换服务后，实时纪要和整句翻译照样能用，OpenRouter 和 ZenMux 还能用 Gemini 的自然人声做同传；一步语音翻译和声音克隆则只有 Ling 支持。用自建服务时，纪要和说话人识别可以单独换更强的模型，或者接另一个服务（填自己的地址和 key）；模型从列表里搜，搜不到也能直接手填。Windows、Linux、Android 换其他服务后，“听对方”也交给新服务处理，字幕会比 Ling 晚 1–2 秒。连不上时，设置里会直接提示是 key、模型还是代理问题（代理说明见[设置页](https://cicada.indaloop.app/start/#proxy)）。
 

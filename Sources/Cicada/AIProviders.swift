@@ -10,7 +10,7 @@ import Foundation
 /// TTS arena). `inclusionai/ling-*` is Ling itself on the aggregators, so the prompts carry over.
 struct AIProvider: Identifiable, Equatable {
     enum Kind: String, CaseIterable, Identifiable {
-        case ling, openrouter, zenmux, openai, custom
+        case ling, minimax, openrouter, zenmux, openai, custom
         var id: String { rawValue }
     }
 
@@ -44,6 +44,17 @@ struct AIProvider: Identifiable, Equatable {
         textModels: [Model(id: "Ling-3.1-flash", note: L("更准")), Model(id: "Ling-3.0-flash", note: L("更快、更省"))],
         voiceModels: [Model(id: "Ming-3.0-tts-0.5B", note: "")], voices: [],
         clones: true, hearsAudio: true, spacing: 0.6)
+
+    /// MiniMax (api.minimax.cn), a Chinese platform reachable without a proxy from mainland China.
+    /// No voices here: the room hears the Mac's. Text only.
+    static let minimax = AIProvider(
+        id: .minimax, name: "MiniMax", base: URL(string: "https://api.minimax.cn/v1/"),
+        site: URL(string: "https://platform.minimax.cn/user-center/basic-information/interface-key"),
+        textModels: [Model(id: "MiniMax-M3.1-Flash", note: L("更准")), Model(id: "MiniMax-M3", note: L("更快、不思考"))],
+        voiceModels: [], voices: [], clones: false, hearsAudio: false, spacing: 0.2)
+
+    /// The MiniMax model that can turn thinking off (`MiniMax-M3`); the others always think.
+    static let minimaxPlain = "MiniMax-M3"
 
     static let gemini: [CloudVoice] = [
         CloudVoice(id: "Kore", gender: L("女")), CloudVoice(id: "Aoede", gender: L("女")),
@@ -81,7 +92,7 @@ struct AIProvider: Identifiable, Equatable {
         id: .custom, name: L("自定义服务"), base: nil, site: nil,
         textModels: [], voiceModels: [], voices: [], clones: false, hearsAudio: false, spacing: 0.1)
 
-    static let all: [AIProvider] = [.ling, .openrouter, .zenmux, .openai, .custom]
+    static let all: [AIProvider] = [.ling, .minimax, .openrouter, .zenmux, .openai, .custom]
 
     static func named(_ raw: String) -> AIProvider { all.first { $0.id.rawValue == raw } ?? .ling }
 
@@ -192,6 +203,18 @@ struct AIConfig: Equatable {
             body["max_tokens"] = maxTokens
             body["temperature"] = 0.2
             body["thinking"] = ["type": "disabled"]
+        case .minimax:
+            // Thinking tokens count toward the cap. M3.1-Flash always thinks and rejects `disabled`
+            // with HTTP 400: the lowest effort is the latency we can ask for, and `reasoning_split`
+            // keeps that text out of `content`. M3 can skip thinking, which a live subtitle wants.
+            body["max_completion_tokens"] = maxTokens
+            if textModel == AIProvider.minimaxPlain {
+                body["thinking"] = ["type": "disabled"]
+            } else {
+                body["thinking"] = ["type": "adaptive"]
+                body["reasoning_effort"] = "low"
+                body["reasoning_split"] = true
+            }
         case .openrouter, .zenmux:
             body["max_tokens"] = maxTokens
             body["temperature"] = 0.2

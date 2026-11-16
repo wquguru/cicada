@@ -176,12 +176,13 @@ struct AICheck: Equatable {
     }
 
     /// The prefix of a key says whose it is: `sk-or-` OpenRouter, `sk-payg` ZenMux, `sk-mgmt` ZenMux's
-    /// management key (it can't call models). nil: nothing to tell.
+    /// management key (it can't call models), `eyJ` MiniMax (a JWT). nil: nothing to tell.
     static func owner(ofKey key: String) -> (service: AIProvider.Kind, management: Bool)? {
         let k = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if k.hasPrefix("sk-or-") { return (.openrouter, false) }
         if k.hasPrefix("sk-payg") { return (.zenmux, false) }
         if k.hasPrefix("sk-mgmt") { return (.zenmux, true) }
+        if k.hasPrefix("eyJ") { return (.minimax, false) }
         return nil
     }
 
