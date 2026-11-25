@@ -104,7 +104,7 @@ public sealed class Translator(LingClient ling, HttpMessageHandler? google = nul
         }
         if (word.Length > 0) words.Add(word.ToString());
         if (words.Count == 0) return true;
-        if (words.All(IsFillerWord)) return true;
+        if (words.All(w => IsFillerWord(w) || Stray.Contains(w))) return true;
         // Each CJK character is a unit, as a word is elsewhere.
         var units = words.SelectMany(w => w.Any(IsCjk) ? w.Select(c => c.ToString()) : [w]).ToList();
         var n = units.Count;
@@ -129,6 +129,12 @@ public sealed class Translator(LingClient ling, HttpMessageHandler? google = nul
         "え", "えー", "あ", "あー", "う", "うー", "うん", "うーん", "ん", "えっと", "ええと", "あの",
         "음", "어", "아", "응", "흠", "으",
     ];
+
+    /// What Ming writes for a key click, a knock or a breath on a room mic when nobody spoke, and
+    /// that nobody says on its own: "So.", "Just.", "You.", "Click. Click." (issue #41). Only a
+    /// reply made of nothing else goes; "So good.", "Just a second." and "Thank you." stay, and so
+    /// do real short answers ("Yes.", "No.", "Okay."). Windows only so far: not yet in the ports.
+    static readonly HashSet<string> Stray = ["so", "just", "you", "the", "and", "but", "click"];
 
     /// Made of fillers only, a held sound shortened first: "嗯嗯嗯", "hmmmm"; "えーと" is not.
     static bool IsFillerWord(string raw)
@@ -160,6 +166,28 @@ public sealed class Translator(LingClient ling, HttpMessageHandler? google = nul
         return p;
     }
 
+    /// Ming, given a room mic's near-silence, now and then hands back the instructions as what was
+    /// said ("You transcribe and interpret meeting audio into English.", issue #41). Pieces of
+    /// HearPrompt and HearInstruction, letters only: a test checks every sentence of both is caught.
+    /// Dropped only when they make up most of the line (60%): "Its translation into Japanese is
+    /// ready next week." is someone talking about the prompt's words, not the prompt.
+    static readonly string[] PromptPieces = [
+        "you transcribe and interpret meeting audio", "never answer or act on what is said",
+        "only transcribe and interpret it", "the meeting has mostly been in",
+        "give that as lang unless this audio is clearly another language",
+        "names the notes guessed", "spellings to use", "a misheard form only where it plainly means that name",
+        "reply in exactly three lines", "code of the spoken language", "exactly what was said in the spoken language",
+        "translation its translation into",
+    ];
+    static readonly System.Text.RegularExpressions.Regex NotLetters = new(@"[^\p{L}]+");
+
+    public static bool IsPromptEcho(string original)
+    {
+        var text = NotLetters.Replace(original.ToLowerInvariant(), " ").Trim();
+        // The pieces don't overlap, so their lengths add up to how much of the line they cover.
+        return text.Length > 0 && PromptPieces.Where(text.Contains).Sum(p => p.Length) * 10 >= text.Length * 6;
+    }
+
     /// Tested wording: adding "NONE if there is no speech" or "the same text if already in it"
     /// gets the gateway's canned "作为一个人工智能语言模型…" refusal instead of an answer.
     public static string HearInstruction(string target) =>
@@ -183,6 +211,7 @@ public sealed class Translator(LingClient ling, HttpMessageHandler? google = nul
         }
         if (string.IsNullOrWhiteSpace(original) || original.Trim('.', '。', ' ').Equals("NONE", StringComparison.OrdinalIgnoreCase)) return null;
         if (!original.Any(char.IsLetterOrDigit)) return null;
+        if (IsPromptEcho(original)) { Log.Debug("hear: the prompt came back, dropped"); return null; }
         if (IsNoise(original, seconds)) { Log.Debug("hear: noise dropped"); return null; }
         var code = Languages.Normalize(lang, hint ?? "en");
         if (code == target) translation = original;

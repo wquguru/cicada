@@ -1697,6 +1697,25 @@ static class Tests
         Check(PressSpeech.Filler("翻译结果：") && PressSpeech.Filler("Translation:") && !PressSpeech.Filler("我想补充三点：价格、时间和人手。"), "a bare heading is no sentence");
     }
 
+    public static void DropsWhatARoomMicMadeUp()
+    {
+        // Issue #41: a room mic with nobody speaking, on Ming.
+        foreach (var o in new[] { "So.", "Just.", "You.", "Click.", "Click. Click.", "So, just.", "Um, so." })
+            Check(Translator.IsNoise(o), $"made up: {o}");
+        foreach (var o in new[] { "Yes.", "No.", "Okay.", "Yeah.", "Thank you.", "Thanks.", "So good.", "Just a second.", "You know what?",
+                                  "What?", "Sorry.", "That's true.", "I think I have to go." })
+            Check(!Translator.IsNoise(o), $"said: {o}");
+        Equal(null, Translator.ParseHeard("LANG: en\nORIGINAL: You transcribe and interpret meeting audio into English.\nTRANSLATION: You transcribe and interpret meeting audio into English.", "en", null), "the prompt as what was said");
+        // Every sentence of both prompts, in whichever languages, is caught: PromptPieces kept in step.
+        var prompt = Translator.HearPrompt("ja", "zh-CN", ["Cicada"]) + "\n" + Translator.HearInstruction("ja");
+        foreach (var s in prompt.Split(['\n', '.', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(s => s.Count(char.IsLetter) > 12))
+            Check(Translator.IsPromptEcho(s), $"prompt sentence caught: {s}");
+        Check(Translator.IsPromptEcho(prompt), "the whole prompt at once");
+        foreach (var o in new[] { "Let's interpret the numbers for the meeting.", "我们开会吧。", "Can you translate this into Japanese?",
+                                  "Its translation into Japanese is ready next week.", "The meeting has mostly been in the afternoon lately, right?" })
+            Check(!Translator.IsPromptEcho(o), $"not the prompt: {o}");
+    }
+
     public static void EchoIsDroppedOnlyFromThePlainMic()
     {
         Check(SpeakEngine.EchoDrop(false, 0.51), "plain mic, meeting over half the press: dropped");
