@@ -61,7 +61,7 @@ With an AI service connected, misheard names and terms are fixed on the spot: ho
 
 ### Live subtitles and language detection
 
-Cicada detects the spoken language within seconds and translates it into your system language; press `⌃⌥S` to switch display modes. The subtitle bar only appears when someone speaks and turns see-through under your pointer so it stays out of the way. On macOS 26 with Apple silicon, Cicada also re-listens on device to refine each line 15 to 30 seconds later, fixing typos and missed words.
+Cicada detects the spoken language within seconds and translates it into your system language; press `⌃⌥S` to switch display modes. The subtitle bar only appears when someone speaks and turns see-through under your pointer so it stays out of the way. On macOS 26 with Apple silicon, Cicada also re-listens on device to refine each line 15 to 30 seconds later, fixing typos and missed words. Cicada's own interface comes in Chinese, English, Japanese, Korean and Ukrainian.
 
 ### In-person and hybrid meetings
 
