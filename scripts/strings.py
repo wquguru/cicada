@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UI strings: Chinese source text is the key; Resources/<lang>.lproj/Localizable.strings (en, ja, ko)
+"""UI strings: Chinese source text is the key; Resources/<lang>.lproj/Localizable.strings (en, ja, ko, uk)
 hold the translations, and each value must use the same format specifiers as its key.
 
     python3 scripts/strings.py          # check: every key in the code has an entry in every language
@@ -8,13 +8,13 @@ hold the translations, and each value must use the same format specifiers as its
 Keys come from the compiler (-emit-localized-strings), so interpolations are exactly the format
 keys the app looks up ("已听到 %lld 句"). zh-Hans/Localizable.strings maps every key to itself:
 the development region is English, so without it Chinese systems would fall back to English.
-English plurals live in en.lproj/Localizable.stringsdict.
+English and Ukrainian plurals live in <lang>.lproj/Localizable.stringsdict.
 The ports read these tables too: a key the Mac no longer uses stays while a port still uses it.
 """
 import glob, json, os, re, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LANGS = ["en", "ja", "ko"]
+LANGS = ["en", "ja", "ko", "uk"]
 TABLE = os.path.join(ROOT, "Resources/{}.lproj/Localizable.strings")
 ZH = os.path.join(ROOT, "Resources/zh-Hans.lproj/Localizable.strings")
 DICT = os.path.join(ROOT, "Resources/en.lproj/Localizable.stringsdict")

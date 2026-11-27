@@ -1135,6 +1135,28 @@ static class Tests
         finally { Strings.Load(res, "zh-Hans"); }
     }
 
+    /// Ukrainian has one (1, 21…), few (2–4, 22–24…) and many (0, 5–20, 11–14…) forms, and Ukrainian dates.
+    public static void UkrainianPluralsAndDates()
+    {
+        var res = Path.Combine(AppContext.BaseDirectory, "Resources");
+        try
+        {
+            Strings.Load(res, "uk-UA");
+            Equal("uk", Strings.Language, "uk-UA is Ukrainian");
+            Equal("one few few many many many many one few many many many",
+                  string.Join(" ", new object[] { 1, 2, 4, 5, 11, 12, 14, 21, 22, 25, 111, 0 }.Select(Strings.Category)), "categories");
+            Equal("other", Strings.Category(1.5), "fractions");
+            string Word(int n) => Strings.LF("%lld 个议题", n).Split(' ', 2)[1];
+            Equal(3, new[] { Word(1), Word(2), Word(5) }.Distinct().Count(), "тема, теми, тем");
+            Equal(Word(1), Word(21), "21 is one");
+            Equal(Word(5), Word(11), "11 is many");
+            Check(!Strings.L("实时纪要").Contains('实'), "a Ukrainian string");
+            var s = new Session { Title = "会议 11月4日 10:27", StartedAt = new DateTimeOffset(2026, 11, 4, 10, 27, 0, TimeSpan.Zero) };
+            Check(!SessionStore.DisplayTitle(s).Contains('月') && !SessionStore.DisplayTitle(s).Contains("Nov"), "Ukrainian dates: " + SessionStore.DisplayTitle(s));
+        }
+        finally { Strings.Load(res, "zh-Hans"); }
+    }
+
     // MARK: Ling
 
     sealed class Fake(Func<string, HttpResponseMessage> respond) : HttpMessageHandler

@@ -898,6 +898,26 @@ class Strings(Base):
         finally:
             strings.load("zh-Hans", res)
 
+    def test_ukrainian_plurals_and_dates(self):
+        # Ukrainian has one (1, 21…), few (2–4, 22–24…) and many (0, 5–20, 11–14…) forms.
+        res = [os.path.join(REPO, "Resources"), os.path.join(REPO, "linux", "strings")]
+        try:
+            strings.load("uk_UA.UTF-8", res)
+            self.assertEqual("uk", strings.language)
+            self.assertEqual([strings._category(n) for n in (1, 2, 4, 5, 11, 12, 14, 21, 22, 25, 111, 0)],
+                             ["one", "few", "few", "many", "many", "many", "many", "one", "few", "many", "many", "many"])
+            self.assertEqual("other", strings._category(1.5))
+            word = lambda n: strings.LF("%lld 个议题", n).split(" ", 1)[1]
+            self.assertEqual(3, len({word(1), word(2), word(5)}))  # тема, теми, тем: none left in Chinese
+            self.assertNotIn("议题", word(1) + word(2) + word(5))
+            self.assertEqual((word(1), word(22), word(11)), (word(21), word(2), word(5)))
+            self.assertEqual("1 речення", strings.LF("%lld 句", 1))
+            self.assertNotEqual("实时纪要", strings.L("实时纪要"))
+            at = datetime(2026, 11, 27, 9, 5, tzinfo=timezone.utc).astimezone()
+            self.assertIn("лист.", session_store._local_date(at, strings.L("M月d日")))
+        finally:
+            strings.load("zh-Hans", res)
+
     def test_todo_owner_in_the_ui_language(self):
         # The notes store the transcript's Chinese label; it shows in the UI language (Notes.swift's withOwner).
         res = [os.path.join(REPO, "Resources"), os.path.join(REPO, "linux", "strings")]

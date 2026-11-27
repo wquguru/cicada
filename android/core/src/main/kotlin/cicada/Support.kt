@@ -47,11 +47,13 @@ object Languages {
     val sources = listOf(
         Lang("English", "en"), Lang("日本語", "ja"), Lang("中文", "zh-CN"), Lang("한국어", "ko"),
         Lang("Español", "es"), Lang("Français", "fr"), Lang("Deutsch", "de"), Lang("Português", "pt"),
+        Lang("Українська", "uk"),
     )
 
     val targets = listOf(
         Lang("简体中文", "zh-CN"), Lang("繁體中文", "zh-TW"), Lang("English", "en"), Lang("日本語", "ja"),
         Lang("한국어", "ko"), Lang("Español", "es"), Lang("Français", "fr"), Lang("Deutsch", "de"), Lang("Português", "pt"),
+        Lang("Українська", "uk"),
     )
 
     /// "Simplified Chinese", "Japanese": the names prompts use.

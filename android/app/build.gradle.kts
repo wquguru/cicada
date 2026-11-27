@@ -64,7 +64,7 @@ dependencies { implementation(project(":core")) }
 // the Chinese, into assets/Resources/<lang>.lproj/.
 val copyStrings by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/strings/Resources"))
-    for (lang in listOf("zh-Hans", "en", "ja", "ko")) {
+    for (lang in listOf("zh-Hans", "en", "ja", "ko", "uk")) {
         from(rootProject.file("../Resources/$lang.lproj")) { include("Localizable.strings", "Localizable.stringsdict"); into("$lang.lproj") }
         from(file("src/main/strings/$lang.lproj")) { include("Android.strings"); into("$lang.lproj") }
     }
