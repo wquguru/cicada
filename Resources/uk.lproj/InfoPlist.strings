@@ -1,0 +1,11 @@
+CFBundleName = "Cicada";
+CFBundleDisplayName = "Cicada";
+NSAudioCaptureUsageDescription = "Cicada слухає звук, який відтворює ваш Mac, щоб показувати живі субтитри.";
+NSMicrophoneUsageDescription = "Поки ви тримаєте клавішу мовлення, Cicada бере звук із мікрофона, щоб перекласти сказане мовою співрозмовників. Коли Cicada слухає зустріч у кімнаті, мікрофон чує людей поруч.";
+NSSpeechRecognitionUsageDescription = "Cicada розпізнає мовлення, щоб перетворити звук на текст.";
+NSLocalNetworkUsageDescription = "Лише щоб під'єднатися до AI-сервера, який ви налаштували у своїй локальній мережі. Cicada не шукає інших пристроїв і не під'єднується до них.";
+NSDocumentsFolderUsageDescription = "Щоб зберігати нотатки й розшифровку кожної зустрічі у вибрану вами теку.";
+NSDesktopFolderUsageDescription = "Щоб зберігати нотатки й розшифровку кожної зустрічі у вибрану вами теку.";
+NSDownloadsFolderUsageDescription = "Щоб зберігати нотатки й розшифровку кожної зустрічі у вибрану вами теку.";
+NSRemovableVolumesUsageDescription = "Щоб зберігати нотатки й розшифровку кожної зустрічі у вибрану вами теку.";
+NSNetworkVolumesUsageDescription = "Щоб зберігати нотатки й розшифровку кожної зустрічі у вибрану вами теку.";
