@@ -12,19 +12,20 @@ object Strings {
     @Volatile private var plurals: Map<String, Plural> = emptyMap()
 
     /// A stringsdict entry: the format with `%#@n@` placeholders, and each variable's forms by
-    /// plural category ("one", "other").
+    /// plural category ("one", "few", "many", "other").
     class Plural(val format: String, val forms: Map<String, Map<String, String>>)
     @Volatile var language = "zh-Hans"; private set
 
     val locale: Locale get() = when (language) {
-        "en" -> Locale.ENGLISH; "ja" -> Locale.JAPANESE; "ko" -> Locale.KOREAN; else -> Locale.SIMPLIFIED_CHINESE
+        "en" -> Locale.ENGLISH; "ja" -> Locale.JAPANESE; "ko" -> Locale.KOREAN; "uk" -> Locale.forLanguageTag("uk-UA")
+        else -> Locale.SIMPLIFIED_CHINESE
     }
 
-    /// Loads the table for `ui` ("en", "ja", "ko"; anything else is Chinese). `read` returns the
+    /// Loads the table for `ui` ("en", "ja", "ko", "uk"; anything else is Chinese). `read` returns the
     /// text of "<lang>.lproj/<name>" or null.
     fun load(ui: String, read: (String) -> String?) {
         val head = ui.split('-', '_')[0]
-        language = if (head == "en" || head == "ja" || head == "ko") head else "zh-Hans"
+        language = if (head == "en" || head == "ja" || head == "ko" || head == "uk") head else "zh-Hans"
         val t = HashMap<String, String>()
         // The Mac's table, then the Android-only strings over it (same format).
         for (name in listOf("Localizable.strings", "Android.strings")) {
@@ -34,9 +35,19 @@ object Strings {
         plurals = read("$language.lproj/Localizable.stringsdict")?.let { parsePlurals(it) } ?: emptyMap()
     }
 
-    /// Only English has more than one form among the app's languages: "one" for exactly 1.
-    private fun category(n: Any?): String =
-        if (language == "en" && (n as? Number)?.toDouble() == 1.0) "one" else "other"
+    /// The CLDR plural category of `n`: Chinese, Japanese and Korean have one form; English "one" for
+    /// exactly 1; Ukrainian one (1, 21…), few (2–4, 22–24…), many (0, 5–20, 11–14…), other for fractions.
+    fun category(n: Any?): String {
+        val d = (n as? Number)?.toDouble() ?: return "other"
+        if (language == "en") return if (d == 1.0) "one" else "other"
+        if (language != "uk" || d != Math.floor(d)) return "other"
+        val i = Math.abs(d.toLong())
+        return when {
+            i % 10 == 1L && i % 100 != 11L -> "one"
+            i % 10 in 2..4 && i % 100 !in 12..14 -> "few"
+            else -> "many"
+        }
+    }
 
     @JvmStatic fun L(key: String): String = table[key]?.takeIf { it.isNotEmpty() } ?: key
 

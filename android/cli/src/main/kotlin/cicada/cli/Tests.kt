@@ -75,6 +75,7 @@ object Tests {
             "topicStartsWhenItsLinesWereSaid" to ::topicStartsWhenItsLinesWereSaid,
             "loadsTheMacsTranslations" to ::loadsTheMacsTranslations,
             "pluralsFromTheMacsStringsdict" to ::pluralsFromTheMacsStringsdict,
+            "ukrainianPlurals" to ::ukrainianPlurals,
             "keyFileIsPrivate" to ::keyFileIsPrivate,
             "onboardingKeepsAWorkingSavedKey" to ::onboardingKeepsAWorkingSavedKey,
             "lingRequestShape" to ::lingRequestShape,
@@ -780,6 +781,24 @@ object Tests {
             "<key>other</key><string>%lld ys</string></dict></dict></dict></plist>")
         equal("%#@x@ <", p["a & b"]?.format, "entities")
         equal("%lld ys", p["a & b"]?.forms?.get("x")?.get("other"), "forms")
+    }
+
+    /// Ukrainian has one (1, 21…), few (2–4, 22–24…) and many (0, 5–20, 11–14…) forms.
+    fun ukrainianPlurals() {
+        loadStrings("uk")
+        try {
+            equal("uk", Strings.language, "Ukrainian")
+            equal("one few few many many many many one few many many many",
+                  listOf(1, 2, 4, 5, 11, 12, 14, 21, 22, 25, 111, 0).joinToString(" ") { Strings.category(it) }, "categories")
+            equal("other", Strings.category(1.5), "fractions")
+            fun word(n: Int) = Strings.LF("%lld 个议题", n).split(" ", limit = 2)[1]
+            equal(3, setOf(word(1), word(2), word(5)).size, "тема, теми, тем")
+            equal(word(1), word(21), "21 is one")
+            equal(word(5), word(11), "11 is many")
+            check(!Strings.L("实时纪要").contains('实'), "a Ukrainian string")
+        } finally {
+            loadStrings("zh-Hans")
+        }
     }
 
     fun onboardingKeepsAWorkingSavedKey() {
