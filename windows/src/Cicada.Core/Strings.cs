@@ -4,7 +4,7 @@ using System.Text;
 namespace Cicada;
 
 /// UI text. The Chinese text is the key, as on the Mac, and the translations are the Mac's own
-/// `Resources/{en,ja,ko}.lproj/Localizable.strings`, copied next to the app at build time, plus
+/// `Resources/{en,ja,ko,uk}.lproj/Localizable.strings`, copied next to the app at build time, plus
 /// `windows/src/Cicada/Strings/*.lproj/Windows.strings` for text only the Windows app has, and the
 /// Mac's `Localizable.stringsdict` for plurals ("1 line", "2 lines"). Placeholders are the Mac's
 /// `%@`, filled in order. Never for prompts, logs or stored values.
@@ -14,13 +14,13 @@ public static class Strings
     static Dictionary<string, Plural> plurals = [];
 
     /// A stringsdict entry: the format with `%#@n@` placeholders, and each variable's forms by
-    /// plural category ("one", "other").
+    /// plural category ("one", "few", "many", "other").
     public sealed record Plural(string Format, Dictionary<string, Dictionary<string, string>> Forms);
     public static string Language { get; private set; } = "zh-Hans";
     /// Dates in the app's language, not Windows': English Cicada on Chinese Windows writes "Nov 4".
     public static CultureInfo Culture { get; private set; } = CultureInfo.GetCultureInfo("zh-CN");
 
-    /// Loads the table for `language` ("en", "ja", "ko"; anything else is Chinese) from
+    /// Loads the table for `language` ("en", "ja", "ko", "uk"; anything else is Chinese) from
     /// `folder`/<lang>.lproj/Localizable.strings.
     public static void Load(string folder, string? language = null) =>
         Load(path => File.Exists(Path.Combine(folder, path)) ? File.ReadAllText(Path.Combine(folder, path), Encoding.UTF8) : null, language);
@@ -31,8 +31,8 @@ public static class Strings
     {
         var ui = language ?? CultureInfo.CurrentUICulture.Name;
         var head = ui.Split('-')[0];
-        Language = head is "en" or "ja" or "ko" ? head : "zh-Hans";
-        Culture = CultureInfo.GetCultureInfo(Language switch { "en" => "en-US", "ja" => "ja-JP", "ko" => "ko-KR", _ => "zh-CN" });
+        Language = head is "en" or "ja" or "ko" or "uk" ? head : "zh-Hans";
+        Culture = CultureInfo.GetCultureInfo(Language switch { "en" => "en-US", "ja" => "ja-JP", "ko" => "ko-KR", "uk" => "uk-UA", _ => "zh-CN" });
         // The Mac's table, then the Windows-only strings over it (Windows.strings, same format).
         table = [];
         foreach (var name in new[] { "Localizable.strings", "Windows.strings" })
@@ -43,9 +43,18 @@ public static class Strings
         plurals = read($"{Language}.lproj/Localizable.stringsdict") is { } dict ? ParsePlurals(dict) : [];
     }
 
-    /// Only English has more than one form among the app's languages: "one" for exactly 1.
-    static string Category(object? n) =>
-        Language == "en" && n is IConvertible c && c.ToDouble(CultureInfo.InvariantCulture) == 1 ? "one" : "other";
+    /// The CLDR plural category of `n`: Chinese, Japanese and Korean have one form; English "one" for
+    /// exactly 1; Ukrainian one (1, 21…), few (2–4, 22–24…), many (0, 5–20, 11–14…), other for fractions.
+    public static string Category(object? n)
+    {
+        if (n is not IConvertible c || n is bool) return "other";
+        var d = c.ToDouble(CultureInfo.InvariantCulture);
+        if (Language == "en") return d == 1 ? "one" : "other";
+        if (Language != "uk" || d != Math.Floor(d)) return "other";
+        var i = (long)Math.Abs(d);
+        if (i % 10 == 1 && i % 100 != 11) return "one";
+        return i % 10 is >= 2 and <= 4 && i % 100 is < 12 or > 14 ? "few" : "many";
+    }
 
     public static string L(string key) => table.TryGetValue(key, out var v) && v.Length > 0 ? v : key;
 

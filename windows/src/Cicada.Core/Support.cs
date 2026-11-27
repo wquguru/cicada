@@ -53,12 +53,14 @@ public static class Languages
     [
         new("English", "en"), new("日本語", "ja"), new("中文", "zh-CN"), new("한국어", "ko"),
         new("Español", "es"), new("Français", "fr"), new("Deutsch", "de"), new("Português", "pt"),
+        new("Українська", "uk"),
     ];
 
     public static readonly Lang[] Targets =
     [
         new("简体中文", "zh-CN"), new("繁體中文", "zh-TW"), new("English", "en"), new("日本語", "ja"),
         new("한국어", "ko"), new("Español", "es"), new("Français", "fr"), new("Deutsch", "de"), new("Português", "pt"),
+        new("Українська", "uk"),
     ];
 
     /// "Simplified Chinese", "Japanese": the names prompts use.
