@@ -39,6 +39,7 @@
 		<string>en</string>
 		<string>ja</string>
 		<string>ko</string>
+		<string>uk</string>
 	</array>
 	<key>CFBundleName</key>
 	<string>Cicada</string>
