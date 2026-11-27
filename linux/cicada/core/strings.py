@@ -11,14 +11,16 @@ import plistlib
 _table: dict = {}
 _plurals: dict = {}
 language = "zh-Hans"
+# The UI languages with tables; anything else is the Chinese the keys are written in.
+UI_LANGUAGES = ("en", "ja", "ko", "uk")
 
 
 def load(ui: str, folders: list) -> None:
-    """Loads the table for `ui` ("en", "ja", "ko"; anything else is Chinese) from each folder's
+    """Loads the table for `ui` ("en", "ja", "ko", "uk"; anything else is Chinese) from each folder's
     <lang>.lproj/{Localizable,Linux}.strings, later folders over earlier ones."""
     global _table, _plurals, language
     head = ui.replace("_", "-").split("-")[0]
-    language = head if head in ("en", "ja", "ko") else "zh-Hans"
+    language = head if head in UI_LANGUAGES else "zh-Hans"
     t: dict = {}
     for folder in folders:
         for name in ("Localizable.strings", "Linux.strings"):
@@ -43,8 +45,23 @@ def parse_plurals(data: bytes) -> dict:
 
 
 def _category(n) -> str:
-    # Only English has more than one form among the app's languages: "one" for exactly 1.
-    return "one" if language == "en" and isinstance(n, (int, float)) and n == 1 else "other"
+    """The CLDR plural category of `n` in the UI language. Chinese, Japanese and Korean have one form;
+    English "one" for exactly 1; Ukrainian one (1, 21, 31…), few (2–4, 22–24…), many (0, 5–20, 25–30…),
+    and other for fractions. A form the table lacks falls back to "other" in LF."""
+    if not isinstance(n, (int, float)) or isinstance(n, bool):
+        return "other"
+    if language == "en":
+        return "one" if n == 1 else "other"
+    if language == "uk":
+        if n != int(n):
+            return "other"
+        n = abs(int(n))
+        if n % 10 == 1 and n % 100 != 11:
+            return "one"
+        if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+            return "few"
+        return "many"
+    return "other"
 
 
 def L(key: str) -> str:

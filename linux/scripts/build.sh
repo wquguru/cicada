@@ -9,7 +9,7 @@ version="$(tr -d '[:space:]' < "$root/VERSION")"
 out="$here/build/cicada-linux"
 rm -rf "$out" && mkdir -p "$out/lproj"
 rsync -a --exclude __pycache__ "$here/cicada" "$out/"
-for lang in zh-Hans en ja ko; do
+for lang in zh-Hans en ja ko uk; do
   mkdir -p "$out/lproj/$lang.lproj"
   cp "$root/Resources/$lang.lproj/Localizable.strings" "$out/lproj/$lang.lproj/"
   [ -f "$root/Resources/$lang.lproj/Localizable.stringsdict" ] && cp "$root/Resources/$lang.lproj/Localizable.stringsdict" "$out/lproj/$lang.lproj/"

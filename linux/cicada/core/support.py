@@ -91,9 +91,11 @@ class Log:
 
 # The languages the Mac app offers (Languages.swift), as translation codes.
 SOURCES = [("English", "en"), ("日本語", "ja"), ("中文", "zh-CN"), ("한국어", "ko"),
-           ("Español", "es"), ("Français", "fr"), ("Deutsch", "de"), ("Português", "pt")]
+           ("Español", "es"), ("Français", "fr"), ("Deutsch", "de"), ("Português", "pt"),
+           ("Українська", "uk")]
 TARGETS = [("简体中文", "zh-CN"), ("繁體中文", "zh-TW"), ("English", "en"), ("日本語", "ja"),
-           ("한국어", "ko"), ("Español", "es"), ("Français", "fr"), ("Deutsch", "de"), ("Português", "pt")]
+           ("한국어", "ko"), ("Español", "es"), ("Français", "fr"), ("Deutsch", "de"), ("Português", "pt"),
+           ("Українська", "uk")]
 
 _ENGLISH = {"zh-CN": "Simplified Chinese", "zh-TW": "Traditional Chinese", "zh": "Chinese", "en": "English",
             "ja": "Japanese", "ko": "Korean", "es": "Spanish", "fr": "French", "de": "German", "pt": "Portuguese",

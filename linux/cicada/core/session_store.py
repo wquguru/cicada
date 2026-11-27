@@ -362,10 +362,17 @@ def default_title(at: datetime) -> str:
     return "会议 %d月%d日 %02d:%02d" % (l.month, l.day, l.hour, l.minute)
 
 
+# MMM in the UI language, as the Mac's DateFormatter writes it: Ukrainian in the genitive ("27 лист.").
+_MONTHS = {
+    "en": ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+    "uk": ["січ.", "лют.", "бер.", "квіт.", "трав.", "черв.", "лип.", "серп.", "вер.", "жовт.", "лист.", "груд."],
+}
+
+
 def _local_date(at: datetime, pattern: str) -> str:
     """The Mac's date patterns the strings tables carry ("M月d日 HH:mm", "MMM d", "yyyy年M月d日")."""
     l = at.astimezone()
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    months = _MONTHS.get(strings.language, _MONTHS["en"])
     out = []
     i = 0
     while i < len(pattern):
@@ -412,7 +419,8 @@ def display_title(s: Session) -> str:
 
 
 # The Mac's dateText(_, "yMMMdHHmm"), as its DateFormatter writes it in each UI language.
-_DATE_TIME = {"zh-Hans": "y年M月d日 HH:mm", "en": "MMM d, y 'at' HH:mm", "ja": "y年M月d日 H:mm", "ko": "y년 M월 d일 HH:mm"}
+_DATE_TIME = {"zh-Hans": "y年M月d日 HH:mm", "en": "MMM d, y 'at' HH:mm", "ja": "y年M月d日 H:mm", "ko": "y년 M월 d일 HH:mm",
+              "uk": "d MMM y 'о' HH:mm"}
 
 
 def header(s: Session) -> str:
