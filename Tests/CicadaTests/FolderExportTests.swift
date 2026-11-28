@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// 存到文件夹's file name and frontmatter are a contract with the ports (Tests/fixtures/folder-export).
 struct FolderExportTests {
     static let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("fixtures/folder-export")
@@ -62,7 +61,6 @@ struct FolderExportTests {
         }
     }
 
-    /// The name: the user's title, else the notes', else the imported file's, never the display title.
     @Test func namePrecedence() throws {
         var s = try Self.session()
         s.renamed = false
@@ -83,7 +81,6 @@ struct FolderExportTests {
     }
 }
 
-/// Real writes into a temporary folder: the cases the ports test too.
 struct FolderExportWriteTests {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("folder-export-\(UUID().uuidString)")
     var folder: URL { root.appendingPathComponent("Cicada") }
@@ -114,7 +111,6 @@ struct FolderExportWriteTests {
         #expect(!FileManager.default.fileExists(atPath: gone.deletingLastPathComponent().path))
     }
 
-    /// A folder that can't be looked into reads as "no permission", not as a missing drive.
     @Test func unreadableParentIsDenied() throws {
         let locked = root.appendingPathComponent("locked")
         try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)

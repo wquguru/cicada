@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// Cases from a 21-minute meeting recording (a DeFi team's weekly), labelled by reading the context.
 @Suite struct CorrectionTests {
     private func verdict(_ from: String, _ to: String, _ c: Double, known: [(String, String)] = [],
                          rejected: [(String, String)] = []) -> Correction.Verdict {
@@ -13,11 +12,10 @@ import Testing
 
     @Test func soundAlikeChineseIsApplied() {
         #expect(verdict("解除质压", "解除质押", 0.9) == .apply)
-        #expect(verdict("跳便是", "跳变", 0.9) != .apply)      // a word dropped: not a sound fix
+        #expect(verdict("跳便是", "跳变", 0.9) != .apply)
         #expect(verdict("两个代笔", "两个代币", 0.9) == .apply)
         #expect(verdict("管理房", "管理方", 0.9) == .apply)
         #expect(verdict("追压", "质押", 0.85) == .apply)
-        // Only the changed part is compared: 花/概 share nothing, though the phrase around them does.
         #expect(verdict("花了大花", "花了大概", 0.85) == .drop)
         #expect(verdict("FFT制押", "FFT质押", 0.9) == .apply)
     }
@@ -35,7 +33,7 @@ import Testing
     @Test func spellingFixNeedsHighConfidence() {
         #expect(verdict("cransfer", "transfer", 0.85) == .apply)
         #expect(verdict("cransfer", "transfer", 0.7) == .drop)
-        #expect(verdict("bos", "BOS", 0.9) == .drop)         // case only
+        #expect(verdict("bos", "BOS", 0.9) == .drop)
     }
 
     @Test func newNamesAreAsked() {
@@ -45,7 +43,6 @@ import Testing
         #expect(verdict("莫纳", "Morpho", 0.7) == .drop)
     }
 
-    /// A learned "S平 → X平" never reaches into "iOS平台"; on its own it still applies.
     @Test func learnedWordsStayWhole() {
         #expect(Correction.word("S平", in: "iOS平台很好") == nil)
         #expect(Correction.word("A工", in: "DATA工具") == nil)
@@ -55,7 +52,6 @@ import Testing
         #expect(Correction.apply([LineFix(from: "S平", to: "X平")], to: "iOS平台和S平台").text == "iOS平台和X平台")
     }
 
-    /// A translation isn't a misheard name: one 对 to "X平台 → X platform" taught 平台 → platform.
     @Test func translationsAreNotAsked() {
         #expect(verdict("X平台", "X platform", 0.9) == .drop)
         #expect(verdict("平台", "platform", 0.95) == .drop)
@@ -80,7 +76,6 @@ import Testing
         #expect(Correction.core("Un450P三", "Uniswap V3") == ("Un450P三", "Uniswap V3"))
         #expect(Correction.core("解释这个莫拉的", "解释这个Morpho的") == ("莫拉", "Morpho"))
         #expect(Correction.core("找了cransfer记录", "找了transfer记录") == ("cransfer", "transfer"))
-        // A Chinese change next to a Latin word leaves the word out.
         #expect(Correction.core("FFT制押", "FFT质押") == ("制押", "质押"))
         #expect(Correction.core("Un450P三", "Uniswap V3") == ("Un450P三", "Uniswap V3"))
     }
@@ -101,7 +96,6 @@ import Testing
     }
 
     @Test func fixWhoseWordsWentAwayIsSkipped() {
-        // The record recognizer rewrote the line: the fix no longer applies, nothing breaks.
         #expect(Correction.apply([LineFix(from: "莫拉", to: "Morpho")], to: "解释这个摩托的").text == "解释这个摩托的")
     }
 
@@ -125,9 +119,7 @@ import Testing
 
     @Test func recheckTakesBackWhatItNoLongerProposesButNotTheUsers() {
         let old = [LineFix(from: "跑好的", to: "跑跑的"), LineFix(from: "开布特", to: "Curve", user: true)]
-        // The recheck proposes nothing: the model's guess goes, the user's yes stays.
         #expect(Correction.merge(old, []) == [LineFix(from: "开布特", to: "Curve", user: true)])
-        // Nor can it override the user's word with another.
         #expect(Correction.merge(old, [LineFix(from: "开布特", to: "Cobalt")]) == [LineFix(from: "开布特", to: "Curve", user: true)])
     }
 
@@ -139,7 +131,6 @@ import Testing
         #expect(e?.fix == LineFix(from: "Morpho", to: "Monad", user: true))
         #expect(e?.heard == "莫纳")
         #expect(Correction.apply(fixes + [e!.fix], to: src).text == "扩展到这个Monad的 Link")
-        // A plain heard word.
         let p = Correction.userEdit(shown: "我木娜找了一个", edited: "我在 Monad 找了一个", src: "我木娜找了一个", fixes: [])
         #expect(p?.heard == "木娜")
         #expect(Correction.userEdit(shown: "a", edited: " a ", src: "a", fixes: []) == nil)
@@ -157,25 +148,20 @@ import Testing
     }
 
     @Test func addedWordStaysOnItsLineAndNeverMatchesPunctuation() {
-        // "now" added before the full stop: the fix is the last word, unique in the line, not ".".
         let e = Correction.userEdit(shown: "Great, let's lock that in.", edited: "Great, let's lock that in now.", src: "Great, let's lock that in.", fixes: [])
         #expect(e?.fix.from == "in")
         #expect(e?.fix.to == "in now")
         #expect(e?.swap == false)
         #expect(Correction.apply([e!.fix], to: "Great, let's lock that in.").text == "Great, let's lock that in now.")
-        // A word added at the start.
         let s = Correction.userEdit(shown: "Great, let's lock that in.", edited: "OK Great, let's lock that in.", src: "Great, let's lock that in.", fixes: [])
         #expect(s?.fix.from == "Great")
         #expect(s?.fix.to == "OK Great")
         #expect(s?.swap == false)
-        // A word that appears twice: grown until the span is unique.
         let t = Correction.userEdit(shown: "in the room in the hall", edited: "in the room inside the hall", src: "in the room in the hall", fixes: [])
         #expect(Correction.apply([t!.fix], to: "in the room in the hall").text == "in the room inside the hall")
-        // Chinese: an inserted word takes its neighbour.
         let c = Correction.userEdit(shown: "好的我来看一下", edited: "好的OK我来看一下", src: "好的我来看一下", fixes: [])
         #expect(c.map { Correction.apply([$0.fix], to: "好的我来看一下").text } == "好的OK我来看一下")
         #expect(c?.swap == false)
-        // A real swap is still a swap.
         #expect(Correction.userEdit(shown: "我木娜找了", edited: "我Monad找了", src: "我木娜找了", fixes: [])?.swap == true)
     }
 

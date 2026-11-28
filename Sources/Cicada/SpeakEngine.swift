@@ -28,7 +28,6 @@ enum AudioDevices {
 
     static func outputs() -> [OutputDevice] { devices(scope: kAudioObjectPropertyScopeOutput) }
 
-    /// Devices with streams on one side (output or input), minus Cicada's own aggregate devices.
     static func devices(scope: AudioObjectPropertyScope) -> [OutputDevice] {
         var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
                                               mScope: kAudioObjectPropertyScopeGlobal,
@@ -54,7 +53,6 @@ enum AudioDevices {
 
     static func name(_ device: AudioObjectID) -> String? { string(device, kAudioObjectPropertyName) }
 
-    /// The system output (speakers or headphones): voice previews play here, not into the room.
     static var defaultOutput: OutputDevice? {
         var id = AudioObjectID(0)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)
@@ -67,45 +65,29 @@ enum AudioDevices {
 
 // MARK: - Speak engine
 
-/// Hold to talk: microphone → Ming's audio model (what was said + its translation in one call),
-/// or on-device transcription → translation when that fails → voice → chosen output device
-/// (a virtual microphone for the call). The on-device transcriber always runs: it shows the words
-/// while the key is held and is the fallback transcript.
 @MainActor
 final class SpeakEngine {
     enum Phase { case idle, listening, translating, speaking }
 
     var onLive: ((_ phase: Phase, _ source: String, _ translation: String) -> Void)?
-    /// A finished utterance for the meeting record.
     var onUtterance: ((_ source: String, _ translation: String, _ from: String, _ to: String, _ secondsAgo: Double) -> Void)?
     var onStatus: ((String) -> Void)?
-    /// Why a press of the talk key went nowhere: shown while the key is held.
     var onNotice: ((String) -> Void)?
-    /// Translator shared with the listening side.
     var translate: ((_ text: String, _ from: String, _ to: String, _ trace: TranslateTrace) async -> String?)?
-    /// The press as a WAV → (what was said, translation); nil when Ming is unavailable or its reply is unusable.
     var interpret: ((_ wav: Data, _ from: String, _ to: String, _ trace: TranslateTrace) async -> (original: String, translation: String)?)?
-    /// Diagnostics: key released → transcript → translation → voice finished.
     var onTiming: ((SentenceTiming) -> Void)?
-    /// Key released → the first sound of the translation went out, for every real press.
     var onLatency: ((Double) -> Void)?
-    /// Set by the sound test: the next press is a rehearsal. It reports every stage here and stays
-    /// out of the meeting record and the diagnostics.
     var probe: SpeakProbe?
     private var releasedAt: Date?
-    /// When the latest `speak` call started sending audio, and how it was voiced.
     private(set) var firstAudioAt: Date?
     private(set) var lastVoice = ""
-    /// The real microphone to record from; the system default may be the virtual mic.
     var inputDevice: (() -> OutputDevice?)?
-    /// Language the room speaks (for "follow the room").
     var roomLanguage: (() -> String?)?
 
     let settings: AppSettings
     private(set) var phase: Phase = .idle {
         didSet {
             if phase == .idle { unitIdle() }
-            // Hands-free: a sentence said while the last one was translated waits its turn.
             if handsFree, phase == .idle || phase == .speaking, !segments.isEmpty {
                 DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.nextSegment() } }
             }
@@ -113,19 +95,9 @@ final class SpeakEngine {
     }
 
     private var mic = AVAudioEngine()
-    /// The mic with echo cancellation, shared with 电脑和会议室's room (`VoiceMic`): used when
-    /// `echoCancel` is on, or whenever the room already has it running.
     private let voiceMic: VoiceMic
-    /// On by default (`speakVP:off` for the plain mic). With the meeting on the speakers and the
-    /// plain mic, Ming took the meeting's own English for what I said and sent it back into the
-    /// meeting, every press, even one nobody spoke in; through the unit my sentences came through
-    /// whole (an ESP32 speaker 10 cm from the mic as me, the MacBook's speakers at 56 %).
     var echoCancel = true
-    /// The real mic to cancel the echo for; nil when it is unknown or virtual (nothing to cancel there).
     private var echoInput: AudioObjectID? {
-        // The plain room mic open: the unit readied after each press made it start again, which
-        // gave the unit back, and every restart churned the system audio tap and the voice output
-        // too, so later presses lost most of what was said and voices didn't reach the meeting.
         guard micTaken?() != true, let d = inputDevice?(), !d.isVirtualMic else { return nil }
         return d.id
     }
@@ -137,23 +109,15 @@ final class SpeakEngine {
     private var finals: [String] = []
     private var volatile = ""
     private var pressStarted = Date()
-    /// The press went to the plain mic: echo cancellation wasn't to be had (打开麦克风 holds the mic
-    /// without it, and lets go of the unit the press would need).
     private var pressPlain = false
-    /// Whether the plain room mic holds the mic (打开麦克风 without echo cancellation).
     var micTaken: (() -> Bool)?
-    /// The share of a stretch the Mac played its meeting through to the mic (`EchoGate.playedShare`).
     var playedShare: ((Date, Date) -> Double)?
-    /// Over this share, what the plain mic heard is the meeting's echo as much as you: Ming sent the
-    /// other side's own words back to them (as the ports drop it, Windows `EchoShare`).
     static let echoShare = 0.5
     private nonisolated(unsafe) var micRecorder: AVAudioFile?
     private nonisolated(unsafe) var micRecordURL: URL?
-    /// This press's audio as 16 kHz mono 16-bit samples for Ming; only touched on `micQueue`.
     private nonisolated(unsafe) var pressSamples: [Int16] = []
     private nonisolated(unsafe) var pressConverter = PCMConverter()
     private nonisolated static let pressFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false)!
-    /// Ming takes at most this much of a press (the talk key is meant for a sentence or two).
     private nonisolated static let pressLimit = 16_000 * 60
 
     private let synth = AVSpeechSynthesizer()
@@ -161,12 +125,9 @@ final class SpeakEngine {
     private var player = AVAudioPlayerNode()
     private var outObserver: NSObjectProtocol?
     private var outFormat: AVAudioFormat?
-    /// Where the output was last pointed, to wire a replaced engine the same way.
     private var outDevice: OutputDevice?
     private var outDeviceUID: String?
-    /// The device the latest `speak` call played to.
     private(set) var lastDevice: OutputDevice?
-    /// Debug: also write synthesized speech here.
     var debugOutputURL: URL?
 
     init(settings: AppSettings, voiceMic: VoiceMic) {
@@ -177,33 +138,20 @@ final class SpeakEngine {
 
     // MARK: Hands-free
 
-    /// 不用按键: the mic through echo cancellation the whole time, and every sentence I say is
-    /// interpreted as a press would be (`HandsFreeDetector` says where it starts and ends). Set by the
-    /// app: on with the setting, off while 打开麦克风 hears the room (that unit is shared, and the
-    /// room is heard unprocessed). The talk key still works and pauses the detector while held.
     var handsFree = false {
         didSet { if handsFree != oldValue { refreshHandsFree() } }
     }
-    /// A hands-free sentence with less voice than this is not sent: every real sentence had ≥ 1.95 s,
-    /// what Ming made a sentence of out of the meeting's leftovers ("啊！我要吓死你了！") 0.48 s.
     static let handsFreeVoiced = 0.8
-    /// The press being finished is a hands-free sentence.
     private var pressHandsFree = false
-    /// Whether a hands-free sentence is mostly what the meeting said around it (its lines or their
-    /// translations, `EchoMatch`): the meeting's leftovers through the unit, made into a sentence by
-    /// Ming ("营收增长；四名工程师；下半年" with the meeting at 100 % and nobody talking).
     var meetingSaid: ((_ text: String, _ from: Date, _ to: Date) async -> Bool)?
     private var handsFreeInput: AudioObjectID?
     private var handsFreeTimer: Timer?
-    /// Sentences heard, waiting for the one before them to be translated.
     private var segments: [(buffers: [AVAudioPCMBuffer], start: Date, end: Date)] = []
-    /// Only touched on `micQueue`.
     private nonisolated(unsafe) var detector = HandsFreeDetector()
     private nonisolated(unsafe) var recent: [AVAudioPCMBuffer] = []
     private nonisolated(unsafe) var recentSeconds = 0.0
     private nonisolated(unsafe) var segment: [AVAudioPCMBuffer]?
     private nonisolated(unsafe) var segmentStart = Date()
-    /// Debug (`handsFreeDump:<path>`): the echo-cancelled mic as raw 16 kHz float32, to tune the detector.
     private nonisolated(unsafe) var dump: FileHandle?
     func setHandsFreeDump(_ path: String?) {
         micQueue.sync {
@@ -214,11 +162,8 @@ final class SpeakEngine {
             dump = FileHandle(forWritingAtPath: path)
         }
     }
-    /// Audio kept from before the detector is sure: its onset and the first syllable's rise.
     private nonisolated static let lookback = 0.8
 
-    /// Attaches or lets go of the mic to match `handsFree`, the setting and the devices; checked again
-    /// every 2 s while on (the unit is made for one output: headphones plugged in need a new one).
     func refreshHandsFree() {
         let want = handsFree && settings.speakEnabled && echoCancel && analyzerFormat != nil ? echoInput : nil
         if let d = handsFreeInput, want != d || !voiceMic.serves("handsfree", input: d) { stopHandsFree() }
@@ -237,7 +182,6 @@ final class SpeakEngine {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    // Stopped while it was being made: nobody else may be left to give it back.
                     guard self.handsFreeInput == d else {
                         if self.phase == .idle { self.unitIdle() }
                         return
@@ -258,19 +202,16 @@ final class SpeakEngine {
         handsFreeInput = nil
         voiceMic.detach("handsfree")
         micQueue.sync { detector.reset(); segment = nil; recent = []; recentSeconds = 0 }
-        // The talk key's unit keeps the meeting at its level again (made anew once nobody uses it).
         voiceMic.advancedDucking = false
         if phase == .idle { unitIdle() }
         debugLog("hands-free: stopped")
     }
 
-    /// On `micQueue`: one block of the echo-cancelled mic.
     private nonisolated func hear(_ buf: AVAudioPCMBuffer) {
         let n = Int(buf.frameLength)
         guard n > 0, let d = buf.floatChannelData?[0] else { return }
         let seconds = Double(n) / buf.format.sampleRate
         dump?.write(Data(bytes: d, count: n * 4))
-        // The talk key held: that press has the mic.
         if feeding {
             segment = nil
             detector.reset()
@@ -312,7 +253,6 @@ final class SpeakEngine {
         nextSegment()
     }
 
-    /// Sends the oldest sentence heard on as a press would be, once the one before it is translated.
     private func nextSegment() {
         guard phase == .idle || phase == .speaking, !segments.isEmpty else { return }
         guard let format = analyzerFormat, let input = beginUtterance() else {
@@ -337,18 +277,12 @@ final class SpeakEngine {
 
     private func wireOutput() {
         out.attach(player)
-        // Pointing the output at a device (the first sentence, BlackHole installed, headphones
-        // plugged in) stops the engine, and the player stays silent until it is wired up again.
         outObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: out, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.outputChanged() }
         }
     }
 
-    /// Making or letting go of the echo-cancelling unit leaves an output engine that was already
-    /// there silent for good (still running, no notification; a restart doesn't help), so the room
-    /// would hear nothing: a new engine plays again. Not in the middle of a sentence.
     func newOutputEngine() {
-        // `player.isPlaying` stays true after the last buffer: the phase says whether a sentence is going out.
         if phase == .speaking {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 MainActor.assumeIsolated { self?.newOutputEngine() }
@@ -372,7 +306,6 @@ final class SpeakEngine {
         return room == settings.speakFromLang.code ? "en" : room
     }
 
-    /// Debug: the device the mic engine reads.
     var micDeviceName: String { AudioDevices.inputDevice(of: mic) }
 
     func setRecording(_ url: URL?) {
@@ -384,8 +317,6 @@ final class SpeakEngine {
 
     // MARK: Transcriber
 
-    /// Makes sure the speech model for my language is installed and learns the
-    /// audio format it wants. Each press then gets its own short-lived analyzer.
     func prepare() async {
         let lang = settings.speakFromLang
         guard analyzerLocale != lang.locale || analyzerFormat == nil else { return }
@@ -400,12 +331,6 @@ final class SpeakEngine {
         }
     }
 
-    /// While a meeting is listened to with 同声传译 on, the echo-cancelling unit is made ahead and
-    /// kept between presses. Made at each press, a press lost its first ~1.4 s and the fresh unit let
-    /// the meeting from the speakers through as what I said: a press nobody spoke in sent the meeting
-    /// back into it (audio-test, meeting at 56 %: 1.8.0 100 % and 0 sent; made per press 14–87 % and
-    /// 2 of 3 silent presses sent). The meeting app hears the virtual mic then, so the built-in mic
-    /// it mutes for other apps (#24) matters only outside a meeting, when it is let go of.
     var keepUnit = false {
         didSet { if keepUnit != oldValue, phase == .idle { unitIdle() } }
     }
@@ -421,9 +346,6 @@ final class SpeakEngine {
         analyzerLocale = ""
     }
 
-    /// One press = one analyzer over a finite stream. Finishing the stream and
-    /// awaiting `finalizeAndFinishThroughEndOfInput` guarantees every word
-    /// spoken during the press is in the result before we translate it.
     private var utterance: (input: RecognitionStream, text: Task<String, Never>)?
 
     private func beginUtterance() -> RecognitionStream? {
@@ -470,7 +392,6 @@ final class SpeakEngine {
             return
         }
         if probe == nil {
-            // 只听会议室 (older macOS): everyone is at the table and hears you; there is no call to speak into.
             if settings.listensToRoom { onNotice?(L("同声传译是给线上会议用的")); return }
             if outputDevice() == nil { onNotice?(L("还没装虚拟麦克风，线上的人听不到你")); return }
         }
@@ -487,7 +408,6 @@ final class SpeakEngine {
         startMic(format: format, input: input)
     }
 
-    /// The talk key turned out to be part of a chord: drop what was heard, send nothing.
     func pressCancelled() {
         guard phase == .listening else { return }
         stopMic()
@@ -505,13 +425,11 @@ final class SpeakEngine {
         guard phase == .listening else { return }
         debugLog("speak: press ended")
         releasedAt = Date()
-        // Keep the mic open a moment so the last syllable isn't cut off.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             MainActor.assumeIsolated { self?.finishUtterance() }
         }
     }
 
-    /// Debug path: feed an audio file as if it were spoken into the mic.
     func speakFile(_ url: URL) {
         guard let file = try? AVAudioFile(forReading: url) else {
             debugLog("speakFile: unreadable \(url.path)")
@@ -526,9 +444,6 @@ final class SpeakEngine {
         Task { await speakBuffers(buffers) }
     }
 
-    /// Feeds recorded audio in real time, as if someone said it into the mic, then "releases the
-    /// key". Real time matters: fed all at once, recognition would look slower than it is after release.
-    /// Returns false when the engine isn't ready.
     @discardableResult
     func speakBuffers(_ buffers: [AVAudioPCMBuffer]) async -> Bool {
         guard phase == .idle || phase == .speaking, let format = analyzerFormat, let input = beginUtterance() else {
@@ -555,7 +470,6 @@ final class SpeakEngine {
 
     private func startMic(format: AVAudioFormat, input cont: RecognitionStream) {
         if echoCancel || voiceMic.inUse, let device = echoInput {
-            // Made now, not ahead (see `VoiceMic`): the press hears from when it is ready.
             pressPlain = false
             let press = pressStarted
             voiceMic.prepare(input: device) { [weak self] ok in
@@ -567,7 +481,6 @@ final class SpeakEngine {
     }
 
     private func attachPress(_ press: Date, ok: Bool, device: AudioObjectID, format: AVAudioFormat, input cont: RecognitionStream) {
-        // The key was let go of before the unit was ready: the phase going idle found nothing to give back.
         guard phase == .listening, pressStarted == press, utterance?.input === cont else {
             if phase == .idle { unitIdle() }
             return
@@ -590,18 +503,11 @@ final class SpeakEngine {
 
     private func startPlainMic(format: AVAudioFormat, input cont: RecognitionStream) {
         pressPlain = true
-        // A unit left over (toggled off mid-press, a virtual mic) would starve the plain mic; one the
-        // room is using stays (the talk key is then on another mic).
         if !voiceMic.inUse { voiceMic.release() }
-        // A fresh engine each press: one kept from the last press still reports the input's old
-        // format after the device changed it (AirPods drop to call quality when their mic opens),
-        // and installing a tap in that format raises an exception that ends the app.
         if mic.isRunning { mic.inputNode.removeTap(onBus: 0); mic.stop() }
         mic = AVAudioEngine()
         let inputNode = mic.inputNode
         AudioDevices.pinInput(mic, to: inputDevice?())
-        // Pinning can leave the client format at BlackHole's rate/channels. A tap must use
-        // the real hardware format or AVAudioEngine raises an Objective-C exception.
         let inFormat = inputNode.inputFormat(forBus: 0)
         guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else {
             onNotice?(L("没有可用的麦克风"))
@@ -637,8 +543,6 @@ final class SpeakEngine {
         pressSamples.append(contentsOf: UnsafeBufferPointer(start: p[0], count: Int(c.frameLength)))
     }
 
-    /// The press as a WAV file in memory (44-byte RIFF header + little-endian samples), and whether
-    /// anyone spoke in it (`PressSpeech`).
     private func takePressWAV() -> (wav: Data?, spoken: Bool, voiced: Double) {
         let samples = micQueue.sync { () -> [Int16] in
             defer { pressSamples = [] }
@@ -688,11 +592,7 @@ final class SpeakEngine {
         releasedAt = nil
         let (wav, spoken, voiced) = takePressWAV()
         probe?.released = released
-        // A press too quiet for PressSpeech: nobody spoke (Ming would hear 嗯 in the room's hush and
-        // the meeting "Hmm."), or a voice from across the desk under a line the meeting's leftover
-        // echo raised. The on-device recognizer decides which once it has finished.
         let quiet = wav != nil && !spoken && probe == nil
-        // Hands-free: a blip or the meeting's leftovers, not a sentence (Ming would make one up).
         if pressHandsFree, voiced < Self.handsFreeVoiced {
             debugLog(String(format: "hands-free: only %.2f s of voice, nothing sent", voiced))
             Task { _ = await u.text.value }
@@ -702,7 +602,6 @@ final class SpeakEngine {
             onLive?(.idle, "", "")
             return
         }
-        // The meeting playing through most of a press on the plain mic: don't send its echo back.
         if pressPlain, probe == nil, let share = playedShare?(pressStarted, released), share > Self.echoShare {
             debugLog(String(format: "speak: the Mac played through %.0f%% of the press (echo), nothing sent", share * 100))
             Task { _ = await u.text.value }
@@ -716,12 +615,8 @@ final class SpeakEngine {
         let from = settings.speakFromLang.code
         let to = targetCode
         let trace = TranslateTrace()
-        // Pick the voice and ready its output while the sentence is translated: the device switch
-        // (and the engine restart it causes) is then over before the first sound.
         let route = route?(to) ?? .system(nil)
         if case .stream = route, let device = outputDevice() { configureOutput(format: Self.streamFormat, device: device); try? out.start() }
-        // Ming hears the audio while the on-device transcriber finishes, so its fallback costs nothing.
-        // A quiet press waits for the transcriber first: most are nobody speaking, not worth a call.
         let interpret = self.interpret
         let startMing = { Task { () -> (original: String, translation: String)? in
             guard let wav, let interpret else { return nil }
@@ -733,11 +628,6 @@ final class SpeakEngine {
             finals = []
             volatile = ""
             if quiet {
-                // Through echo cancellation the meeting's words don't reach the recognizer (none of
-                // 43 at 60 % on the speakers), so a sentence it heard is you. The plain mic has no
-                // such guarantee.
-                // A tap is too short for a sentence: a 0.3 s one with the meeting's echo around
-                // came back as two characters and went out.
                 guard !pressPlain, released.timeIntervalSince(pressStarted) >= 1, !text.isEmpty, !PressSpeech.filler(text) else {
                     debugLog("speak: nothing said in the press, nothing sent")
                     phase = .idle
@@ -750,8 +640,6 @@ final class SpeakEngine {
             let heard = await (early ?? startMing()).value
             debugLog("speak: on-device heard \(text.count) chars, Ming \(heard.map { "\($0.original.count)" } ?? "-") chars")
             if let heard { text = heard.original }
-            // Hands-free: a word or two is a noise Ming named (喂, 咳咳; the talk key is there for 好的),
-            // and the meeting's own words are its echo.
             let short = EchoMatch.units(text).count < 3
             var echo = false
             if pressHandsFree, !text.isEmpty, !short { echo = await meetingSaid?(text, pressStarted, released) == true }
@@ -761,11 +649,9 @@ final class SpeakEngine {
                 onLive?(.idle, "", "")
                 return
             }
-            // Ming answers recognition and translation together: its whole call counts as `recognize`.
             let textAt = Date()
             probe?.text = text
             probe?.textAt = textAt
-            // A lone 嗯 or "um" is the room's hush or an echo's tail, not a sentence to interpret.
             guard !text.isEmpty, !PressSpeech.filler(text) else {
                 if !text.isEmpty { debugLog("speak: only a filler heard, nothing sent") }
                 phase = .idle
@@ -774,8 +660,6 @@ final class SpeakEngine {
                 return
             }
             onLive?(.translating, text, "")
-            // Never speak the untranslated original into the room: if translation
-            // fails, say so on the bar and send nothing.
             let result: String?
             if let heard {
                 result = heard.translation
@@ -802,7 +686,6 @@ final class SpeakEngine {
                 probe?.finish()
                 return
             }
-            // The virtual mic went away during the press: no voice at all rather than the speakers.
             guard outputDevice() != nil else {
                 debugLog("speak: no virtual mic, nothing sent")
                 if probe == nil { onTiming?(timing(voice: nil)) }
@@ -841,9 +724,6 @@ final class SpeakEngine {
         return voices.max(by: { $0.quality.rawValue < $1.quality.rawValue }) ?? AVSpeechSynthesisVoice(language: lang)
     }
 
-    /// Where a translation goes: a virtual mic, so only the people online hear it. Never the
-    /// speakers: the room already heard you, and a voice after yours only talks over it. A
-    /// `speakOutput` stored before this (the speakers, say) no longer counts. nil: none installed.
     func outputDevice() -> OutputDevice? {
         let all = AudioDevices.outputs()
         if let d = all.first(where: { $0.uid == settings.speakOutput }), d.isVirtualMic { return d }
@@ -856,21 +736,14 @@ final class SpeakEngine {
         return await SpeechWriter.write(u, with: synth)
     }
 
-    /// `device` overrides the chosen output (the virtual mic sound test).
-    /// How a language is voiced: a PCM stream (Ming's built-in voices or the user's cloned one) or
-    /// a voice on this Mac (nil: the best one for the language).
     enum VoiceRoute {
         case stream((String) -> AsyncThrowingStream<Data, Error>)
         case system(String?)
     }
 
-    /// Set by the app: the voice chosen for a language.
     var route: ((String) -> VoiceRoute)?
-    /// Who speaks a stream, for logs and the test ("ming", or the service: "zenmux").
     var streamName: () -> String = { "ming" }
 
-    /// Returns after the audio has played. A stream that fails before any audio falls back to the
-    /// Mac's voice, so the room always hears the sentence.
     func speak(_ text: String, language: String, device override: OutputDevice? = nil, route forced: VoiceRoute? = nil) async {
         var voiceID: String?
         firstAudioAt = nil
@@ -911,9 +784,6 @@ final class SpeakEngine {
         debugLog("spoke \(buffers.count) buffers to \(device?.name ?? "default output") id=\(device?.id ?? 0) readback=\(cur)")
     }
 
-    /// Core Audio restarted (virtual mic install): device IDs changed, rebuild the output next time.
-    /// Plays 24 kHz mono 16-bit PCM chunks as they arrive. Returns false if nothing came, so the
-    /// caller can fall back to the system voice.
     private func speakStream(_ stream: AsyncThrowingStream<Data, Error>, device: OutputDevice?) async -> Bool {
         let format = Self.streamFormat
         let started = Date()
@@ -939,8 +809,6 @@ final class SpeakEngine {
                     firstAudioAt = Date()
                     configureOutput(format: format, device: device)
                 }
-                // The engine may have been replaced while the stream ran (the echo-cancelling unit
-                // let go): a player not wired for this format throws, and that took the app down.
                 guard outputReady(for: format) else { break }
                 player.scheduleBuffer(buf, completionHandler: nil)
                 if !player.isPlaying { player.play() }
@@ -951,7 +819,6 @@ final class SpeakEngine {
             if count == 0 { return false }
         }
         guard count > 0 else { return false }
-        // Wait for the queued audio to finish before the next utterance.
         if let tail = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 240), let first = firstAudioAt {
             tail.frameLength = 240
             await waitPlayed(tail, limit: max(0, seconds - Date().timeIntervalSince(first)) + 2)
@@ -962,8 +829,6 @@ final class SpeakEngine {
 
     private static let streamFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 24000, channels: 1, interleaved: false)!
 
-    /// Schedules `buffer` last and waits until it has played, or `limit` seconds. A stalled output
-    /// never calls back, and would otherwise hold every later sentence; it is rebuilt instead.
     private func waitPlayed(_ buffer: AVAudioPCMBuffer, limit: TimeInterval) async {
         guard outputReady(for: buffer.format) else { return }
         let once = Once()
@@ -1011,8 +876,6 @@ final class SpeakEngine {
         outDevice = device
     }
 
-    /// The player is wired for `format` and the engine runs (wired again after the engine was
-    /// replaced or reset); false when it can't be started.
     private func outputReady(for format: AVAudioFormat) -> Bool {
         if outFormat != format { configureOutput(format: format, device: outDevice) }
         guard !out.isRunning else { return true }
@@ -1022,13 +885,11 @@ final class SpeakEngine {
         }
     }
 
-    /// Plays a short sample through the chosen output so the user can check it.
     func preview() {
         Task { await speak(targetCode.hasPrefix("zh") ? "这是对方会听到的声音。" : "This is the voice the room will hear.", language: targetCode) }
     }
 }
 
-/// Runs its closure once, from whichever thread gets there first (the audio callback or a timer).
 final class Once: @unchecked Sendable {
     private let lock = NSLock()
     private var done = false
@@ -1041,9 +902,6 @@ final class Once: @unchecked Sendable {
     }
 }
 
-/// The Mac's voice rendered to buffers. `AVSpeechSynthesizer.write` ends with an empty buffer, but
-/// on macOS 14 that last buffer never comes (all the audio does): the delegate's didFinish, which
-/// does come, ends it too, whichever is first.
 final class SpeechWriter: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var buffers: [AVAudioPCMBuffer] = []
@@ -1076,32 +934,24 @@ final class SpeechWriter: NSObject, AVSpeechSynthesizerDelegate, @unchecked Send
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) { end() }
 }
 
-/// Whether anyone spoke during a press of the talk key, from its 16 kHz samples: 0.3 s of 30 ms
-/// frames over three times the press's own quiet (its quietest tenth), between -44 and -36 dBFS. A silent
-/// press in a quiet room came back from Ming as "嗯。" and went out as "Hmm.".
 enum PressSpeech {
     static let frame = 480
     static let needed = 0.3
 
-    /// Nothing but fillers (嗯, 啊, um, hmm…), whatever the punctuation.
     static func filler(_ text: String) -> Bool {
         let words = text.lowercased().split { !$0.isLetter }.map(String.init)
         guard !words.isEmpty else { return true }
-        // A heading with nothing after it ("翻译结果：", "Translation:"): Ming's answer to the meeting's
-        // noise in a hands-free stretch nobody spoke in, not a sentence.
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let last = trimmed.last, ":：".contains(last), trimmed.count <= 12 { return true }
         return words.allSatisfy { w in fillers.contains(w) || (w.count > 1 && Set(w).count == 1 && fillers.contains(String(w.first!))) }
     }
     static let fillers: Set<String> = ["嗯", "啊", "呃", "哦", "唔", "额", "噢", "哎", "um", "uh", "hmm", "hm", "mm", "mhm", "ah", "oh", "er", "えー", "あの", "음", "어"]
 
-    /// What the check saw: seconds over the line, the press's quiet and the line (RMS, 0–1).
     struct Measure: Equatable {
         var voiced: Double
         var floor: Float
         var line: Float
         var spoken: Bool { voiced >= PressSpeech.needed }
-        /// For the log: a line held at its −36 dBFS cap means the press's quiet was loud.
         var summary: String {
             func db(_ v: Float) -> String { v > 0 ? String(format: "%.0f", 20 * log10(v)) : "-inf" }
             return "voiced \(String(format: "%.2f", voiced)) s, quiet \(db(floor)) dBFS, line \(db(line)) dBFS"
@@ -1120,8 +970,6 @@ enum PressSpeech {
             levels.append((sum / Float(frame)).squareRoot())
             i += frame
         }
-        // A press can be speech from end to end: its quietest tenth is the room only when it has
-        // pauses, so the line stops at -36 dBFS, which a voice into the mic clears anyway.
         let floor = levels.sorted()[levels.count / 10]
         let line = min(0.016, max(0.0063, floor * 3))
         let voiced = Double(levels.filter { $0 >= line }.count) * Double(frame) / 16_000

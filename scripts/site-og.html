@@ -1,14 +1,11 @@
 <!doctype html>
-<!-- The website's share cards, 1200×630: site-og.html?lang=zh → site/og.png, ?lang=en|ja|ko → site/og-<lang>.png.
-     Rendered by scripts/site-images.sh. The right half shows what the app does (notes + a subtitle) rather than
-     leaving room empty; its wording follows the app's own UI strings in Resources/<lang>.lproj. -->
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&amp;family=Noto+Sans+SC:wght@500;700;900&amp;family=Noto+Sans+JP:wght@500;700;900&amp;family=Noto+Sans+KR:wght@500;700;900&amp;display=swap">
 <style>
 html, body { margin: 0; }
-body { word-break: keep-all; } /* Korean wraps at spaces, not mid-word */
+body { word-break: keep-all; }
 .card { width: 1200px; height: 630px; box-sizing: border-box; padding: 64px 72px 72px; background: #F3F4F6; font-family: Inter, var(--cjk), sans-serif; color: #15171C; display: flex; gap: 40px; position: relative; overflow: hidden; }
 .left { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: space-between; }
 .top { display: flex; align-items: center; gap: 16px; }
@@ -57,7 +54,6 @@ body { word-break: keep-all; } /* Korean wraps at spaces, not mid-word */
   <div class="stripe"></div>
 </div>
 <script>
-// sub is [before, accent, after]: 说得出 (speaking into the room) is the part only Cicada does.
 const CARDS = {
   zh: { lang: "zh-CN", cjk: "'Noto Sans SC', 'PingFang SC'", name: "知了", en: "Cicada",
     slogan: "任何会议、任何直播，<br>没有语言障碍。", sub: ["听得懂，", "说得出", "，记得住。"],

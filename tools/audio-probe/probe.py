@@ -1,12 +1,3 @@
-"""Can a model on an aggregator hear meetings the way Ming does for the ports?
-
-Sends each clip through the ports' listening request (the Linux prompt, instruction and parser, word
-for word) to Ming on Ling and to audio models on ZenMux, and reports per model: latency, whether the
-reply parsed, the language it reported, how far the original is from the known text, and the
-translation. Keys are read from the dev app's 0600 files and never printed.
-
-    python3 -I tools/audio-probe/probe.py <clips folder> [--runs 2] [--models a,b] > report.md
-"""
 import argparse
 import base64
 import json
@@ -49,7 +40,6 @@ def wav_bytes(samples: array) -> bytes:
 
 
 def clips(folder):
-    """(name, wav, expected text or None, spoken language or None)."""
     out = []
     for f in sorted(os.listdir(folder)):
         if f.endswith(".wav") and f != "sample.wav":
@@ -57,11 +47,9 @@ def clips(folder):
             text = open(os.path.join(folder, name + ".txt")).read().strip()
             lang = None if name.startswith("none") else "zh-CN" if name.startswith(("zh", "mix")) else name.split("-")[0]
             out.append((name, open(os.path.join(folder, f), "rb").read(), text, lang))
-    # The sample meeting, cut the way the ports cut it (no known text: compare the models).
     path = os.path.join(folder, "sample.pcm")
     if not os.path.exists(path):
         return out
-    # afconvert writes WAVE_FORMAT_EXTENSIBLE, which `wave` won't read: take the data chunk itself.
     raw = open(path, "rb").read()
     at = 12
     while raw[at:at + 4] != b"data":
@@ -77,7 +65,6 @@ def clips(folder):
 
 
 def ask(model, wav, target, hint):
-    """One listening request. Returns (ms, reply text or None, error or None)."""
     if model == LING[2]:
         base, k = LING[1], key("ling")
         audio = {"type": "audio_url", "audio_url": {"url": "data:audio/wav;base64," + base64.b64encode(wav).decode()}}
@@ -85,7 +72,6 @@ def ask(model, wav, target, hint):
     else:
         base, k = ZENMUX, key("zenmux")
         data = base64.b64encode(wav).decode()
-        # Qwen's omni models take the audio as a data URL inside input_audio (DashScope's form).
         if model.startswith("qwen/"):
             data = "data:audio/wav;base64," + data
         audio = {"type": "input_audio", "input_audio": {"data": data, "format": "wav"}}
@@ -115,7 +101,6 @@ def ask(model, wav, target, hint):
 
 
 def distance(a, b):
-    """Character error rate of `a` against `b`, punctuation and case ignored (words for English)."""
     def norm(s):
         s = re.sub(r"[^\w]+", " ", s.lower()).strip()
         return s.split() if re.search(r"[a-z]", s) and not re.search(r"[぀-鿿가-힯]", s) else list(s.replace(" ", ""))
@@ -154,7 +139,7 @@ def main():
                 results[m].append(row)
                 print("%-34s %-9s %5d ms %s" % (m, name, ms, err or (heard.original[:40] if heard else "(dropped)")), file=sys.stderr)
                 if m == LING[2]:
-                    time.sleep(0.6)  # Ling allows ~2 requests a second
+                    time.sleep(0.6)
     json.dump(results, open(os.path.join(a.folder, "..", "results.json"), "w"), ensure_ascii=False, indent=1)
     report(results)
 

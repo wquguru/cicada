@@ -1,12 +1,8 @@
-// Renders the app icon (logo B: a cicada's eyes and wings peeking over a white subtitle card, on orange)
-// into an .iconset. `CicadaIcon [--dev] <out.iconset>`; --dev adds a "DEV" band.
 import AppKit
 
-let orange = NSColor(srgbRed: 0.91, green: 0.33, blue: 0.17, alpha: 1)   // #E8552B
-let ink = NSColor(srgbRed: 0.082, green: 0.09, blue: 0.11, alpha: 1)     // #15171C
+let orange = NSColor(srgbRed: 0.91, green: 0.33, blue: 0.17, alpha: 1)
+let ink = NSColor(srgbRed: 0.082, green: 0.09, blue: 0.11, alpha: 1)
 
-// A copy of CicadaLogo in Sources/Cicada/Onboarding.swift (this target can't import the app);
-// keep it, that file and site/icon.svg in step.
 enum CicadaLogo {
     static let orange = rgb(0xE8552B)
     static let ink = rgb(0x15171C)
@@ -28,13 +24,10 @@ enum CicadaLogo {
         c.move(to: CGPoint(x: 78, y: 39)); c.addQuadCurve(to: CGPoint(x: 55, y: 25), control: CGPoint(x: 73, y: 14))
     }
     static let eyes: [(CGFloat, CGFloat)] = [(36, 51), (63, 49)]
-    /// The card leans 5° and bleeds off the right and bottom edges, so the eyes peek over it.
     static func tilt(_ c: CGContext) {
         c.translateBy(x: 50, y: 70); c.rotate(by: -5 * .pi / 180); c.translateBy(x: -50, y: -70)
     }
 
-    /// The whole icon, clipped to its squircle. `unit` is device pixels per design unit
-    /// (shadows are in device space).
     static func drawIcon(_ c: CGContext, unit: CGFloat) {
         c.saveGState()
         c.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: 100, height: 100), cornerWidth: 23, cornerHeight: 23, transform: nil))
@@ -82,8 +75,6 @@ enum CicadaLogo {
     }
 }
 
-/// `ios`: the iPhone and iPad icon, a full-bleed opaque square (the system draws the corners and
-/// App Store Connect refuses an alpha channel); otherwise the macOS grid with its margin and shadow.
 func render(_ px: Int, dev: Bool, ios: Bool = false) -> Data {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8,
                                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
@@ -91,9 +82,6 @@ func render(_ px: Int, dev: Bool, ios: Bool = false) -> Data {
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     let s = CGFloat(px) / 1024
-    // macOS icon grid: an 824 pt body inset 100 pt, corner ≈ 185 pt.
-    // iOS: the body overflows the canvas by 80 pt a side, so the logo's own rounded tile reaches
-    // past every corner and the system's mask is the only rounding.
     let body = ios ? NSRect(x: -80 * s, y: -80 * s, width: 1184 * s, height: 1184 * s) : NSRect(x: 100 * s, y: 100 * s, width: 824 * s, height: 824 * s)
     let squircle = ios ? NSBezierPath(rect: NSRect(x: 0, y: 0, width: 1024 * s, height: 1024 * s))
         : NSBezierPath(roundedRect: body, xRadius: 185 * s, yRadius: 185 * s)
@@ -108,7 +96,6 @@ func render(_ px: Int, dev: Bool, ios: Bool = false) -> Data {
     squircle.fill()
     NSShadow().set()
 
-    // Design space is the 100-unit logo, y down, mapped onto the body.
     let c = NSGraphicsContext.current!.cgContext
     c.saveGState()
     c.translateBy(x: body.minX, y: body.maxY)
@@ -117,8 +104,6 @@ func render(_ px: Int, dev: Bool, ios: Bool = false) -> Data {
     c.restoreGState()
 
     if dev {
-        // Dev builds: a dark "DEV" band across the bottom, so the Dock, Finder and
-        // Spotlight tell them apart from the installed app.
         NSGraphicsContext.saveGraphicsState()
         squircle.addClip()
         ink.setFill()
@@ -136,7 +121,6 @@ func render(_ px: Int, dev: Bool, ios: Bool = false) -> Data {
     if ios, let image = rep.cgImage,
        let opaque = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
                               space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) {
-        // Drawn again without an alpha channel: a fully opaque RGBA PNG is still refused.
         opaque.draw(image, in: CGRect(x: 0, y: 0, width: px, height: px))
         if let flat = opaque.makeImage() { return NSBitmapImageRep(cgImage: flat).representation(using: .png, properties: [:])! }
     }
@@ -145,7 +129,6 @@ func render(_ px: Int, dev: Bool, ios: Bool = false) -> Data {
 
 let args = Array(CommandLine.arguments.dropFirst())
 let dev = args.contains("--dev")
-// --ios <file.png>: the 1024 px iOS icon only (ios/scripts/build.sh).
 if let i = args.firstIndex(of: "--ios"), i + 1 < args.count {
     try render(1024, dev: dev, ios: true).write(to: URL(fileURLWithPath: args[i + 1]))
     exit(0)

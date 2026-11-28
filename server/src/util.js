@@ -1,5 +1,3 @@
-// Small helpers shared by the routes. No dependencies: Web Crypto and the Workers runtime only.
-
 const enc = new TextEncoder();
 
 export function b64url(bytes) {
@@ -8,7 +6,6 @@ export function b64url(bytes) {
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** Decodes base64url (or plain base64); null when it isn't. */
 export function unb64(text) {
   if (typeof text !== "string" || !/^[A-Za-z0-9_\-+/]*={0,2}$/.test(text)) return null;
   try {
@@ -31,7 +28,6 @@ export function random(n) {
   return crypto.getRandomValues(new Uint8Array(n));
 }
 
-/** Equal in time that doesn't depend on where the bytes differ. */
 export function same(a, b) {
   a = new Uint8Array(a);
   b = new Uint8Array(b);
@@ -44,11 +40,6 @@ export function now() {
   return Math.floor(Date.now() / 1000);
 }
 
-/**
- * What a rate limit counts as one visitor: an IPv4 address, or an IPv6 /64. One home or phone
- * usually gets a whole /64, so counting single IPv6 addresses would let anyone step past every
- * per-address limit by picking another address from their own block.
- */
 export function ipGroup(ip) {
   if (!ip || !ip.includes(":")) return ip || "local";
   const [head, tail = ""] = ip.toLowerCase().split("::");
@@ -57,7 +48,6 @@ export function ipGroup(ip) {
   return groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":") + "::/64";
 }
 
-/** The visitor's address (group), hashed with a salt that changes every day: enough to rate-limit, not to track. */
 export async function ipKey(request, env) {
   const ip = ipGroup(request.headers.get("CF-Connecting-IP"));
   const day = new Date().toISOString().slice(0, 10);
@@ -77,7 +67,6 @@ export function json(body, status = 200, headers = {}) {
   });
 }
 
-/** Every error is a fixed code (the apps word it in their own language) and maybe when to retry. */
 export function fail(status, code, extra = {}) {
   const headers = extra.retryAfter ? { "Retry-After": String(extra.retryAfter) } : {};
   return json({ code, ...extra }, status, headers);

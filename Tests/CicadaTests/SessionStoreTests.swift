@@ -2,14 +2,12 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// Ending a meeting: an empty one goes, one whose recording holds speech stays (issue #5).
 @MainActor @Suite struct SessionStoreTests {
     func store() -> SessionStore {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("cicada-store-\(UUID().uuidString)")
         return SessionStore(root: root)
     }
 
-    /// The partial file the recorder writes while the meeting runs.
     func record(_ store: SessionStore, _ id: String) {
         FileManager.default.createFile(atPath: AudioFileWriter.partial(store.systemAudioURL(id)).path, contents: Data(count: 1024))
     }

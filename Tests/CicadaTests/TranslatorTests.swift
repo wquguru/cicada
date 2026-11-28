@@ -4,7 +4,6 @@ import Testing
 
 @Suite struct TranslatorTests {
     @Test func remarkInsteadOfTranslationIsDropped() {
-        // Issue #2: Ling commented on a garbled line and the remark became the subtitle.
         let reply = "The subtitle appears to be a mix of Chinese and heavily garbled English (likely from poor audio or ASR errors). Here is the best-effort translation:"
         #expect(TranslationService.cleanTranslation(reply, target: "en-US") == nil)
         #expect(TranslationService.cleanTranslation(reply, target: "zh-CN") == nil)
@@ -18,8 +17,6 @@ import Testing
     }
 
     @Test func translatedInstructionIsDropped() {
-        // Ling answered "Translate this into Chinese please." and an empty subtitle with "翻译。":
-        // the fixed "Translate." instruction, translated.
         #expect(TranslationService.cleanTranslation("翻译。", target: "zh-CN") == nil)
         #expect(TranslationService.cleanTranslation("Translate.", target: "en-US") == nil)
         #expect(TranslationService.cleanTranslation("翻訳してください。", target: "ja") == nil)
@@ -35,7 +32,6 @@ import Testing
         #expect(TranslationService.cleanTranslation("我们用 API 和 SDK。", target: "zh-CN") == "我们用 API 和 SDK。")
     }
 
-    /// Replies found in stored meetings.
     @Test func remarksFromRecordedMeetings() {
         let note = "好的。\n\n(Note: The subtitle \"Right.\" is a very short affirmation. In a live meeting context, it can be translated in a few ways:\n- 对。\n- 没错。)"
         #expect(TranslationService.cleanTranslation(note, target: "zh-CN") == "好的。")
@@ -59,8 +55,6 @@ import Testing
         #expect(TranslationService.cleanTranslation("我们周五发布。", target: "en-US") == nil)
     }
 
-    // What you say is spoken into the room only as Ming's translation; anything that is not
-    // clearly one sends the press to the on-device path instead.
     @MainActor @Test func interpretationNeedsBothLinesAndARealTranslation() {
         let good = TranslationService.parseInterpretation("ORIGINAL: 我们周五发布。\nTRANSLATION: We ship on Friday.", target: "en-US")
         #expect(good?.original == "我们周五发布。")
@@ -85,7 +79,6 @@ import Testing
         #expect(!g.down && g.open(t))
         g.unreachable(t)
         #expect(g.down && !g.open(t.addingTimeInterval(59)))
-        // After the minute one call goes through, still marked down until it answers.
         #expect(g.open(t.addingTimeInterval(60)) && g.down)
         g.succeeded()
         #expect(!g.down && g.open(t) && g.failures == 0)
@@ -107,14 +100,12 @@ import Testing
     }
 }
 
-/// 语音和文字只发给你的服务 (issue #15): Google is never asked, and nothing says it can't be reached.
 @MainActor @Suite struct GoogleOffTests {
     @Test func partialLinesShowTheOriginalWithoutAskingGoogle() async {
         let t = TranslationService(ling: LingClient())
         t.googleOff = true
         var drafts = 0
         t.onDraft = { _, _ in drafts += 1 }
-        // Were Google asked, this would count failures and mark it down.
         t.simulateGoogleDown = true
         for _ in 0..<3 { #expect(await t.translate("We ship on Friday", source: "en-US", target: "zh-CN", kind: .draft) == nil) }
         #expect(drafts == 0)

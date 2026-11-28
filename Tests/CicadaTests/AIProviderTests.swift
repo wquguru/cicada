@@ -19,7 +19,6 @@ struct AIProviderTests {
         #expect(openai["max_tokens"] == nil && openai["temperature"] == nil)
         let custom = shaped(.custom)
         #expect(custom["max_tokens"] as? Int == 50 && custom["thinking"] == nil && custom["reasoning"] == nil)
-        // Qwen3 on vLLM / SGLang / llama.cpp: thinking off through the chat template.
         #expect((custom["chat_template_kwargs"] as? [String: Bool])?["enable_thinking"] == false)
         var plain: [String: Any] = [:]
         AIConfig(provider: .custom, base: nil, textModel: "m").shape(&plain, maxTokens: 50, templateKwargs: false)
@@ -34,7 +33,6 @@ struct AIProviderTests {
         }
         #expect(!AIConfig.thought(reply(["content": "周五发布。"])))
         #expect(AIConfig.thought(reply(["content": "周五发布。", "reasoning_content": "The user wants…"])))
-        // A reasoning parser on the server: the answer itself sits in reasoning_content.
         #expect(AIConfig.thought(reply(["content": "", "reasoning_content": "周五发布。"])))
         #expect(AIConfig.thought(reply(["content": "<think>hmm</think>周五发布。"])))
         #expect(AIConfig.thought(reply(["content": "周五发布。"], usage: ["completion_tokens_details": ["reasoning_tokens": 212]])))

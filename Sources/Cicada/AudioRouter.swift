@@ -6,13 +6,10 @@ import CoreMedia
 
 // MARK: - Audio routing
 
-/// Moves audio off the real-time thread, converts it for the analyzer,
-/// feeds the live transcriber, and keeps a short ring buffer for language detection.
 final class AudioRouter: @unchecked Sendable {
     struct Stats {
         var voicedTotal: Double
         var silenceRun: Double
-        /// Seconds of audio since the last pause of ≥ `gapSeconds`.
         var sinceGap: Double
         var recentVoiced: Double
     }
@@ -26,16 +23,11 @@ final class AudioRouter: @unchecked Sendable {
     private var ring: [(buffer: AVAudioPCMBuffer, seconds: Double, voiced: Bool)] = []
     private var ringSeconds = 0.0
     private var ringLimit = 10.0
-    /// While the language is unknown the audio is kept longer: the right model, once it is known
-    /// or fetched, hears it all again instead of the wrong model's guesses being kept.
     func holdAudio(_ seconds: Double) {
         queue.async { [self] in ringLimit = seconds }
     }
-    /// Speech, pauses and gaps; pauses are on the analyzer's clock.
     private var activity = VoiceActivity(gap: AudioRouter.gapSeconds)
 
-    /// Voiceprints (说话人识别): the last `voiceLimit` seconds as 16 kHz mono floats, placed on
-    /// the analyzer clock so a result's time range finds its audio.
     private let voiceConverter = PCMConverter()
     private let voiceFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
     private var voiceCapture = false
@@ -50,12 +42,10 @@ final class AudioRouter: @unchecked Sendable {
         }
     }
 
-    /// 16 kHz mono audio between two analyzer-clock times, or nil when it's no longer kept.
     func voiceSamples(from start: Double, to end: Double) -> [Float]? {
         queue.sync {
             let a = Int(((start - voiceStart) * 16000).rounded()), b = Int(((end - voiceStart) * 16000).rounded())
             guard a >= 0, b > a, b <= voice.count + 1600 else { return nil }
-            // A voiceprint uses at most `Voiceprints.maxSeconds`; don't copy more.
             return Array(voice[a..<min(b, voice.count, a + Int(Voiceprints.maxSeconds * 16000))])
         }
     }
@@ -72,23 +62,19 @@ final class AudioRouter: @unchecked Sendable {
         }
     }
 
-    /// On this queue, for each block at the speech line (电脑和会议室 gates the room mic with it).
     private var onLoud: (() -> Void)?
     func setOnLoud(_ f: (() -> Void)?) { queue.async { [self] in onLoud = f } }
 
     private var recordURL: URL?
     private var recorder: AVAudioFile?
-    /// The recording keeps the meeting's clock (the lines' times): when it began and what is written.
     private var recordStart: Date?
     private var recordedFrames: AVAudioFramePosition = 0
 
-    /// When a block counts as speech (pauses, language detection, the silence that ends a meeting).
     func setRoomGate(_ on: Bool) {
         queue.async { [self] in activity.gate = VoiceGate(adaptive: on) }
     }
     func gateThreshold() -> Float { queue.sync { activity.gate.threshold } }
 
-    /// Loudest buffer since the last `takeLevel()`, for the level meter.
     private var peak: Float = 0
     func takeLevel() -> Float {
         queue.sync {
@@ -109,7 +95,6 @@ final class AudioRouter: @unchecked Sendable {
         let rms = (sum / Float(n)).squareRoot()
         peak = max(peak, rms)
         let seconds = Double(n) / mono.format.sampleRate
-        // Before the onset is confirmed: the first 30 ms of a remote sentence are already echo in the room.
         if let onLoud, rms >= activity.gate.threshold { onLoud() }
         let voiced = activity.feed(UnsafeBufferPointer(start: data[0], count: n), rate: mono.format.sampleRate,
                                    clock: fed, pauses: sink != nil)
@@ -126,12 +111,9 @@ final class AudioRouter: @unchecked Sendable {
         }
     }
 
-    /// `replaySeconds` re-feeds recent audio so a newly detected language
-    /// doesn't lose the words spoken while detection was running.
-    /// Starts writing everything the analyzer hears to an AAC file (nil stops).
     func setRecording(_ url: URL?) {
         queue.sync {
-            recorder = nil // closes the previous file
+            recorder = nil
             recordURL = url
             recordStart = url == nil ? nil : Date()
             recordedFrames = 0
@@ -144,8 +126,6 @@ final class AudioRouter: @unchecked Sendable {
             recorder = AudioFileWriter.open(AudioFileWriter.partial(url), format: buffer.format)
             if recorder == nil { recordURL = nil; return }
         }
-        // A process tap sends nothing while the Mac is silent: the gap goes in as silence, or every
-        // later line's time would point past its words in the recording.
         if let recordStart {
             let rate = buffer.format.sampleRate
             let due = (Date().timeIntervalSince(recordStart) * rate).rounded() - Double(buffer.frameLength)
@@ -159,7 +139,7 @@ final class AudioRouter: @unchecked Sendable {
     private func writeSilence(_ frames: AVAudioFramePosition, format: AVAudioFormat) {
         let chunk = AVAudioFrameCount(format.sampleRate)
         guard let zeros = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk) else { return }
-        zeros.frameLength = chunk // sizes the buffers to the whole capacity before they are cleared
+        zeros.frameLength = chunk
         for b in UnsafeMutableAudioBufferListPointer(zeros.mutableAudioBufferList) {
             if let data = b.mData { memset(data, 0, Int(b.mDataByteSize)) }
         }
@@ -172,13 +152,9 @@ final class AudioRouter: @unchecked Sendable {
         }
     }
 
-    /// Seconds of audio given to the current analyzer, replay included: the analyzer's clock. A
-    /// result ending at t was spoken (fed − t) seconds ago, since the tap runs in real time.
     private var fed = 0.0
     func fedSeconds() -> Double { queue.sync { fed } }
-    /// Analyzer clock now, the silence running at the end of it, and the last pause before that.
     func clock() -> (fed: Double, silence: Double, pause: (end: Double, length: Double)) {
-        // The return type spelled out: Swift 6.4 (Xcode 27) crashes inferring this labelled tuple.
         queue.sync { () -> (fed: Double, silence: Double, pause: (end: Double, length: Double)) in (fed, activity.silenceRun, activity.pause) }
     }
 
@@ -187,7 +163,6 @@ final class AudioRouter: @unchecked Sendable {
         queue.sync {
             fed = 0
             activity.clearPause()
-            // The clock restarts; replayed audio (below) keeps its samples at the new times.
             let keptVoice = voice
             voice = []
             voiceStart = 0
@@ -204,9 +179,6 @@ final class AudioRouter: @unchecked Sendable {
                 }
                 for buffer in replay.reversed() { stream.append(buffer) }
                 fed = acc
-                // The ring can replay more than the voice keeps (3 min held for the language against
-                // 90 s): the kept voice is the end of the replay, not its start, or every later line
-                // looks past the end of it and the whole meeting goes without voices.
                 voice = Array(keptVoice.suffix(Int(acc * 16000)))
                 voiceStart = max(0, acc - Double(voice.count) / 16000)
             }
@@ -245,8 +217,6 @@ final class AudioRouter: @unchecked Sendable {
         }
     }
 
-    /// The last `seconds` of speech with the silences left out: what was said, even when nobody is
-    /// speaking now (a model that arrives after the talk stopped can still check it).
     func voicedSnapshot(seconds: Double) -> (buffers: [AVAudioPCMBuffer], seconds: Double) {
         queue.sync {
             var acc = 0.0

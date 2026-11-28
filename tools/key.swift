@@ -1,10 +1,6 @@
 import CoreGraphics
 import Foundation
 
-// Hold a key or the right ⌥ alone, as the talk key would be held.
-//   key                      ⌥ Space for 1.5 s (the old default)
-//   key right [seconds]      right ⌥ on its own
-//   key <keyCode> <carbonModifiers> [seconds]   e.g. key 49 4096 → ⌃ Space
 let args = CommandLine.arguments
 let hold = useconds_t((Double(args.count > 3 ? args[3] : (args.count == 3 && args[1] == "right" ? args[2] : "1.5")) ?? 1.5) * 1_000_000)
 

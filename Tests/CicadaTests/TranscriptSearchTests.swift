@@ -10,7 +10,6 @@ import Testing
     @Test func aNameAlsoFindsHowItWasMisheard() {
         let notes = [NoteTerm(name: "江充", note: "", heard: ["江松"]), NoteTerm(name: "Ling", note: "", heard: [])]
         #expect(TranscriptSearch.terms("江充", notes: notes) == ["江充", "江松"])
-        // Searching the misheard form finds the right one too; an unrelated term stays out.
         #expect(TranscriptSearch.terms(" 江松 ", notes: notes) == ["江松", "江充"])
         #expect(TranscriptSearch.terms("  ", notes: notes).isEmpty)
     }

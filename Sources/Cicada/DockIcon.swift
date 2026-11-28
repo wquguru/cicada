@@ -1,7 +1,5 @@
 import AppKit
 
-/// The Dock tile: the app icon, with an orange dot at the top right while a meeting is being
-/// recorded (the same "live" the menu bar icon shows).
 @MainActor
 enum DockIcon {
     private(set) static var live = false
@@ -9,8 +7,6 @@ enum DockIcon {
     static func show(live: Bool) {
         self.live = live
         let tile = NSApp.dockTile
-        // Drawn ourselves either way: after the app turns regular again the Dock can otherwise keep
-        // a blank tile until something redraws it.
         let view = NSImageView(frame: NSRect(origin: .zero, size: tile.size))
         view.image = image(live: live)
         view.imageScaling = .scaleProportionallyUpOrDown
@@ -24,7 +20,6 @@ enum DockIcon {
         return NSImage(size: size, flipped: false) { rect in
             icon.draw(in: rect)
             guard live else { return true }
-            // Inside the icon's own rounded square (about 80% of the canvas, centered), top right.
             let d = rect.width * 0.22
             let dot = NSRect(x: rect.maxX - rect.width * 0.1 - d * 0.8, y: rect.maxY - rect.height * 0.1 - d * 0.8,
                              width: d, height: d)

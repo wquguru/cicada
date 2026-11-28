@@ -68,12 +68,10 @@ import Testing
         #expect(UpdateChecker.due(last: nil, now: now, after: UpdateChecker.every))
         #expect(UpdateChecker.due(last: now.addingTimeInterval(-4 * 3600), now: now, after: UpdateChecker.every))
         #expect(!UpdateChecker.due(last: now.addingTimeInterval(-3 * 3600), now: now, after: UpdateChecker.every))
-        // Waking or opening the panel checks once the last check is an hour old.
         #expect(UpdateChecker.due(last: now.addingTimeInterval(-3601), now: now, after: UpdateChecker.stale))
         #expect(!UpdateChecker.due(last: now.addingTimeInterval(-600), now: now, after: UpdateChecker.stale))
     }
 
-    /// A clock set back must not stop checks until it catches up.
     @Test func dueWhenLastCheckIsInTheFuture() {
         #expect(UpdateChecker.due(last: now.addingTimeInterval(86_400), now: now, after: UpdateChecker.every))
     }
@@ -85,7 +83,6 @@ import Testing
         #expect(Updates.checkedAgo(now.addingTimeInterval(-3 * 86_400), now: now) == L("3 天前查过"))
     }
 
-    /// One notification per version, and none while a meeting or speaking is on.
     @Test func notifiesOncePerVersionWhenIdle() {
         #expect(Updates.shouldNotify("1.1.0", notified: nil, busy: false))
         #expect(Updates.shouldNotify("1.2.0", notified: "1.1.0", busy: false))

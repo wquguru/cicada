@@ -1,9 +1,6 @@
 import AVFoundation
 import SwiftUI
 
-/// Settings › 同声传译, third step "对方听到": the voice for the room's current language as one chip,
-/// opening into a list (any language, the Mac's voices, the user's own cloned voice). Each language
-/// remembers its own choice (`speakVoices`).
 struct VoiceSection: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: AppSettings
@@ -11,7 +8,6 @@ struct VoiceSection: View {
 
     @State private var tab: String?
     @State private var recording = false
-    /// Bumped when the recording changes on disk.
     @State private var cloneVersion = 0
 
     private var roomKey: String { VoiceCatalog.key(for: model.speak.targetCode) }
@@ -22,7 +18,6 @@ struct VoiceSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // The language is its own row above: this row is only the voice.
             HStack(spacing: 12) {
                 Text("声音").font(.system(size: 13)).foregroundStyle(Palette.ink)
                 Spacer(minLength: 8)
@@ -76,7 +71,6 @@ struct VoiceSection: View {
         .fixedSize()
     }
 
-    /// "女 · Ming" / "男 · 本机": who it is and where it comes from.
     private func summary(_ v: VoiceOption) -> String {
         switch v.kind {
         case .ming: return [v.tags.first, "Ming"].compactMap { $0 }.joined(separator: " · ")
@@ -249,7 +243,6 @@ struct VoiceSection: View {
     }
 }
 
-/// A radio dot for list rows.
 struct Radio: View {
     let on: Bool
     var body: some View {
@@ -263,8 +256,6 @@ struct Radio: View {
 
 // MARK: - Recording sheet
 
-/// Read a passage for 15 s → transcribe it on this Mac → listen to the original and to the clone
-/// speaking the room's language → keep it.
 struct VoiceCloneSheet: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: AppSettings
@@ -448,7 +439,6 @@ struct VoiceCloneSheet: View {
     }
 }
 
-/// A row of bars following the microphone level.
 private struct LevelBars: View {
     let level: Float
     var body: some View {

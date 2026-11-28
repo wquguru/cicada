@@ -2,20 +2,14 @@ import AppKit
 import SwiftUI
 
 extension Palette {
-    /// "Busy, retrying": a passing state that still deserves a word.
     static let warn = Color(red: 0.54, green: 0.35, blue: 0.0)
     static let warnPale = Color(red: 1.0, green: 0.957, blue: 0.839)
 }
 
-/// The AI service's check, step by step (`AICheck`): settings and onboarding show the same list.
-/// Every step that ran shows its result; the one that failed says why in one line and offers the
-/// one thing that fixes it. All passed folds into one line (`AICheckSummary`).
 struct AICheckSteps: View {
     @ObservedObject var model: AppModel
     @ObservedObject var ling: LingClient
-    /// The settings have 重新检查 beside the key already; onboarding needs it in the failed step.
     var recheckInStep = true
-    /// The key field opens (settings: 更换; onboarding: back to pasting).
     var changeKey: () -> Void
 
     private var check: AICheck { ling.aiCheck }
@@ -79,7 +73,6 @@ struct AICheckSteps: View {
 
     private struct Action { let title: String; let run: () -> Void }
 
-    /// One primary fix (dark) and at most one other.
     private var actions: [Action] {
         guard let f = check.failure else { return [] }
         let p = ling.provider
@@ -88,7 +81,6 @@ struct AICheckSteps: View {
         case .unreachable where check.localNetworkDenied:
             return [Action(title: L("打开系统设置")) { model.openLocalNetworkSettings() }] + recheck
         case .unreachable:
-            // A proxy has nothing to do with a server on this Mac or the local network.
             if AIProvider.isNearby(host) { return recheck }
             return [Action(title: L("怎么设置代理")) { NSWorkspace.shared.open(ProxyProbe.helpURL) }] + recheck
         case .invalidKey, .mgmtKey:
@@ -107,7 +99,6 @@ struct AICheckSteps: View {
         }
     }
 
-    /// Where to add money: OpenRouter's credits page, else the service's own site.
     static func topUp(_ p: AIProvider) -> URL {
         p.id == .openrouter ? URL(string: "https://openrouter.ai/settings/credits")! : (p.site ?? URL(string: "https://openrouter.ai")!)
     }
@@ -127,8 +118,6 @@ struct AICheckSteps: View {
     }
 }
 
-/// The menu bar panel's line when the AI service needs the user (can't reach it, the key, money,
-/// a model gone). Subtitles go on regardless (on-device recognition, Google), so it says so.
 struct AIServiceStrip: View {
     @ObservedObject var model: AppModel
     @ObservedObject var ling: LingClient
@@ -160,8 +149,6 @@ struct AIServiceStrip: View {
         return Self.blocking(ling, textModel: model.settings.textModel).map { ($0, stopped) }
     }
 
-    /// What stops the notes until you change something (not the network, not a busy service):
-    /// also the menu bar's dot, beyond the panel.
     static func blocking(_ ling: LingClient, textModel: String) -> String? {
         guard ling.hasKey, let f = ling.aiCheck.failure else { return nil }
         let name = ling.serviceLabel
@@ -175,8 +162,6 @@ struct AIServiceStrip: View {
     }
 }
 
-/// All passed, in one line: "文字 1.8 秒", or when the newest evidence came from a meeting,
-/// "12 分钟前开会时用过".
 struct AICheckSummary {
     static func text(_ check: AICheck) -> String? {
         guard check.passed, !check.busy else { return nil }

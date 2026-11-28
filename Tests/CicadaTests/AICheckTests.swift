@@ -37,7 +37,6 @@ struct AICheckTests {
         #expect(c[.reach] == .ok(seconds: nil) && c[.text] == .ok(seconds: 1.5))
         #expect(c.proxy == nil)
 
-        // A key-info request proves reach and key; the text model stays open.
         var k = AICheck()
         k.fail(.reach, .unreachable)
         k.pass(upTo: .key, seconds: 0.3)

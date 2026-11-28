@@ -1,35 +1,25 @@
 import Foundation
 
-/// A known voice: the name the user gave it and the voiceprint it is recognised by.
-/// Kept only on this Mac, in Application Support (never in a meeting record).
 struct SpeakerProfile: Codable, Identifiable, Equatable {
     let id: UUID
     var name: String
-    /// 256-d, L2-normalised WeSpeaker embedding (`Voiceprints.embed`).
     var embedding: [Float]
     var sampleCount: Int
     var createdAt: Date
     var updatedAt: Date
     var lastSeenAt: Date?
-    /// When the user agreed to keep this voice (the 记住 alert).
     var consentAt: Date?
-    /// Notes the user keeps about this person: company, role, what to remember.
     var notes: String? = nil
 }
 
-/// What a meeting remembers about a local voice id: enough to show the name even if the global
-/// profile is later renamed or deleted.
 struct VoiceProfileRef: Codable, Equatable {
     var id: UUID
     var name: String
-    /// The similarity that first matched it (0…1).
     var similarity: Float
 }
 
 enum SpeakerMatchKind: Equatable {
-    /// Similar enough to name without asking.
     case auto
-    /// Shown as a suggestion; the user decides.
     case suggested
 }
 
@@ -43,18 +33,12 @@ struct SpeakerProfileMatch: Equatable {
     }
 }
 
-/// Starting thresholds for the 256-d WeSpeaker model. `VoiceClusterer`'s 0.5 is a within-meeting
-/// threshold and must not be reused for identity: a wrong name in a customer's minutes is worse
-/// than "未识别". These are deliberately conservative and are covered by tests with the bundled
-/// sample; tune on real meetings before lowering them.
 struct SpeakerMatchPolicy: Equatable {
     var auto: Float = 0.70
     var suggested: Float = 0.55
-    /// The best profile must be this much ahead of the second one before it may be named silently.
     var margin: Float = 0.08
 }
 
-/// Vector helpers shared by the clusterer, the profile store and tests.
 enum SpeakerEmbedding {
     static let dimensions = 256
 
@@ -68,7 +52,6 @@ enum SpeakerEmbedding {
         return out.allSatisfy(\.isFinite) ? out : nil
     }
 
-    /// Dot product; both vectors are unit length, so this is their cosine similarity.
     static func cosine(_ a: [Float], _ b: [Float]) -> Float? {
         guard a.count == dimensions, b.count == dimensions else { return nil }
         var dot: Float = 0
@@ -76,7 +59,6 @@ enum SpeakerEmbedding {
         return dot.isFinite ? dot : nil
     }
 
-    /// Unit-length mean of unit vectors, without letting a short noisy clip dominate.
     static func mean(_ vectors: [[Float]]) -> [Float]? {
         guard !vectors.isEmpty else { return nil }
         var sum = [Float](repeating: 0, count: dimensions)
@@ -87,8 +69,6 @@ enum SpeakerEmbedding {
         return normalized(sum)
     }
 
-    /// A new sample joins an existing profile gradually: `normalize(old * weight + fresh)`.
-    /// The weight is capped so a profile cannot become impossible to correct after years of use.
     static func blended(old: [Float], fresh: [Float], sampleCount: Int) -> [Float]? {
         guard old.count == dimensions, fresh.count == dimensions else { return nil }
         let weight = Float(min(max(1, sampleCount), 20))
@@ -98,14 +78,11 @@ enum SpeakerEmbedding {
     }
 }
 
-/// The persistent voiceprint library. Reads may happen on the voiceprint queue; changes happen on
-/// the main actor. A lock keeps a snapshot safe while a profile is being written.
 final class SpeakerProfileStore: @unchecked Sendable {
     let url: URL
     private let lock = NSLock()
     private var cached: [SpeakerProfile] = []
 
-    /// Called after a change, with a snapshot; AppModel refreshes its `@Published` copy here.
     var onChange: (([SpeakerProfile]) -> Void)?
 
     static var defaultURL: URL {
@@ -128,14 +105,12 @@ final class SpeakerProfileStore: @unchecked Sendable {
         return cached.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    /// A sorted snapshot for matching; does not expose the live array.
     func snapshot() -> [SpeakerProfile] {
         lock.lock()
         defer { lock.unlock() }
         return cached
     }
 
-    /// Best profile above `suggested`, with high-confidence hits distinguished from suggestions.
     func match(_ embedding: [Float], policy: SpeakerMatchPolicy = SpeakerMatchPolicy()) -> SpeakerProfileMatch? {
         guard let probe = SpeakerEmbedding.normalized(embedding) else { return nil }
         let profiles = snapshot()
@@ -153,8 +128,6 @@ final class SpeakerProfileStore: @unchecked Sendable {
                                    kind: best.1 >= policy.auto && clear ? .auto : .suggested)
     }
 
-    /// Add a profile from an explicit user action. Returns nil when the embedding is unusable or
-    /// the name is empty; the caller must not silently fall back to a profile with no name.
     @discardableResult
     func remember(name: String, embedding: [Float], at date: Date = Date()) -> SpeakerProfile? {
         let clean = Self.cleanName(name)
@@ -216,8 +189,6 @@ final class SpeakerProfileStore: @unchecked Sendable {
         mutate { $0.removeAll() }
     }
 
-    /// Make a matched profile's last-seen time current. Writes at most once a minute per profile,
-    /// so matching a line every few seconds does not hammer the disk.
     func markSeen(id: UUID, at date: Date = Date()) {
         let old = snapshot().first { $0.id == id }?.lastSeenAt
         guard old == nil || date.timeIntervalSince(old!) > 60 else { return }
@@ -258,7 +229,6 @@ final class SpeakerProfileStore: @unchecked Sendable {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard let decoded = try? decoder.decode([SpeakerProfile].self, from: data) else { return [] }
-        // A damaged entry must not take the whole library, or the app, down with it.
         return decoded.filter {
             !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && $0.embedding.count == SpeakerEmbedding.dimensions

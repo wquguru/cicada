@@ -1,22 +1,15 @@
 import Foundation
 
-/// 词表: the spellings the user stands behind, and how speech recognition has misheard each. Only
-/// these let a new name be fixed without asking: names the notes guess are often wrong (in a test
-/// meeting 6 of 10, e.g. 巡检 → "audit"), so they stay suggestions until the user confirms one.
-/// One JSON file beside the records; not a secret, so not one of the 0600 key files.
 @MainActor
 final class Vocabulary: ObservableObject {
     struct Term: Codable, Equatable {
         var word: String
-        /// Wrong forms the recognizer produced, as confirmed or typed by the user.
         var heard: [String] = []
-        /// "user" (added or imported), "live" (confirmed during a meeting).
         var source: String
         var fixes: Int = 0
         var used: Date? = nil
     }
 
-    /// More would make every sentence's request long, and more terms means more wrong swaps.
     static let limit = 300
 
     @Published private(set) var terms: [Term] = []
@@ -36,15 +29,11 @@ final class Vocabulary: ObservableObject {
             .appendingPathComponent(DevBuild.supportFolder).appendingPathComponent("vocabulary.json")
     }
 
-    /// Same word whatever its width, case or spacing ("ＡＡＶＥ" is "aave").
     nonisolated static func key(_ s: String) -> String {
         s.precomposedStringWithCompatibilityMapping.lowercased()
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
-    /// What a fix can teach the list, or nil: both sides trimmed of spaces and punctuation, no
-    /// punctuation inside, short, and a real swap. An edit that only adds or drops words around the
-    /// heard ones ("我来" → "OK我来") or ends on a full stop ("持。" → "讲。") teaches nothing.
     nonisolated static func learnable(heard: String, word: String) -> (heard: String, word: String)? {
         let edge = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters).union(.symbols)
         let h = heard.trimmingCharacters(in: edge), w = word.trimmingCharacters(in: edge)
@@ -61,9 +50,6 @@ final class Vocabulary: ObservableObject {
         return terms.contains { Self.key($0.word) == w && $0.heard.contains { Self.key($0) == h } }
     }
 
-    /// The user said yes to a fix (or added it): the word, and the form it was heard as. A pair
-    /// that isn't a word for a word (`learnable`) adds the word only, or nothing. A yes in a meeting
-    /// never teaches a translation (平台 → platform): it would rewrite that word everywhere after.
     func confirm(heard: String, word: String, source: String = "live") {
         if !heard.isEmpty {
             guard let l = Self.learnable(heard: heard, word: word),
@@ -83,7 +69,6 @@ final class Vocabulary: ObservableObject {
         save()
     }
 
-    /// A heard form the user turned down twice stops being one.
     func forget(heard: String, word: String) {
         let w = Self.key(word), h = Self.key(heard)
         guard let i = terms.firstIndex(where: { Self.key($0.word) == w }) else { return }
@@ -91,12 +76,10 @@ final class Vocabulary: ObservableObject {
         save()
     }
 
-    /// 词表 › click a word: its spelling changes; what it was heard as stays with it.
     func rename(_ word: String, to new: String) {
         let n = new.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !n.isEmpty, n.count <= 40, let i = terms.firstIndex(where: { Self.key($0.word) == Self.key(word) }) else { return }
         if let j = terms.firstIndex(where: { Self.key($0.word) == Self.key(n) }), j != i {
-            // Renamed onto a word already there: the two become one.
             for h in terms[i].heard where !terms[j].heard.contains(where: { Self.key($0) == Self.key(h) }) { terms[j].heard.append(h) }
             terms.remove(at: i)
         } else {
@@ -105,19 +88,16 @@ final class Vocabulary: ObservableObject {
         save()
     }
 
-    /// The other words a heard form already belongs to ("莫拉" is Morpho's).
     func owners(ofHeard heard: String, except word: String? = nil) -> [String] {
         terms.filter { t in t.heard.contains { Self.key($0) == Self.key(heard) } && Self.key(t.word) != Self.key(word ?? "") }.map(\.word)
     }
 
-    /// Back where it was, after 撤销 on a delete.
     func insert(_ term: Term, at index: Int) {
         guard !terms.contains(where: { Self.key($0.word) == Self.key(term.word) }) else { return }
         terms.insert(term, at: min(index, terms.count))
         save()
     }
 
-    /// What 粘贴导入 would do, before it does it (the sheet's counts and its button).
     func preview(_ text: String) -> ImportResult {
         var r = ImportResult()
         var seen: Set<String> = []
@@ -130,7 +110,6 @@ final class Vocabulary: ObservableObject {
         return r
     }
 
-    /// 撤销: the list as it was.
     func restore(_ saved: [Term]) {
         guard saved != terms else { return }
         terms = saved
@@ -149,15 +128,12 @@ final class Vocabulary: ObservableObject {
         save()
     }
 
-    /// For the request: the most recently useful first, "Morpho (heard as 莫拉, 莫法)".
     func promptLines() -> [String] {
         terms.sorted { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }.prefix(Self.limit).map {
             $0.heard.isEmpty ? $0.word : "\($0.word) (heard as \($0.heard.joined(separator: ", ")))"
         }
     }
 
-    /// 粘贴导入: one per line, heard forms after "=" ("Morpho = 莫拉、莫法"). Lines too long or empty
-    /// are reported by number; a word already there gains the new heard forms.
     struct ImportResult: Equatable { var added = 0; var updated = 0; var skipped: [Int] = [] }
 
     nonisolated static func parse(_ text: String) -> [(line: Int, word: String, heard: [String])?] {

@@ -4,7 +4,6 @@ import Testing
 @testable import Cicada
 
 @Suite struct VoiceReferenceTests {
-    /// `seconds` of silence, then `speech` seconds of a 200 Hz tone, then silence.
     private func clip(lead: Double, speech: Double, tail: Double, rate: Double = 16_000) -> [Float] {
         let quiet = { (s: Double) in [Float](repeating: 0.0005, count: Int(s * rate)) }
         let tone = (0..<Int(speech * rate)).map { Float(sin(2 * Double.pi * 200 * Double($0) / rate)) * 0.3 }
@@ -23,7 +22,6 @@ import Testing
     }
 
     @Test func paceCountsChineseCharactersPerSecondOfSpeech() throws {
-        // 19 characters over 10 s of speech: the recital that made the clone 4× slow.
         let text = "贤文慧汝尊尊集运增广多见多闻观今一见古。"
         let pace = try #require(VoiceReference.pace(text: text, samples: clip(lead: 0.5, speech: 10, tail: 0.5), sampleRate: 16_000))
         #expect(abs(pace - 1.9) < 0.05)
@@ -44,7 +42,6 @@ import Testing
         #expect(VoiceReference.isSlow(text: text, pace: words / 30))
     }
 
-    /// The pause before 读完了 made Ming's clone come back silent: it goes, 0.2 s kept each side.
     @Test func trimsTheQuietAroundTheReading() {
         let kept = VoiceReference.trimmed(clip(lead: 1, speech: 6, tail: 2), sampleRate: 16_000)
         #expect(abs(Double(kept.count) / 16_000 - 6.4) < 0.05)

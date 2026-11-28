@@ -4,7 +4,6 @@ import Testing
 @testable import Cicada
 
 @Suite struct VoiceActivityTests {
-    /// Blocks of `seconds` at `rms`, fed one after another on a running clock.
     private func run(_ a: inout VoiceActivity, _ blocks: [(rms: Float, seconds: Double)], clock: inout Double) {
         for b in blocks {
             _ = a.feed(rms: b.rms, seconds: b.seconds, clock: clock)
@@ -20,7 +19,7 @@ import Testing
         var a = VoiceActivity(gap: 1.5), clock = 0.0
         run(&a, repeated(0.05, 1), clock: &clock)
         run(&a, repeated(0, 1), clock: &clock)
-        run(&a, [(0.05, 512.0 / 48000)], clock: &clock)   // one 11 ms click
+        run(&a, [(0.05, 512.0 / 48000)], clock: &clock)
         run(&a, repeated(0, 0.8), clock: &clock)
         #expect(a.silenceRun >= 1.5)
     }
@@ -30,7 +29,6 @@ import Testing
         run(&a, repeated(0.05, 1), clock: &clock)
         run(&a, repeated(0, 0.5), clock: &clock)
         run(&a, repeated(0.05, 0.5), clock: &clock)
-        // The pause ended where the sound started, not where it was confirmed.
         #expect(abs(a.pause.end - 1.5) < 0.012)
         #expect(abs(a.pause.length - 0.5) < 0.012)
         #expect(abs(a.voicedTotal - 1.5) < 0.012)
@@ -48,9 +46,8 @@ import Testing
     @Test func aWordsQuietEndingStaysSpeech() {
         var a = VoiceActivity(gap: 1.5), clock = 0.0
         run(&a, repeated(0.05, 0.5), clock: &clock)
-        run(&a, repeated(0.007, 0.2), clock: &clock)   // under the line, over half of it
+        run(&a, repeated(0.007, 0.2), clock: &clock)
         #expect(a.silenceRun == 0)
-        // From quiet, the same level is not speech.
         var b = VoiceActivity(gap: 1.5)
         clock = 0
         run(&b, repeated(0.007, 0.2), clock: &clock)
@@ -67,9 +64,6 @@ import Testing
     }
 }
 
-/// The VAD evaluation: clips from `scripts/vad-clips.py`, with where the speech is, run through
-/// `VoiceActivity` as the system tap and the room mic deliver them, for several tunings.
-///     python3 scripts/vad-clips.py && CICADA_VAD_EVAL=build/vad-eval scripts/test.sh --filter VADEval
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["CICADA_VAD_EVAL"] != nil))
 struct VADEval {
     struct Clip {
@@ -81,19 +75,13 @@ struct VADEval {
     }
 
     struct Score {
-        /// Seconds called speech with no speech near (> 50 ms from a line).
         var falseSeconds = 0.0
-        /// Times speech started with no line there.
         var falseStarts = 0
-        /// Gaps between lines of ≥ `gapSeconds` that never got a silence that long.
         var missedGaps = 0
         var gaps = 0
-        /// Pauses of ≥ 0.3 s found inside a line (where a sentence cut lands).
         var splits = 0
-        /// Seconds of a line called silence.
         var missedSeconds = 0.0
         var speechSeconds = 0.0
-        /// Mean delay from a line's start to the first block called speech.
         var lag = 0.0
     }
 
@@ -113,15 +101,13 @@ struct VADEval {
         }
     }
 
-    /// `block`: frames per buffer, as the source delivers them (the mic tap's 4096; the system tap's
-    /// is the HAL buffer size, so several are tried).
     static func score(_ clip: Clip, _ tuning: VoiceActivity.Tuning, block: Int) -> Score {
         var a = VoiceActivity(gate: VoiceGate(adaptive: clip.room), tuning: tuning, gap: AudioRouter.gapSeconds)
         var s = Score()
         var wasVoiced = false
         var started = Set<Int>()
         var lags: [Double] = []
-        var longestSilence: [Int: Double] = [:]   // gap index → longest silence run seen in it
+        var longestSilence: [Int: Double] = [:]
         var lastPause = (end: 0.0, length: 0.0)
         func line(at t: Double, margin: Double = 0) -> Int? {
             clip.speech.firstIndex { t >= $0.0 - margin && t < $0.1 + margin }
@@ -146,7 +132,6 @@ struct VADEval {
                 s.missedSeconds += dt
             }
             if line(at: mid) != nil { s.speechSeconds += dt }
-            // Which gap this block is in: after line g, before line g + 1.
             if let g = clip.speech.indices.last(where: { clip.speech[$0].1 <= t }), g + 1 < clip.speech.count,
                t < clip.speech[g + 1].0 {
                 longestSilence[g] = max(longestSilence[g] ?? 0, a.silenceRun)

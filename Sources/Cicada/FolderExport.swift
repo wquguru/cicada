@@ -4,12 +4,9 @@ import AppKit
 import Foundation
 import UserNotifications
 
-/// Where 存到文件夹 is set: `AppSettings` on the Mac, the iOS app's own (its folder comes back from a
-/// security-scoped bookmark, since a sandboxed app can't reopen a path it was once given).
 @MainActor protocol FolderExportPrefs: AnyObject {
     var exportOn: Bool { get set }
     var exportFolder: String { get set }
-    /// The folder to write to; the Mac's is the path itself.
     var exportFolderURL: URL? { get }
 }
 
@@ -17,11 +14,7 @@ extension FolderExportPrefs {
     var exportFolderURL: URL? { exportFolder.isEmpty ? nil : URL(fileURLWithPath: exportFolder, isDirectory: true) }
 }
 
-/// 存到文件夹: the file a settled meeting becomes (docs/folder-export.md). The name and frontmatter
-/// are a contract with the ports (Tests/fixtures/folder-export); the body is 导出 Markdown's.
 enum FolderExportFormat {
-    /// The record's own name: what the user called it, else the notes' title, else the imported
-    /// file's name. Never `displayTitle`, which is localized and carries a date.
     static func name(_ s: Session) -> String {
         if s.renamed ?? !s.title.hasPrefix("会议 ") { return s.title }
         if let t = s.notes?.title, !t.isEmpty { return t }
@@ -29,8 +22,6 @@ enum FolderExportFormat {
         return ""
     }
 
-    /// A name every system accepts and a vault can link to: no path, wildcard or link characters,
-    /// at most 120 UTF-8 bytes (vaults sync between systems, so the union of their rules).
     static func safeName(_ name: String) -> String {
         let banned = Set("/\\:*?\"<>|#^[]".unicodeScalars)
         let spaced = String(String.UnicodeScalarView(name.unicodeScalars.map { banned.contains($0) || $0.value < 0x20 ? " " : $0 }))
@@ -61,7 +52,6 @@ enum FolderExportFormat {
         return safe.isEmpty ? date : "\(date) \(safe)"
     }
 
-    /// `stem.md`, or `stem 2.md`, `stem 3.md`… when a name is taken.
     static func fileName(_ stem: String, taken: (String) -> Bool) -> String {
         var n = 1
         while true {
@@ -71,7 +61,6 @@ enum FolderExportFormat {
         }
     }
 
-    /// A JSON-style double-quoted string, which YAML reads as is.
     static func quote(_ s: String) -> String {
         var out = "\""
         for u in s.unicodeScalars {
@@ -120,7 +109,6 @@ enum FolderExportFormat {
         return f.string(from: date)
     }
 
-    /// Obsidian's vaults (its `obsidian.json`), the most recently opened first; only ones that exist.
     static func obsidianVaults(_ json: Data, exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> [URL] {
         guard let root = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
               let vaults = root["vaults"] as? [String: [String: Any]] else { return [] }
@@ -142,23 +130,16 @@ enum FolderExportFormat {
     #endif
 }
 
-/// Writes settled meetings into the chosen folder and keeps the index of what it wrote. UI state on
-/// the main actor; the files are written one at a time on its own queue, since a macOS privacy
-/// prompt blocks the thread that touches the folder.
 @MainActor final class FolderExporter: ObservableObject {
     enum Problem: Equatable {
-        /// macOS didn't let Cicada write there (privacy settings).
         case denied
-        /// The folder, or the drive it was on, is gone.
         case missing
         case failed(String)
     }
 
     struct Index: Codable, Equatable {
         var folder: String = ""
-        /// Record id → the file name Cicada wrote.
         var files: [String: String] = [:]
-        /// Records waiting to be written.
         var pending: [String] = []
         var lastFile: String? = nil
         var lastAt: Date? = nil
@@ -166,17 +147,14 @@ enum FolderExportFormat {
 
     @Published private(set) var index = Index()
     @Published private(set) var problem: Problem?
-    /// Checking a newly chosen folder.
     @Published private(set) var checking = false
 
     let store: SessionStore
     let settings: any FolderExportPrefs
-    /// The meeting's final notes pass is running or waiting.
     var settling: (String) -> Bool = { _ in false }
     private let indexURL: URL
     private let queue = DispatchQueue(label: "cicada.folder-export")
     private var scheduled: DispatchWorkItem?
-    /// Told about this problem already (cleared once a write works).
     private var notified = false
 
     init(store: SessionStore, settings: any FolderExportPrefs, indexURL: URL? = nil) {
@@ -198,15 +176,12 @@ enum FolderExportFormat {
 
     func isPending(_ id: String) -> Bool { on && index.pending.contains(id) }
 
-    /// Ended, not being imported, with something said.
     func ready(_ s: Session) -> Bool { s.endedAt != nil && s.importing != true && !s.lines.isEmpty && s.id != store.liveID }
 
-    /// Settled records not written to this folder yet.
     var unwritten: [Session] {
         store.sessions.filter { ready($0) && index.files[$0.id] == nil && !index.pending.contains($0.id) }
     }
 
-    /// "工作笔记 › Cicada": the folder and the one it is in, as Finder names them.
     static func shortPath(_ url: URL) -> String {
         let fm = FileManager.default
         return [url.deletingLastPathComponent().path, url.path].map { fm.displayName(atPath: $0) }.joined(separator: " › ")
@@ -220,7 +195,6 @@ enum FolderExportFormat {
 
     // MARK: Triggers
 
-    /// A meeting ended or an import finished: write it once it is settled.
     func ended(_ id: String) {
         guard on else { return }
         if !index.pending.contains(id) { index.pending.append(id) }
@@ -228,17 +202,14 @@ enum FolderExportFormat {
         schedule()
     }
 
-    /// A record was saved: rewrite it if it was written, or write it if it is waiting.
     func saved(_ id: String) {
         guard on, index.files[id] != nil || index.pending.contains(id) else { return }
         if !index.pending.contains(id) { index.pending.append(id) }
         schedule()
     }
 
-    /// The final notes pass for a meeting is over (done or failed).
     func settled(_ id: String) { if on, index.pending.contains(id) { schedule() } }
 
-    /// 也存一份: every settled record not written yet.
     func writeAll() {
         guard on else { return }
         index.pending += unwritten.map(\.id)
@@ -246,7 +217,6 @@ enum FolderExportFormat {
         flush(fromMeeting: false)
     }
 
-    /// At launch and when the app comes forward: try what is still waiting.
     func retry() {
         guard on, !index.pending.isEmpty else { return }
         schedule(after: 0.5, fromMeeting: false)
@@ -260,8 +230,6 @@ enum FolderExportFormat {
 
     // MARK: Choosing the folder
 
-    /// A new folder (or the same one again after a fix): start its index, check it can be written now
-    /// so that a privacy prompt comes while settings is open, not when a meeting ends.
     func choose(_ url: URL) {
         settings.exportFolder = url.path
         settings.exportOn = true
@@ -309,7 +277,6 @@ enum FolderExportFormat {
         case stopped(Problem)
     }
 
-    /// Renders what is settled here (records live on the main actor), writes it on the queue.
     private func flush(fromMeeting: Bool) {
         guard on, let folder else { return }
         if index.folder != folder.path { index = Index(folder: folder.path, pending: index.pending) }
@@ -353,9 +320,7 @@ enum FolderExportFormat {
         }
     }
 
-    /// Off the main thread. Stops at the first problem: the rest would fail the same way.
     nonisolated static func write(_ jobs: [Job], to folder: URL, ours: [String: String]) -> [Outcome] {
-        // iOS: a folder picked in Files is reachable only inside this (the Mac's path: no-op).
         let scoped = folder.startAccessingSecurityScopedResource()
         defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
         if let p = ensure(folder) { return [.stopped(p)] }
@@ -379,7 +344,6 @@ enum FolderExportFormat {
                 out.append(.stopped(classify(error, folder)))
                 return out
             }
-            // Renamed: the old file goes, only if it is the one Cicada wrote.
             if let old = job.old, old != name { try? fm.removeItem(at: folder.appendingPathComponent(old)) }
             ours[job.id] = name
             out.append(.wrote(id: job.id, name: name))
@@ -387,9 +351,6 @@ enum FolderExportFormat {
         return out
     }
 
-    /// The folder exists, or is made when only it is missing (never a drive that isn't mounted).
-    /// By errno, not `fileExists`: macOS privacy settings make a folder look absent (EPERM), and
-    /// that must read as "no permission", not as an unplugged drive.
     nonisolated private static func ensure(_ folder: URL) -> Problem? {
         var st = stat()
         if stat(folder.path, &st) == 0 { return (st.st_mode & S_IFMT) == S_IFDIR ? nil : .missing }
@@ -399,7 +360,6 @@ enum FolderExportFormat {
         return nil
     }
 
-    /// Writes and removes a hidden file: the check after choosing a folder.
     nonisolated static func probe(_ folder: URL) -> Problem? {
         let scoped = folder.startAccessingSecurityScopedResource()
         defer { if scoped { folder.stopAccessingSecurityScopedResource() } }
@@ -448,7 +408,6 @@ enum FolderExportFormat {
     }
 
     #if os(macOS)
-    /// System Settings › 隐私与安全性 › 文件和文件夹.
     static func openPrivacySettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
     }

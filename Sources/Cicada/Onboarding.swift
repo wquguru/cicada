@@ -4,8 +4,6 @@ import SwiftUI
 
 // MARK: - Brand mark (logo B: a cicada's eyes and wings peeking over a white subtitle card)
 
-/// The logo in its 100-unit design space, y down (same geometry as site/icon.svg and
-/// Sources/CicadaIcon; keep the three in step). Design: claude.ai/artifact/96R6Md276c3jAS4Mk4Ustn
 enum CicadaLogo {
     static let orange = rgb(0xE8552B)
     static let ink = rgb(0x15171C)
@@ -27,13 +25,10 @@ enum CicadaLogo {
         c.move(to: CGPoint(x: 78, y: 39)); c.addQuadCurve(to: CGPoint(x: 55, y: 25), control: CGPoint(x: 73, y: 14))
     }
     static let eyes: [(CGFloat, CGFloat)] = [(36, 51), (63, 49)]
-    /// The card leans 5° and bleeds off the right and bottom edges, so the eyes peek over it.
     static func tilt(_ c: CGContext) {
         c.translateBy(x: 50, y: 70); c.rotate(by: -5 * .pi / 180); c.translateBy(x: -50, y: -70)
     }
 
-    /// The whole icon, clipped to its squircle. `unit` is device pixels per design unit
-    /// (shadows are in device space).
     static func drawIcon(_ c: CGContext, unit: CGFloat) {
         c.saveGState()
         c.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: 100, height: 100), cornerWidth: 23, cornerHeight: 23, transform: nil))
@@ -80,7 +75,6 @@ enum CicadaLogo {
         c.restoreGState()
     }
 
-    /// One colour for the menu bar: wings, eyes and a whole (not bleeding) card; whites of the eyes and text lines cut out.
     static func drawTemplate(_ c: CGContext, color: CGColor) {
         c.setLineCap(.round)
         c.setStrokeColor(color); c.setLineWidth(6.5); wings(c); c.strokePath()
@@ -90,7 +84,6 @@ enum CicadaLogo {
         c.saveGState()
         tilt(c)
         let card = CGPath(roundedRect: CGRect(x: 10, y: 60, width: 80, height: 30), cornerWidth: 9, cornerHeight: 9, transform: nil)
-        // In one colour the eyes would melt into the card: cut a thin gap around it first.
         c.setBlendMode(.clear); c.setLineWidth(9); c.addPath(card); c.strokePath(); c.setBlendMode(.normal)
         c.addPath(card); c.fillPath()
         c.setBlendMode(.clear); c.setLineWidth(6)
@@ -98,7 +91,6 @@ enum CicadaLogo {
         c.move(to: CGPoint(x: 22, y: 80.5)); c.addLine(to: CGPoint(x: 49, y: 80.5))
         c.strokePath()
         c.restoreGState()
-        // Eyes as in colour: ring, cut-out white, pupil.
         c.setBlendMode(.clear)
         for (x, y) in eyes { circle(c, x, y, 8.4) }
         c.fillPath()
@@ -120,7 +112,6 @@ struct BrandMark: View {
 }
 
 enum BrandImage {
-    /// The in-app mark: the logo on its orange squircle, drawn as a vector image so it is sharp at any size.
     static let mark: NSImage = {
         NSImage(size: NSSize(width: 100, height: 100), flipped: true) { rect in
             guard let c = NSGraphicsContext.current?.cgContext else { return false }
@@ -130,15 +121,11 @@ enum BrandImage {
         }
     }()
 
-    /// Menu bar template glyph: the logo in one colour. Paused draws it at 40%.
-    /// What the dot on the menu bar glyph says: something to fix (orange, the colour that asks
-    /// for a look) wins over a new version (grey, it can wait).
     enum Badge { case none, update, problem }
 
     static func menuBar(live: Bool, badge: Badge = .none) -> NSImage {
         let img = NSImage(size: NSSize(width: 18, height: 16), flipped: true) { _ in
             guard let c = NSGraphicsContext.current?.cgContext else { return false }
-            // Design units 8…92 across and 16…94 down fill the 16 pt height.
             c.translateBy(x: 1, y: 0.4); c.scaleBy(x: 0.19, y: 0.19); c.translateBy(x: -8, y: -16)
             CicadaLogo.drawTemplate(c, color: CGColor(gray: 0, alpha: live ? 1 : 0.4))
             return true
@@ -148,9 +135,6 @@ enum BrandImage {
         return badge == .none ? img : withBadge(img, badge)
     }
 
-    /// The glyph with a dot top right. A coloured dot
-    /// can't be part of a template image, so the glyph is filled with the label colour instead.
-    /// The dot is cut out of the glyph with a clear ring, so it reads as a badge, not part of the logo.
     private static func withBadge(_ glyph: NSImage, _ badge: Badge) -> NSImage {
         let image = NSImage(size: glyph.size, flipped: false) { rect in
             glyph.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
@@ -172,18 +156,12 @@ enum BrandImage {
 
 // MARK: - Sample clip
 
-/// Plays the bundled sample, a short meeting voiced by Ming (`scripts/make-sample.sh`), through a
-/// separate `afplay` process, because the app leaves its own audio out of what it listens to.
-/// The onboarding card draws the call itself and lights whoever is talking.
 @MainActor
 final class SamplePlayer: ObservableObject {
     static let duration = 8.8
-    /// Who talks when in sample.m4a (0 Emma, 1 George), in seconds; re-measure after regenerating.
     static let turns: [(speaker: Int, start: Double, end: Double)] = [(0, 0.25, 2.34), (1, 2.56, 6.97), (0, 7.17, 8.45)]
 
     @Published private(set) var playing = false
-    /// Played since the card appeared: its subtitles stay up after the clip ends, as the last
-    /// translation lands a moment later.
     @Published private(set) var played = false
     @Published private(set) var elapsed = 0.0
     private var audio: Process?
@@ -228,7 +206,6 @@ final class SamplePlayer: ObservableObject {
         playing = false
     }
 
-    /// Back to the untouched card, when the guide leaves the step.
     func reset() {
         stop()
         played = false
@@ -236,9 +213,6 @@ final class SamplePlayer: ObservableObject {
     }
 }
 
-/// Step 2's card: a two-person call drawn in place of a video. The call sits in the top part and
-/// the bottom strip is kept for the subtitles, so they never cover a face; before the first play
-/// the play button holds that strip, where the eye should land.
 struct SampleCallCard: View {
     @ObservedObject var sample: SamplePlayer
     let liveSource: String
@@ -357,8 +331,6 @@ struct OnboardingView: View {
         nonmutating set { model.onboardingStep = newValue }
     }
     var onFinish: () -> Void
-    /// System audio, sample video, Ling key, speaking; then a closing page (step 5) outside the count.
-    /// The video comes before the key so people see the subtitles before being sent to sign up anywhere.
     static let steps = 4
     static let done = 5
 
@@ -392,8 +364,6 @@ struct OnboardingView: View {
         .frame(width: 860, height: 640)
         .background(Color(red: 0.965, green: 0.969, blue: 0.976))
         .onChange(of: step) { _, _ in sample.reset() }
-        // Only the moment it turns on moves on by itself: when it was already on (the guide
-        // reopened from Settings), step 1 stays put with a plain 继续.
         .onChange(of: model.listenReady) { was, now in
             guard !was, now, step == 1 else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
@@ -431,8 +401,6 @@ struct OnboardingView: View {
 
     @ViewBuilder private var footer: some View {
         HStack(spacing: 16) {
-            // In the checklist, 先不用了 replaces 上一步, but only when speaking was turned on right here:
-            // someone re-running the guide with it already on shouldn't have it switched off.
             if step > 1 && !(step == 4 && model.onboardingSpeakSetup == .checklist) {
                 Button("上一步") {
                     model.onboardingKeySkip = false
@@ -450,7 +418,6 @@ struct OnboardingView: View {
             case keyStep:
                 OnboardingKeyFooter(ling: model.ling, skipping: $model.onboardingKeySkip, next: { step = keyStep + 1 })
             case 4 where !speakSetupShown:
-                // The two cards above are the choice; nothing to confirm here.
                 EmptyView()
             case 4:
                 if model.onboardingSpeakSetup == .checklist {
@@ -558,7 +525,6 @@ struct OnboardingView: View {
                         primary(L("去开启")) { model.requestSystemAudio() }
                     }
                 }
-                // macOS 14/15: the older recognizer needs Dictation on and its own permission.
                 if Recognition.legacy {
                     Divider().padding(.horizontal, 22)
                     row(icon: "waveform", title: L("识别语音"), detail: L("打开“听写”，允许“语音识别”")) {
@@ -603,7 +569,6 @@ struct OnboardingView: View {
 
     // MARK: Step 4: speaking, only for those who want it
 
-    /// The checklist shows once speaking is on (or was already on); before that, a yes/no.
     private var speakSetupShown: Bool {
         switch model.onboardingSpeakSetup {
         case .followSetting: settings.speakEnabled
@@ -694,13 +659,11 @@ struct OnboardingView: View {
         }
     }
 
-    // Turns green by itself once a meeting app reads the virtual mic.
     @ViewBuilder private var meetingAppStatus: some View {
         if model.virtualMic != nil && installer.passed {
             if let user = model.micUsers.first(where: { $0.state == .virtualMic }) {
                 statusLine(ok: true, Text("\(user.name)已选虚拟麦克风，对方能听到译文"))
             } else if case .switched = model.systemMicState {
-                // Apps on the default mic already hear it; only ones set to a specific mic need a change.
                 statusLine(ok: true, Text("系统麦克风已换成 \(model.virtualMic?.name ?? "BlackHole 2ch")，用默认麦克风的会议软件不用再选"))
             } else {
                 HStack(spacing: 10) {
@@ -759,7 +722,6 @@ struct OnboardingView: View {
         }
     }
 
-    /// A slice of the menu bar with the app's icon ringed: where to look once this window is gone.
     private var menuBarSketch: some View {
         VStack(spacing: 0) {
             HStack(spacing: 18) {
@@ -771,7 +733,6 @@ struct OnboardingView: View {
                     .padding(3)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Palette.accentPale))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.accent, lineWidth: 1.5))
-                    // Hangs below the bar, centred under the icon.
                     .overlay(alignment: .top) {
                         VStack(spacing: 4) {
                             Image(systemName: "arrow.up").font(.system(size: 14, weight: .semibold))
@@ -807,8 +768,6 @@ struct OnboardingView: View {
     }
 }
 
-/// Under the sample video: without a key, a hint that the same words become notes (the next step);
-/// with one, where the subtitle bar can go.
 struct OnboardingNotesTeaser: View {
     @ObservedObject var ling: LingClient
 

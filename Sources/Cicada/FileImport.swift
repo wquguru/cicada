@@ -4,26 +4,18 @@ import Foundation
 import Speech
 import UniformTypeIdentifiers
 
-/// What an import needs from settings: the Mac's `AppSettings`, or the iOS app's own (iOS has none
-/// of the Mac's other settings).
 @MainActor
 protocol ImportSettings: AnyObject {
-    /// "auto" or a `sourceLanguages` locale.
     var importLanguage: String { get }
     var speakerVoices: Bool { get }
     func resolvedTarget(source: String?) -> String
 }
 
-/// Recordings and videos the user brings in: each becomes a meeting record, transcribed on device
-/// faster than real time, one file at a time. It never touches the live pipeline, so a meeting can
-/// be listened to meanwhile; its translations wait behind the live ones (`TranslationService.Kind.file`).
-/// UI-free: AppModel shows the state and writes the notes when a file is done.
 @MainActor
 final class FileImporter: ObservableObject {
     struct Job: Equatable {
         let id: String
         let url: URL
-        /// The language the user said it is in; nil detects it.
         var lang: Lang? = nil
     }
 
@@ -31,30 +23,23 @@ final class FileImporter: ObservableObject {
         case preparing, detecting, downloading(String), transcribing, translating
     }
 
-    /// Files waiting, in order; the one being transcribed is `current`.
     @Published private(set) var queue: [Job] = []
     @Published private(set) var current: Job?
     @Published private(set) var phase: Phase = .preparing
-    /// Seconds of the current file transcribed so far, and its length.
     @Published private(set) var heard = 0.0
     @Published private(set) var duration = 0.0
-    /// Lines of the current file sent for translation, and those still waiting for it.
     @Published private(set) var toTranslate = 0
     @Published private(set) var untranslated = 0
 
-    /// `cloudOnly`: stretches of the current file the service couldn't hear (set by the app).
     var hearFailures = 0
 
-    /// A file was transcribed and translated to the end.
     var onFinished: ((_ sessionID: String) -> Void)?
 
     let store: SessionStore
     let settings: ImportSettings
     let translator: TranslationService
-    /// Known voices matched by name (the Mac's 说话人库); iOS has none yet.
     let profiles: SpeakerProfileStore?
     private var task: Task<Void, Never>?
-    /// The running `SpeechAnalyzer` (macOS 26) or `RecognitionStream`, for 停止转写.
     private var analyzer: AnyObject?
 
     init(store: SessionStore, settings: ImportSettings, translator: TranslationService, profiles: SpeakerProfileStore?) {
@@ -66,20 +51,17 @@ final class FileImporter: ObservableObject {
 
     var busy: Bool { current != nil }
 
-    /// 0…1 of the current step: how much of the file is transcribed, then how many lines are translated.
     var progress: Double {
         if phase == .translating { return toTranslate > 0 ? Double(toTranslate - untranslated) / Double(toTranslate) : 1 }
         guard duration > 0 else { return 0 }
         return min(1, heard / duration)
     }
 
-    /// Only things AVFoundation can play: audio, or video with a sound track.
     nonisolated static func importable(_ url: URL) -> Bool {
         guard let type = UTType(filenameExtension: url.pathExtension.lowercased()) else { return false }
         return type.conforms(to: .audio) || type.conforms(to: .movie) || type.conforms(to: .audiovisualContent)
     }
 
-    /// Adds the files to the queue as records right away (so they show in the list); returns their ids.
     @discardableResult
     func add(_ urls: [URL]) async -> [String] {
         var ids: [String] = []
@@ -94,9 +76,6 @@ final class FileImporter: ObservableObject {
         return ids
     }
 
-    /// Transcribe a record again from the start (one that stopped halfway, or by request), in
-    /// `lang` when the user picked it. A live meeting has no `sourcePath`; its saved system.m4a
-    /// (or mic/room file) is used instead, so a record with a bad transcript can be redone.
     func retry(_ id: String, lang: Lang? = nil) {
         guard let s = store.session(id), current?.id != id, !queue.contains(where: { $0.id == id }) else { return }
         let candidates = [s.sourcePath.map { URL(fileURLWithPath: $0) },
@@ -112,21 +91,17 @@ final class FileImporter: ObservableObject {
     }
 
     enum Status: Equatable {
-        /// Waiting, with this many files to go before it.
         case queued(ahead: Int)
         case running
-        /// Stopped before the end (quit, 停止转写, or the file couldn't be read).
         case unfinished
     }
 
-    /// Where a record stands; nil once it is transcribed (or not imported at all).
     func status(of s: Session) -> Status? {
         if current?.id == s.id { return .running }
         if let i = queue.firstIndex(where: { $0.id == s.id }) { return .queued(ahead: i + (current == nil ? 0 : 1)) }
         return s.importing == true ? .unfinished : nil
     }
 
-    /// Stops a file (deleted, or 停止转写); what was transcribed stays.
     func cancel(_ id: String) {
         queue.removeAll { $0.id == id }
         guard current?.id == id else { return }
@@ -162,7 +137,6 @@ final class FileImporter: ObservableObject {
 
     private func run(_ job: Job) async {
         let started = Date()
-        // The file's sound as 16 kHz mono PCM: video containers and any codec AVFoundation reads.
         let pcm = FileManager.default.temporaryDirectory.appendingPathComponent("cicada-import-\(job.id).caf")
         defer { try? FileManager.default.removeItem(at: pcm) }
         do {
@@ -170,26 +144,22 @@ final class FileImporter: ObservableObject {
             defer { if gotAccess { job.url.stopAccessingSecurityScopedResource() } }
             duration = try await Task.detached(priority: .userInitiated) { try await Self.extractAudio(job.url, to: pcm) }.value
         } catch {
-            // Left unfinished: the record offers 重新转写.
             debugLog("import: \(job.id) can't read the file: \(error)")
             return
         }
         guard !Task.isCancelled, store.session(job.id) != nil else { return }
 
         var lang = job.lang ?? sourceLanguages[0]
-        // The service names each line's language itself (`cloudOnly`): no models to compare.
         let named = job.lang ?? sourceLanguages.first { $0.locale == settings.importLanguage }
         if Recognition.cloudOnly { lang = named ?? lastLanguage } else if job.lang == nil { lang = await language(of: pcm) }
         guard !Task.isCancelled else { return }
         let target = settings.resolvedTarget(source: lang.code)
         debugLog("import: \(job.id) \(lang.locale) → \(target)")
-        // Nothing hears it on an Intel Mac without a Ling key: left unfinished, it offers 重新转写 once there is one.
         if Recognition.cloudOnly, !translator.ling.hearsAudio {
             debugLog("import: \(job.id) needs a Ling key")
             return
         }
         hearFailures = 0
-        // What the service heard was translated for this target with it (`Recognition.cloudHear`).
         let heardTarget = settings.resolvedTarget(source: named?.code)
 
         do {
@@ -200,14 +170,11 @@ final class FileImporter: ObservableObject {
             phase = .transcribing
             var n = 0
             var translations: [Task<Void, Never>] = []
-            // 说话人识别, as when listening: each line's stretch of the file gets a voiceprint.
             let voices = settings.speakerVoices ? ImportVoices(pcm: pcm, store: store, session: job.id, profiles: profiles) : nil
             defer { voices?.stop() }
-            // `end`: when the recognized stretch ends, so its last line's sound ends there.
             let add = { (sentences: [(text: String, t: Double)], end: Double, heard: String?, translation: String?) in
                 let src = heard.flatMap { code in sourceLanguages.first { $0.code == code }?.code } ?? lang.code
                 let to = heard == nil ? target : self.settings.resolvedTarget(source: src)
-                // The service's translation covers the whole stretch: kept when the stretch is one line.
                 let given = sentences.count == 1 && to == heardTarget ? translation : nil
                 for (k, sentence) in sentences.enumerated() {
                     let text = HeardText.clean(sentence.text)
@@ -220,7 +187,6 @@ final class FileImporter: ObservableObject {
                     voices?.tag(line.id, from: line.t, to: k + 1 < sentences.count ? sentences[k + 1].t : end)
                 }
             }
-            // `Recognition.host`: the iOS simulator's stand-in recognizer takes a stream, not a file.
             if !Recognition.legacy, !Recognition.cloudOnly, Recognition.host == nil, #available(macOS 26, *) {
                 let transcriber = SpeechTranscriber(locale: Locale(identifier: lang.locale), transcriptionOptions: [],
                                                     reportingOptions: [], attributeOptions: [.audioTimeRange])
@@ -259,11 +225,8 @@ final class FileImporter: ObservableObject {
         }
     }
 
-    /// macOS 14.4–15: the file fed through the older recognizer, which ends a line at each pause.
-    /// It is fed only a couple of lines ahead of what has come back, so a long file doesn't queue up in memory.
     private func transcribeLegacy(_ pcm: URL, locale: String?, session id: String,
                                   line: @escaping (Recognition.Piece) -> Void) async throws {
-        // Heard by the service: `locale` is only its hint, nil when the file's language isn't known.
         let stream = Recognition.cloudOnly ? Recognition.cloudStream(locale)
             : try await Recognition.start(locale ?? sourceLanguages[0].locale, drafts: false, background: true)
         analyzer = stream
@@ -282,8 +245,6 @@ final class FileImporter: ObservableObject {
         let conv = PCMConverter()
         let chunk = AVAudioFrameCount(rate / 10)
         while !Task.isCancelled, store.session(id) != nil {
-            // One recognizer at a time on macOS 14/15: a meeting being listened to goes first. The
-            // file's line in progress ends, and the file carries on in the meeting's pauses.
             if LegacyStream.Gate.meetingBusy {
                 try? await stream.finalize(through: fedSeconds)
                 while LegacyStream.Gate.meetingBusy, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(100)) }
@@ -293,15 +254,12 @@ final class FileImporter: ObservableObject {
             if let c = conv.convert(buf, to: stream.format) { stream.append(c) }
             fedSeconds += Double(buf.frameLength) / rate
             heard = max(heard, fedSeconds - 10)
-            // A couple of lines in the recognizer at a time.
             while ((stream as? LegacyStream)?.backlog ?? (stream as? CloudStream)?.backlog ?? 0) > 2, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(50)) }
         }
         if Task.isCancelled { await stream.cancel() } else { await stream.finish() }
         await reader.value
     }
 
-    /// The older recognizer times a line, not its words: the line cut after each sentence mark,
-    /// each piece timed by where its characters fall in the line.
     nonisolated static func words(_ piece: Recognition.Piece) -> [(String, Double?)] {
         var out: [(String, Double?)] = []
         var current = "", offset = 0
@@ -320,7 +278,6 @@ final class FileImporter: ObservableObject {
         return out
     }
 
-    /// At most a few translations in flight: Ling takes about two a second across the whole app.
     private var inFlight = 0
     private func translate(_ line: TranscriptLine, session id: String) -> Task<Void, Never> {
         untranslated += 1
@@ -341,9 +298,6 @@ final class FileImporter: ObservableObject {
         }
     }
 
-    /// The file's language: the one chosen in settings, else the installed model that understands
-    /// a few clips from across the file best.
-    /// The language the last meeting was heard in, else the first.
     private var lastLanguage: Lang {
         let last = UserDefaults.standard.string(forKey: "lastDetected")
         return sourceLanguages.first { $0.locale == last } ?? sourceLanguages[0]
@@ -358,7 +312,6 @@ final class FileImporter: ObservableObject {
         let rate = file.processingFormat.sampleRate
         let clipFrames = AVAudioFrameCount(rate * 8)
         var scores: [String: Double] = [:]
-        // Three clips from across the file (fewer in a short one): an intro may be music or silence.
         let starts = Set([0.15, 0.45, 0.75].map { min(AVAudioFramePosition(Double(file.length) * $0), max(0, file.length - AVAudioFramePosition(clipFrames))) })
         for start in starts.sorted() {
             guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: clipFrames) else { continue }
@@ -371,9 +324,6 @@ final class FileImporter: ObservableObject {
         return langs.first { $0.locale == best } ?? langs[0]
     }
 
-    /// With no long pause the recognizer hands back minutes as one result (a speech, a fluent
-    /// reader): split it after each sentence, each line timed at its first word. `pieces` are the
-    /// result's runs with their start, when known; `start` is the result's own.
     nonisolated static func sentences(_ pieces: [(String, Double?)], start: Double) -> [(text: String, t: Double)] {
         var out: [(text: String, t: Double)] = []
         var text = "", t: Double?
@@ -381,7 +331,6 @@ final class FileImporter: ObservableObject {
             if t == nil, !piece.trimmingCharacters(in: .whitespaces).isEmpty { t = at }
             text += piece
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Short ones ("Mr.", "OK.") stay with what follows.
             if let last = trimmed.last, "。！？!?.".contains(last), trimmed.filter(\.isLetter).count >= 8 {
                 out.append((trimmed, t ?? out.last?.t ?? start))
                 text = ""
@@ -393,8 +342,6 @@ final class FileImporter: ObservableObject {
         return out
     }
 
-    /// The languages whose speech model is on this Mac, asked per model: the installed-locale list
-    /// can come back short right after a model download.
     nonisolated static func installed() async -> [Lang] {
         var out: [Lang] = []
         for lang in sourceLanguages where await Recognition.status(lang.locale) == .installed {
@@ -405,7 +352,6 @@ final class FileImporter: ObservableObject {
 
     // MARK: Files
 
-    /// When it was recorded (the file's own creation date, else the file system's) and how long it is.
     nonisolated static func facts(_ url: URL) async -> (Date, Double) {
         let asset = AVURLAsset(url: url)
         let length = (try? await asset.load(.duration)).map(CMTimeGetSeconds) ?? 0
@@ -415,7 +361,6 @@ final class FileImporter: ObservableObject {
         return (date ?? Date(), length.isFinite ? length : 0)
     }
 
-    /// Decodes the first sound track to 16 kHz mono Float32 PCM; returns its length in seconds.
     nonisolated static func extractAudio(_ url: URL, to out: URL) async throws -> Double {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
@@ -448,14 +393,10 @@ final class FileImporter: ObservableObject {
     }
 }
 
-/// 说话人识别 for an imported file: each line's stretch of the decoded audio goes through a tagger
-/// of the file's own, so a meeting listened to meanwhile keeps its voices apart from the file's.
 @MainActor
 final class ImportVoices {
     private let tagger = SpeakerTagger()
     private let file: AVAudioFile?
-    /// Off once the file is stopped: a voiceprint still queued then must not land on the lines of
-    /// a 重新转写 that reuses the line ids.
     private var on = true
 
     init(pcm: URL, store: SessionStore, session id: String, profiles: SpeakerProfileStore?) {
@@ -478,28 +419,24 @@ final class ImportVoices {
     }
 
     func tag(_ lineID: String, from start: Double, to end: Double) {
-        // The model looks at 20 s at most: no need to hold more of a long line in memory.
         guard let file, let samples = Self.read(file, from: start, to: min(end, start + Voiceprints.maxSeconds)) else { return }
         tagger.tag(lineID: lineID, samples: samples)
     }
 
-    /// Returns once every line handed in so far has its voice, or is known to have none.
     func finish() async {
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            tagger.voice(of: []) { _ in c.resume() }   // too short to embed: just a place in the queue
+            tagger.voice(of: []) { _ in c.resume() }
         }
     }
 
     func stop() { on = false }
 
-    /// 16 kHz mono floats from `start` to `end` seconds of the file.
     nonisolated static func read(_ file: AVAudioFile, from start: Double, to end: Double) -> [Float]? {
         let rate = file.processingFormat.sampleRate
         let first = AVAudioFramePosition(max(0, start) * rate)
         let last = min(file.length, AVAudioFramePosition(max(0, end) * rate))
         guard last > first, let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(last - first)) else { return nil }
         file.framePosition = first
-        // A read after a seek can stop short of what was asked (a packet boundary): read on to the end.
         var out: [Float] = []
         out.reserveCapacity(Int(last - first))
         while file.framePosition < last {

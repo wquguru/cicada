@@ -24,7 +24,6 @@ import Testing
         #expect(s.match(unit(1)) == nil)
         let attrs = try FileManager.default.attributesOfItem(atPath: s.url.path)
         #expect((attrs[.posixPermissions] as? NSNumber)?.intValue == 0o600)
-        // A fresh process reads the profile back, dates included.
         #expect(SpeakerProfileStore(url: s.url).all().map(\.name) == ["张总"])
         s.delete(id: p.id)
         #expect(s.all().isEmpty)
@@ -35,7 +34,6 @@ import Testing
         defer { try? FileManager.default.removeItem(at: root) }
         _ = s.remember(name: "A", embedding: unit(0))
         _ = s.remember(name: "B", embedding: unit(1))
-        // 0.62 toward A, 0.60 toward B: above suggested, below auto, and not a clear winner.
         let mixed = (0..<SpeakerEmbedding.dimensions).map { i in
             i == 0 ? Float(0.62) : (i == 1 ? Float(0.60) : 0)
         }
@@ -70,8 +68,6 @@ import Testing
         #expect(SpeakerLabels.names(s) == [1: "张总"])
     }
 
-    /// A typed name alone keeps the five-line rule (the share document and the ports rely on it),
-    /// except for a one-to-one call's only voice.
     @Test func aTypedNameDoesNotSkipTheFiveLineRule() {
         func line(_ id: String, _ voice: Int) -> TranscriptLine {
             TranscriptLine(id: id, t: 1, speaker: "them", src: "我们周四上线", dst: nil, srcLang: "zh-CN", dstLang: "en", voice: voice)
@@ -114,8 +110,6 @@ import Testing
         #expect(same > other)
     }
 
-    /// A real model + real audio path, using two macOS system voices: the same voice should
-    /// enrol and match across two recordings, a different voice should stay anonymous.
     @Test func enrollmentAndCrossMeetingMatchWithRealAudio() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cicada-tts-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

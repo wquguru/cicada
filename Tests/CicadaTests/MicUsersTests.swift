@@ -47,7 +47,6 @@ import Testing
                       .init(bundleID: "com.tencent.xinWeChat", inputs: [builtIn])],
             running: ["com.larksuite.larkApp": "Lark", "com.tencent.WeWorkMac": "企业微信",
                       "com.webex.meetingmanager": "Webex Meetings", "com.tencent.xinWeChat": "微信"])
-        // 微信 reads the mic for a voice message too: that isn't a call.
         #expect(calls == ["com.larksuite.larkApp": "Lark", "com.tencent.WeWorkMac": "企业微信",
                           "com.webex.meetingmanager": "Webex Meetings"])
     }

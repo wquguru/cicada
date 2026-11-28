@@ -3,7 +3,6 @@ import Testing
 @testable import Cicada
 
 @Suite struct PressSpeechTests {
-    /// `seconds` of a 200 Hz tone at `level` (0–1) after `quiet` seconds of room noise at `noise`.
     private func press(quiet: Double, noise: Float, seconds: Double, level: Float) -> [Int16] {
         var out: [Int16] = []
         var seed: UInt32 = 1
@@ -17,13 +16,11 @@ import Testing
 
     @Test func aSilentPressIsNothing() {
         #expect(!PressSpeech.spoken(press(quiet: 3, noise: 0.003, seconds: 0, level: 0)))
-        // A noisier room, still nobody talking.
         #expect(!PressSpeech.spoken(press(quiet: 3, noise: 0.01, seconds: 0, level: 0)))
     }
 
     @Test func aSentenceIsSpeech() {
         #expect(PressSpeech.spoken(press(quiet: 0.4, noise: 0.003, seconds: 2, level: 0.03)))
-        // A quiet voice, quieter than the line on its own room: still over three times its noise.
         #expect(PressSpeech.spoken(press(quiet: 0.4, noise: 0.002, seconds: 1, level: 0.008)))
     }
 
@@ -31,8 +28,6 @@ import Testing
         #expect(!PressSpeech.spoken(press(quiet: 2, noise: 0.003, seconds: 0.1, level: 0.2)))
     }
 
-    /// The log's numbers: a loud quiet (the meeting's leftover echo) holds the line at its cap, and
-    /// a voice just under it counts for nothing.
     @Test func theMeasureSaysWhyAPressWasQuiet() {
         let m = PressSpeech.measure(press(quiet: 2, noise: 0.008, seconds: 2, level: 0.01))
         #expect(m.line == 0.016)

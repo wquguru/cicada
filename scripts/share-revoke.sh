@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Takes a shared meeting down by hand (there is no admin page): the link answers 410 at once and
-# the document is deleted from R2. With --device it also bans the device that made it, so that
-# Mac can't share again.
-#   scripts/share-revoke.sh <share id> [--device]
 set -euo pipefail
 cd "$(dirname "$0")/../server"
 id="${1:?share id (the part after /s/)}"

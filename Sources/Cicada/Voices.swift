@@ -3,8 +3,6 @@ import Foundation
 
 // MARK: - Catalog
 
-/// A voice the room can hear: one of Ming's (through the Ling key), one of another service's speech
-/// model, a voice installed on this Mac, or the user's own voice cloned from a recording.
 struct VoiceOption: Identifiable, Equatable {
     enum Kind: Equatable {
         case ming(String)
@@ -12,7 +10,6 @@ struct VoiceOption: Identifiable, Equatable {
         case system(String)
         case clone
     }
-    /// Stored in settings: "ming:US_Emma", "cloud:Kore", "system:<AVSpeechSynthesisVoice identifier>", "clone".
     let id: String
     let name: String
     let tags: [String]
@@ -21,21 +18,14 @@ struct VoiceOption: Identifiable, Equatable {
     var needsKey: Bool { if case .system = kind { return false } else { return true } }
 }
 
-/// Which voices to offer for each language the room may hear. Ming's are hand-picked natural ones
-/// (two women, two men where it has them); for languages it has no native voice for, Emma and
-/// George speak it with `language_id`. The Mac's own best female and male voices follow, so there is
-/// always something without a key.
 enum VoiceCatalog {
-    /// The cloud voices of the AI service in use. Set by the app when the service changes.
     enum Service: Equatable {
         case ming
-        /// `label`: where they come from, shown next to each ("Gemini").
         case cloud(label: String, voices: [CloudVoice])
         case none
     }
     nonisolated(unsafe) static var service: Service = .ming
 
-    /// Tabs in settings: (key, title). The key is the translation code without region ("zh" for zh-CN / zh-TW).
     static let languages: [(key: String, title: String)] = [
         ("en", "English"), ("zh", "中文"), ("ja", "日本語"), ("ko", "한국어"),
         ("es", "Español"), ("fr", "Français"), ("de", "Deutsch"), ("pt", "Português"),
@@ -46,7 +36,6 @@ enum VoiceCatalog {
         return base.isEmpty ? "en" : base
     }
 
-    /// Ming's `language_id` for languages that need it (zh and en work without).
     static func mingLanguage(for code: String) -> String? {
         let k = key(for: code)
         return ["ja", "ko", "de", "fr", "es"].contains(k) ? k : nil
@@ -70,7 +59,6 @@ enum VoiceCatalog {
         }
     }
 
-    /// The Mac's best installed female and male voice for the language (no novelty voices).
     static func system(for language: String) -> [VoiceOption] {
         let k = key(for: language)
         let prefix = language.hasPrefix("zh-TW") ? "zh-TW" : k == "zh" ? "zh-CN" : k
@@ -88,7 +76,6 @@ enum VoiceCatalog {
         return out
     }
 
-    /// The service's voices for a language: Ming's, a speech model's (the same in every language), or none.
     static func remote(for language: String) -> [VoiceOption] {
         switch service {
         case .ming: return ming(for: language)
@@ -101,14 +88,12 @@ enum VoiceCatalog {
 
     static func options(for language: String) -> [VoiceOption] { remote(for: language) + system(for: language) }
 
-    /// What a language uses until the user picks: the service's first voice with a key, else the Mac's.
     static func defaultID(for language: String, hasKey: Bool) -> String? {
         (hasKey ? remote(for: language).first : nil)?.id ?? system(for: language).first?.id
     }
 
     static let cloneOption = VoiceOption(id: "clone", name: L("我自己的声音"), tags: [], kind: .clone)
 
-    /// A short line to try a voice with, in the language it will speak.
     static func sample(for language: String) -> String {
         switch key(for: language) {
         case "zh": "谢谢大家。我们来看一下上线时间表，并确定谁负责麦克风测试。"
@@ -125,9 +110,6 @@ enum VoiceCatalog {
 
 // MARK: - The user's own voice
 
-/// The recording Ming clones the user's voice from: `voice/reference.wav` (16 kHz mono, ≤ 30 s) and
-/// `voice/reference.txt` (what it says, as transcribed on this Mac) under Application Support. Never
-/// leaves the Mac except inside a speech request to Ling.
 enum VoiceReference {
     static var folder: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -146,7 +128,6 @@ enum VoiceReference {
         return Double(f.length) / f.fileFormat.sampleRate
     }
 
-    /// What Ming needs: the clip as a data URI and its transcript.
     static func reference() -> (audio: String, text: String)? {
         #if !CICADA_IOS
         trimSaved()
@@ -179,17 +160,9 @@ enum VoiceReference {
     // MARK: Pace
 
     #if !CICADA_IOS
-    // Pace is Mac app only, with the voice recorder below: it scores with the speak test's tokens
-    // (SpeakTest.swift). Trimming is shared: the iOS recorder trims what it saves too.
 
-    /// Ming copies the recording's pace into every sentence: a recital at 1.7 characters a second
-    /// made each sentence about 4× as long as the built-in voice says it. Below these (characters
-    /// for Chinese, Japanese and Korean, words otherwise, per second of speech) the clone is too
-    /// slow for a meeting; reading the passage at an ordinary pace gives 3.5–5 and 2.3–3.
     static let slowCharacters = 2.5, slowWords = 1.6
 
-    /// How many characters or words a second the recording is read at, silence at both ends left
-    /// out; nil when there is no speech to measure.
     static func pace(text: String, samples: [Float], sampleRate: Double) -> Double? {
         let units = SpeakScore.tokens(text).count
         guard units > 0, let span = speechSpan(samples, sampleRate: sampleRate), span > 0.5 else { return nil }
@@ -202,7 +175,6 @@ enum VoiceReference {
         return pace < (characters * 2 >= tokens.count ? slowCharacters : slowWords)
     }
 
-    /// Seconds from the first to the last 20 ms window within 35 dB of the loudest one.
     static func speechSpan(_ samples: [Float], sampleRate: Double) -> Double? {
         guard let w = speechWindows(samples, sampleRate: sampleRate) else { return nil }
         return Double(w.last - w.first + 1) * Double(w.size) / sampleRate
@@ -210,16 +182,12 @@ enum VoiceReference {
 
     #endif
 
-    /// The samples from 0.2 s before the reading to 0.2 s after it. Ming copies the clip's ending:
-    /// a second of silence after the last word (the pause before 读完了) made every cloned
-    /// sentence come back as 0.4 s of nothing (measured against Ling, 2026-11).
     static func trimmed(_ samples: [Float], sampleRate: Double) -> ArraySlice<Float> {
         guard let w = speechWindows(samples, sampleRate: sampleRate) else { return samples[...] }
         let pad = Int(sampleRate * 0.2)
         return samples[max(0, w.first * w.size - pad)..<min(samples.count, (w.last + 1) * w.size + pad)]
     }
 
-    /// Rewrites a WAV without the quiet around the reading; false when there was nothing to cut.
     @discardableResult
     static func trim(_ url: URL) -> Bool {
         guard let f = try? AVAudioFile(forReading: url),
@@ -235,7 +203,6 @@ enum VoiceReference {
         out.frameLength = AVAudioFrameCount(kept.count)
         let tmp = url.deletingLastPathComponent().appendingPathComponent(".trim-\(UUID().uuidString).wav")
         do {
-            // Scoped so the file is closed (its header written) before it replaces the original.
             do {
                 let w = try AVAudioFile(forWriting: tmp, settings: f.fileFormat.settings,
                                         commonFormat: f.processingFormat.commonFormat, interleaved: f.processingFormat.isInterleaved)
@@ -251,7 +218,6 @@ enum VoiceReference {
     }
 
     #if !CICADA_IOS
-    /// The saved recording, trimmed once: recordings made before trimming existed end in the pause.
     private static var checkedTrim: Date?
     static func trimSaved() {
         let date = (try? audioURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
@@ -281,7 +247,6 @@ enum VoiceReference {
     }
 
     #if !CICADA_IOS
-    /// The pace of a WAV and what it says.
     static func pace(of url: URL, text: String) -> Double? {
         guard let f = try? AVAudioFile(forReading: url),
               let buf = AVAudioPCMBuffer(pcmFormat: f.processingFormat, frameCapacity: AVAudioFrameCount(f.length)),
@@ -292,7 +257,6 @@ enum VoiceReference {
 
     private static var savedPace: (date: Date, slow: Bool)?
 
-    /// The saved recording is read too slowly (worked out once per recording).
     static var savedIsSlow: Bool {
         guard let date = (try? audioURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
               let text else { return false }
@@ -303,7 +267,6 @@ enum VoiceReference {
     }
     #endif
 
-    /// The passage to read, in the user's own language.
     static func passage(for locale: String) -> String {
         switch VoiceCatalog.key(for: locale) {
         case "zh": "大家好，我是这次会议的主持人。今天我们主要讨论新产品的上线计划，包括时间安排、测试范围和市场推广。请大家先看一下屏幕上的议程。"
@@ -314,10 +277,6 @@ enum VoiceReference {
 }
 
 #if !CICADA_IOS
-// Mac app only (the iOS build sets CICADA_IOS): pinned to a Mac input device and checked with the
-// Mac recognizer. iOS records its own (docs/ios-plan.md, M3).
-/// Records the microphone for the voice clone: 16 kHz mono into a temporary WAV, with a level for
-/// the meter. Stops by itself at 30 s.
 @MainActor
 final class VoiceRecorder: ObservableObject {
     enum Phase: Equatable { case idle, recording, checking, ready, failed(String) }
@@ -325,7 +284,6 @@ final class VoiceRecorder: ObservableObject {
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var seconds: Double = 0
     @Published private(set) var level: Float = 0
-    /// What the recording says (transcribed on this Mac), used as the clone's reference text.
     @Published private(set) var transcript = ""
 
     static let maxSeconds = 30.0
@@ -340,7 +298,6 @@ final class VoiceRecorder: ObservableObject {
     private let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
     private var locale = "zh-CN"
 
-    /// `device`: the real mic; the system default may be the virtual mic while speaking is on.
     func start(locale: String, device: OutputDevice?) {
         stopEngine()
         self.locale = locale
@@ -348,7 +305,6 @@ final class VoiceRecorder: ObservableObject {
         try? FileManager.default.removeItem(at: url)
         let input = engine.inputNode
         AudioDevices.pinInput(engine, to: device)
-        // The hardware format, as in `RoomMic.start`: the client one can still be the system mic's.
         let inFormat = input.inputFormat(forBus: 0)
         guard inFormat.sampleRate > 0, inFormat.channelCount > 0,
               let f = try? AVAudioFile(forWriting: url, settings: format.settings, commonFormat: .pcmFormatInt16, interleaved: true),
@@ -399,7 +355,6 @@ final class VoiceRecorder: ObservableObject {
         RunLoop.main.add(t, forMode: .common)
     }
 
-    /// Stops recording and transcribes it; `ready` when it is long enough and recognisable.
     func finish() {
         guard phase == .recording else { return }
         stopEngine()

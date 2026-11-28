@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// 改这句… in the meeting record: the line as shown, to rewrite. What changed becomes the user's
-/// own fix (`LiveFixes.edit`), on every line heard the same way or only this one.
 struct LineEditor: View {
     let line: TranscriptLine
     let session: String
@@ -37,7 +35,6 @@ struct LineEditor: View {
                     }
                     .pickerStyle(.radioGroup).labelsHidden().font(.system(size: 12))
                 }
-                // Only a word for a word can teach the list: an added or dropped word can't.
                 if same.swap {
                     Toggle("记进词表，以后自动改", isOn: $keep)
                         .toggleStyle(.checkbox).font(.system(size: 12))
@@ -63,8 +60,6 @@ struct LineEditor: View {
     }
 }
 
-/// Above a finished meeting's transcript: how many words were fixed, and the ones waiting for the
-/// user, one at a time (对 / 不对 / 改成…). Nothing once there was nothing to fix.
 struct FixReviewBanner: View {
     @ObservedObject var fixes: LiveFixes
     let session: Session
@@ -103,7 +98,6 @@ struct FixReviewBanner: View {
     }
 }
 
-/// The last fix decision said back for a few seconds, with 撤销.
 struct FixToast: View {
     @ObservedObject var fixes: LiveFixes
 

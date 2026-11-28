@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// Live notes rewrite only their last topics, so a long meeting's reply stays small.
 @MainActor @Suite struct NotesTests {
     private func topic(_ start: Double, _ title: String, _ points: [String] = ["p"], _ times: [Double?]? = nil) -> NoteTopic {
         NoteTopic(start: start, title: title, summary: "s", points: points, fishbone: nil, pointTimes: times)
@@ -12,8 +11,6 @@ import Testing
         (0..<n).map { TranscriptLine(id: "l\($0)", t: Double($0 * 10), speaker: "them", src: "line \($0)", dst: nil, srcLang: "zh-CN", dstLang: "en") }
     }
 
-    /// A heard form only a fix wrote ("platform" for 平台) isn't one: it would teach the translator
-    /// and the next fix the same mistake.
     @Test func termsKeepOnlyFormsTheRecognizerWrote() {
         var l = TranscriptLine(id: "a", t: 0, speaker: "them", src: "我们 twoty 平台", dst: nil, srcLang: "zh-CN", dstLang: "en")
         l.fixes = [LineFix(from: "平台", to: "platform")]
@@ -21,10 +18,7 @@ import Testing
         #expect(NotesEngine.heardAsSaid(terms, lines: [l]).first?.heard == ["Twoty"])
     }
 
-    /// A rewritten topic cites only its newest lines; its points keep when they were first said,
-    /// and the topic starts no later than they do (a 35-minute replay showed 17:20 for points at 12:50).
     @Test func fishboneBranchTimeComesFromItsLines() {
-        // The model's own "t" came back past the meeting's end (12300 s in a 9000 s meeting).
         let raw = #"{"topics":[{"title":"预算","evidence":["L1"],"points":[],"fishbone":{"question":"q","branches":[{"label":"a","t":12300,"evidence":["L2"]},{"label":"b","t":40}]}}]}"#
         let n = NotesEngine.parse(raw, times: [100, 200, 300], startedAt: 0)!
         #expect(n.topics[0].fishbone?.branches.map(\.t) == [200, 40])
@@ -42,14 +36,12 @@ import Testing
 
     @Test func keepsFrozenTopicsAndTakesTheReplysTail() {
         let old = (0..<5).map { topic(Double($0 * 100), "t\($0)") }
-        // The model echoed everything, renamed the current topic and added one.
         let reply = [topic(0, "t0"), topic(100, "t1 改"), topic(300, "t3"), topic(400, "t4 改"), topic(500, "t5")]
         let merged = NotesEngine.merge(old, frozen: 3, returned: reply)
         #expect(merged.map(\.title) == ["t0", "t1", "t2", "t3", "t4 改", "t5"])
     }
 
     @Test func nothingFrozenKeepsEveryTopic() {
-        // The first update over many lines: nothing to echo, so every topic is the model's own.
         let reply = (0..<5).map { topic(Double($0 * 100), "t\($0)") }
         #expect(NotesEngine.merge([], frozen: 0, returned: reply) == reply)
         #expect(NotesEngine.merge([topic(0, "t0")], frozen: 0, returned: reply) == reply)
@@ -62,8 +54,6 @@ import Testing
     }
 
     @Test func fullLiveNotesJoinTheShortestSettledPair() {
-        // Twelve topics, t3 and t4 the shortest neighbours (t3 to t5 is 100 s): a new topic
-        // still starts, and those two become one.
         let starts: [Double] = [0, 100, 200, 300, 330, 400, 600, 700, 800, 900, 1000, 1100]
         let old = starts.enumerated().map { topic($0.element, "t\($0.offset)", ["a\($0.offset)", "b\($0.offset)", "c\($0.offset)"]) }
         let reply = [topic(1000, "t10"), topic(1100, "t11"), topic(1200, "t12")]
@@ -97,7 +87,6 @@ import Testing
         #expect(p.contains("- 00:00 最早的话题: s"))
         #expect(!json.contains("最早的话题"))
         #expect(json.contains("第二个话题") && json.contains("当前话题"))
-        // A full rewrite has nothing frozen.
         let fresh = NotesEngine.prompt(notes: notes, lines: lines(24), from: 20, language: "Simplified Chinese", final: false)
         #expect(!fresh.contains("Earlier topics"))
     }
@@ -113,7 +102,6 @@ import Testing
     }
 
     @Test func longMeetingsSplitByTime() {
-        // A line every 10 s: 90 min stays whole, 4 h becomes four parts of an hour.
         #expect(NotesEngine.parts(lines(540)) == [0..<540])
         let two = NotesEngine.parts(lines(1440))
         #expect(two.count == 4)
@@ -134,7 +122,6 @@ import Testing
         #expect(merge.contains("Part 2 of 2:\n{\"summary\":\"b\"}"))
         #expect(merge.contains("Return the full notes as one JSON object"))
         #expect(merge.contains("\"topics\": []"))
-        // Each of three parts gets two of the eight topics.
         #expect(p.contains("use at most 2 topics"))
     }
 
@@ -160,14 +147,11 @@ import Testing
     }
 
     @Test func partTopicsKeepATopicOverItsContinuation() {
-        // A 2.5-hour meeting's last part, asked for 2 topics, came back with 3: the budget topic's
-        // end as its own. Kept first and last, the budget topic at 125 min was lost.
         let part = [topic(6000, "营销发布安排", ["a"]), topic(7500, "预算评审", ["b"]), topic(8982, "预算评审（续）", ["c"])]
         let kept = NotesEngine.thinned(part, to: 2, end: 8990)
         #expect(kept.map(\.title) == ["营销发布安排", "预算评审"])
         #expect(kept.map(\.start) == [6000, 7500])
         #expect(kept[1].points == ["b", "c"])
-        // Told apart by time alone, the stub still joins the topic it ends.
         let other = [topic(6000, "营销发布安排"), topic(7500, "预算评审"), topic(8982, "收尾")]
         #expect(NotesEngine.thinned(other, to: 2, end: 8990).map(\.start) == [6000, 7500])
         #expect(NotesEngine.subject("Budget review (cont.)") == "Budget review")

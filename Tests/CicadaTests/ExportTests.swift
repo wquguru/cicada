@@ -26,11 +26,8 @@ import Testing
         let srt = TranscriptExport.srt(session)
         let cues = srt.components(separatedBy: "\n\n").filter { !$0.isEmpty }
         #expect(cues.count == 3)
-        // Ends at the next line, at least 1 s and at most 8 s after it starts.
         #expect(cues[0] == "1\n00:00:01,500 --> 00:00:03,250\nHello.\n你好。")
-        // A translation identical to the source isn't repeated; your own line says it was 同传.
         #expect(cues[1] == "2\n00:00:03,250 --> 00:00:11,250\n[同传] Same")
-        // The last line gets 4 s.
         #expect(cues[2] == "3\n00:00:20,000 --> 00:00:24,000\nBye.")
     }
 
@@ -58,12 +55,10 @@ import Testing
         #expect(html.contains("<p>A &lt;b&gt; &amp; &quot;c&quot;</p>"))
         #expect(html.contains("<h3>01:05 Why late</h3>"))
         #expect(html.contains("<li>one</li>"))
-        // A to-do keeps a ballot box, as a checkbox doesn't survive a paste.
         #expect(html.contains("<li>☐ Ship</li>"))
         #expect(!html.contains("<img"))
     }
 
-    /// The picture comes first and the same branches follow as text, for an app that drops images.
     @Test func fishboneIsPictureThenList() {
         let html = TranscriptExport.notesHTML(notes) { _ in .init(png: Data([1, 2, 3]), width: 520) }
         let img = html.range(of: "<img src=\"data:image/png;base64,AQID\" width=\"520\" alt=\"Why?\">")

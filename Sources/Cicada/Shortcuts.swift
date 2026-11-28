@@ -3,7 +3,6 @@ import Carbon.HIToolbox
 
 // MARK: - Shortcut
 
-/// A key plus Carbon modifiers, or the right ⌥ key on its own (push to talk).
 struct Shortcut: Equatable {
     var keyCode: Int
     var modifiers: Int
@@ -36,7 +35,6 @@ struct Shortcut: Equatable {
         self.init(keyCode: Int(keyCode), modifiers: m)
     }
 
-    /// Key caps in display order, e.g. ["⌃", "⌥", "S"].
     var keys: [String] {
         if isRightOption { return [L("右 ⌥")] }
         var k: [String] = []
@@ -62,12 +60,9 @@ struct Shortcut: Equatable {
         kVK_Home: "↖", kVK_End: "↘", kVK_PageUp: "⇞", kVK_PageDown: "⇟", kVK_RightOption: L("右 ⌥"),
     ]
 
-    /// Names worked out on the main thread. SwiftUI sometimes builds the panel off it, and the
-    /// input-source calls assert the main queue there (a crash since 1.4.0): off it, the last name.
     private static let nameLock = NSLock()
     nonisolated(unsafe) private static var names: [Int: String] = [:]
 
-    /// The character the key types on the current layout (US letters on non-Latin layouts).
     static func keyName(_ code: Int) -> String {
         if let f = functionKeys[code] { return f }
         if let n = named[code] { return n }
@@ -96,16 +91,12 @@ struct Shortcut: Equatable {
         return String(utf16CodeUnits: chars, count: length).uppercased()
     }
 
-    /// Why this can't be a global shortcut, or nil. ⌥ or ⇧ alone types characters in
-    /// every app (⌥ Space is a non-breaking space). Bare F keys are brightness/volume on
-    /// most Mac keyboards. So a combination needs ⌃ or ⌘.
     var typingProblem: String? {
         if isRightOption { return nil }
         if modifiers & (controlKey | cmdKey) == 0 { return L("请包含 ⌃ 或 ⌘，否则会影响正常打字") }
         return nil
     }
 
-    /// The system already uses it (Spotlight, input sources, Mission Control, screenshots …).
     var isSystemShortcut: Bool {
         var unmanaged: Unmanaged<CFArray>?
         guard CopySymbolicHotKeys(&unmanaged) == noErr, let list = unmanaged?.takeRetainedValue() as? [[String: Any]] else {
@@ -123,8 +114,6 @@ struct Shortcut: Equatable {
 
 // MARK: - Key combination (Carbon)
 
-/// A global key combination via Carbon. Needs no permission, reports press and
-/// release, and fails with `eventHotKeyExistsErr` if another app holds the same combo.
 final class HotKey {
     var onDown: (() -> Void)?
     var onUp: (() -> Void)?
@@ -160,12 +149,11 @@ final class HotKey {
 
     var isRegistered: Bool { ref != nil }
 
-    /// Registers `shortcut` (replacing any current one). Returns false if another app holds it.
     @discardableResult
     func register(_ shortcut: Shortcut? = nil) -> Bool {
         unregister()
         if let shortcut { self.shortcut = shortcut }
-        let hkID = EventHotKeyID(signature: OSType(0x4C535542), id: id) // 'LSUB'
+        let hkID = EventHotKeyID(signature: OSType(0x4C535542), id: id)
         let status = RegisterEventHotKey(UInt32(self.shortcut.keyCode), UInt32(self.shortcut.modifiers), hkID,
                                          GetApplicationEventTarget(), 0, &ref)
         if status != noErr {
@@ -184,10 +172,6 @@ final class HotKey {
 
 // MARK: - Right ⌥ on its own
 
-/// Hold the right ⌥ key to talk. A modifier on its own can't be a Carbon hotkey, so this
-/// listens to key events with a listen-only event tap, which needs "输入监控" (Input
-/// Monitoring). Pressing any other key while holding it is a chord (⌥ + letter types
-/// accented characters), so the press is cancelled instead of sent.
 final class RightOptionKey {
     var onDown: (() -> Void)?
     var onUp: (() -> Void)?
@@ -197,13 +181,11 @@ final class RightOptionKey {
     private var source: CFRunLoopSource?
     private var active = false
 
-    // Device-dependent modifier bits (IOLLEvent.h).
     private static let rightAlt: UInt64 = 0x40
-    private static let otherModifiers: UInt64 = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x2000 // ctrl, shift, cmd, left alt, right ctrl
+    private static let otherModifiers: UInt64 = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x20 | 0x2000
 
     static var allowed: Bool { CGPreflightListenEventAccess() }
 
-    /// Shows the system prompt the first time; afterwards only System Settings can grant it.
     static func requestAccess() { _ = CGRequestListenEventAccess() }
 
     static func openSystemSettings() {
@@ -252,11 +234,8 @@ final class RightOptionKey {
             let flags = event.flags.rawValue
             let code = event.getIntegerValueField(.keyboardEventKeycode)
             let isRight = code == Int64(kVK_RightOption)
-            // "I held ⌥ and nothing happened" was the left one (or a keyboard or remote session
-            // that only sends it): say so in the log.
             if code == Int64(kVK_Option), flags & 0x20 != 0 { debugLog("right option: left ⌥ pressed, not the talk key") }
             if isRight, flags & RightOptionKey.rightAlt != 0 {
-                // Only a clean press starts talking, not ⌘ + right ⌥ and the like.
                 if !active, flags & RightOptionKey.otherModifiers == 0 { active = true; onDown?() }
             } else if isRight {
                 if active { active = false; onUp?() }

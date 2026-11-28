@@ -3,7 +3,6 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// 电脑和会议室 records the room mic too, and the meeting keeps one recording with both (issue #19).
 @MainActor @Suite struct RoomRecordingTests {
     let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
 
@@ -13,7 +12,6 @@ import Testing
         return dir
     }
 
-    /// `silent` seconds of nothing, then `seconds` of a tone.
     func write(_ url: URL, silent: Double = 0, seconds: Double, hz: Double) {
         let file = AudioFileWriter.open(url, format: format)!
         let n = Int((silent + seconds) * 16000)
@@ -24,7 +22,6 @@ import Testing
         try! file.write(from: buf)
     }
 
-    /// RMS of each half-second of the file.
     func levels(_ url: URL) -> [Float] {
         let file = try! AVAudioFile(forReading: url)
         let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length))!
@@ -43,10 +40,10 @@ import Testing
         write(room, silent: 1, seconds: 2, hz: 660)
         #expect(AudioFileWriter.mix(room, into: system))
         let l = levels(system)
-        #expect(l.count >= 6) // the longer of the two: 3 s
-        #expect(l[1] > 0.1 && l[1] < 0.17) // the Mac alone
-        #expect(l[3] > 0.17) // both
-        #expect(l[5] > 0.1) // the room alone, after the Mac's file ended
+        #expect(l.count >= 6)
+        #expect(l[1] > 0.1 && l[1] < 0.17)
+        #expect(l[3] > 0.17)
+        #expect(l[5] > 0.1)
     }
 
     @Test func aMeetingKeepsTheRoomInItsOneRecording() async throws {

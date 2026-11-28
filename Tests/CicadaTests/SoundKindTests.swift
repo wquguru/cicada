@@ -2,9 +2,7 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// `SoundKind` in front of Ming, on the evaluation clips (see `VADEval`).
 extension VADEval {
-    /// 16 kHz Int16, as `CloudStream` gets it (three-sample average: enough for an evaluation).
     static func int16k(_ clip: Clip) -> [Int16] {
         let k = Int(clip.rate / 16000)
         return stride(from: 0, to: clip.samples.count - k + 1, by: k).map { i in
@@ -14,8 +12,6 @@ extension VADEval {
         }
     }
 
-    /// What `CloudStream` would send Ming, with and without `SoundKind`: stretches with speech in them
-    /// that it would drop (must be none), and stretches without that it saves.
     @Test func cloudGate() throws {
         let clips = try Self.load()
         try #require(!clips.isEmpty)
@@ -49,7 +45,6 @@ extension VADEval {
                           sentNoise, droppedNoise, droppedSpeech, ms / Double(max(1, pieces.count)),
                           notes.joined(separator: " ") as NSString)
         }
-        // The shortest stretches: the start of each clip's first line, cut short.
         for clip in clips where !clip.room {
             let samples = Self.int16k(clip)
             let a = Int(clip.speech[0].0 * 16000)

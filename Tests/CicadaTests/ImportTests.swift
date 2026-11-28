@@ -13,7 +13,6 @@ import Testing
         }
     }
 
-    /// Records written before importing existed still load, and count as not imported.
     @Test func olderSessionsDecode() throws {
         let json = #"{"id":"x","title":"会议 11月1日 14:30","startedAt":"2026-11-01T06:30:00Z","lines":[],"hasAudio":false}"#
         let d = JSONDecoder()
@@ -22,7 +21,6 @@ import Testing
         #expect(s.sourceFile == nil && s.sourcePath == nil && s.importing == nil)
     }
 
-    /// An imported file is known by its name until the notes name the meeting.
     @Test func importedTitleIsTheFileName() {
         var s = Session(id: "i", title: Session.defaultTitle(Date()), startedAt: Date(), endedAt: nil, lines: [], hasAudio: false)
         s.sourceFile = "客户访谈.m4a"
@@ -33,16 +31,13 @@ import Testing
         #expect(s.displayTitle == "Renamed")
     }
 
-    /// The sound of any file AVFoundation reads comes out as 16 kHz mono, as long as the original.
     @Test func extractsSixteenKilohertzMono() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cicada-import-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        // Two seconds of a stereo 44.1 kHz tone.
         let src = dir.appendingPathComponent("tone.m4a")
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
         do {
-            // Closed when it goes out of scope (`close()` is macOS 15 and later).
             let writer = try AVAudioFile(forWriting: src, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 2])
             let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 88_200)!
             buffer.frameLength = 88_200
@@ -74,7 +69,6 @@ import Testing
         #expect(s.first?.t == 1)
     }
 
-    /// macOS 14/15: one timed line, split at its sentence marks, each timed by its place in the line.
     @Test func legacyLineSplitsByCharacters() {
         let line = Recognition.Piece(text: "Good morning everyone. Let's review the launch plan.", isFinal: true,
                                      start: 10, end: 20.4, confidence: nil)
@@ -84,8 +78,6 @@ import Testing
         #expect(abs((s.last?.t ?? 0) - 14.4) < 0.01)
     }
 
-    /// 说话人识别 on an import: a line's voiceprint is cut from the decoded file by its times,
-    /// clipped to the file's end.
     @Test func lineSoundIsCutFromTheFile() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("cicada-voices-\(UUID().uuidString).caf")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -94,7 +86,7 @@ import Testing
             let file = try AVAudioFile(forWriting: url, settings: format.settings, commonFormat: .pcmFormatFloat32, interleaved: false)
             let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000)!
             buf.frameLength = 48_000
-            for i in 0..<48_000 { buf.floatChannelData![0][i] = Float(i / 16_000) }   // second n holds n
+            for i in 0..<48_000 { buf.floatChannelData![0][i] = Float(i / 16_000) }
             try file.write(from: buf)
         }
         let file = try AVAudioFile(forReading: url)
@@ -105,7 +97,6 @@ import Testing
         #expect(ImportVoices.read(file, from: 4, to: 5) == nil)
     }
 
-    /// 重新转写 numbers the voices afresh: names given to the old ones go.
     @Test @MainActor func retranscribingForgetsVoiceNames() {
         let store = SessionStore(root: FileManager.default.temporaryDirectory.appendingPathComponent("cicada-retry-\(UUID().uuidString)"))
         let s = store.beginImport(file: URL(fileURLWithPath: "/tmp/a.m4a"), recordedAt: Date(), duration: 60)

@@ -1,22 +1,15 @@
 import AppKit
 @preconcurrency import UserNotifications
 
-/// What the panel, the app menu and settings show about updates: a newer release, a manual
-/// check's result, download progress, and why installing in place failed.
 @MainActor
 final class Updates: ObservableObject {
     enum Check { case idle, checking, upToDate, failed }
 
     @Published private(set) var update: UpdateChecker.Update?
     @Published private(set) var check = Check.idle
-    /// When the feed last answered (nil: never), for the panel's version line.
     @Published private(set) var lastChecked: Date?
-    /// Download progress (0...1) while an update installs; the app quits and reopens when done.
     @Published private(set) var progress: Double?
-    /// Why the last in-place update failed (the release page was opened instead).
     @Published var failure: String?
-    /// Set once installing has started: quitting then must not stop to ask about the meeting,
-    /// or the swap script would wait for a quit that the user cancelled.
     private(set) var installing = false
 
     private(set) lazy var checker: UpdateChecker = UpdateChecker { [weak self] in
@@ -24,14 +17,11 @@ final class Updates: ObservableObject {
         self?.lastChecked = self?.checker.lastChecked
         self?.notifyIfDue()
     }
-    /// True while a meeting or speaking is on: the notification waits for it to end.
     var busy: () -> Bool = { false }
     private var started = false
 
     static let current = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
 
-    /// Regular checks (see `UpdateChecker`). A dev build has its own bundle id, so a release can't
-    /// replace it: it checks only when pointed at a test feed.
     func start() {
         lastChecked = checker.lastChecked
         guard !DevBuild.isDev || ProcessInfo.processInfo.environment["CICADA_UPDATE_FEED"] != nil else { return }
@@ -39,13 +29,11 @@ final class Updates: ObservableObject {
         checker.start()
     }
 
-    /// The menu bar panel opened: check in the background if the last check is an hour old.
     func panelOpened() {
         guard started, check != .checking else { return }
         Task { await checker.checkIfDue(after: UpdateChecker.stale) }
     }
 
-    /// "刚刚查过", "2 小时前查过": how long ago the feed last answered.
     static func checkedAgo(_ date: Date, now: Date = Date()) -> String {
         let s = max(0, now.timeIntervalSince(date))
         if s < 60 { return L("刚刚查过") }
@@ -54,20 +42,15 @@ final class Updates: ObservableObject {
         return L("\(Int(s / 86_400)) 天前查过")
     }
 
-    /// The version the system notification was last shown for, kept across launches: one per version.
     private var notified: String? {
         get { UserDefaults.standard.string(forKey: "updateNotified") }
         set { UserDefaults.standard.set(newValue, forKey: "updateNotified") }
     }
 
-    /// Whether a found version still needs its notification: not yet told, and nothing going on.
     nonisolated static func shouldNotify(_ version: String, notified: String?, busy: Bool) -> Bool {
         !busy && version != notified
     }
 
-    /// One system notification per version, for people who never open the panel; a click installs.
-    /// Held while a meeting or speaking is on (stop() calls this again). Screen sharing and Focus
-    /// are the system's to hold: macOS keeps notifications back while the screen is shared.
     func notifyIfDue() {
         let center = UNUserNotificationCenter.current()
         guard let update else {
@@ -104,8 +87,6 @@ final class Updates: ObservableObject {
         }
     }
 
-    /// Installs in place; a meeting being recorded is ended first, after asking.
-    /// If installing can't be done, says why and opens the release page.
     func install(model: AppModel) {
         guard let update, progress == nil else { return }
         if model.running, let id = model.store.liveID, !(model.store.session(id)?.lines.isEmpty ?? true) {

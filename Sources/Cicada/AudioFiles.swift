@@ -1,8 +1,5 @@
 import AVFoundation
 
-// Audio formats and files shared by the Mac and iOS apps (ios/shared-sources.txt).
-
-/// Stateful sample-rate / sample-format converter.
 final class PCMConverter {
     private var converter: AVAudioConverter?
 
@@ -32,8 +29,6 @@ final class PCMConverter {
 }
 
 enum AudioFileWriter {
-    /// AAC .m4a, mono, at the buffer's sample rate. The processing format must
-    /// match the buffers written to it exactly.
     static func open(_ url: URL, format: AVAudioFormat) -> AVAudioFile? {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let settings: [String: Any] = [
@@ -46,14 +41,8 @@ enum AudioFileWriter {
                                 commonFormat: format.commonFormat, interleaved: format.isInterleaved)
     }
 
-    /// Meetings are recorded as ADTS (`system.aac`), which stays readable up to the last packet
-    /// if the app is killed; an .m4a is unreadable until it is closed. `finish` turns it into
-    /// the .m4a afterwards (and at launch, for a meeting the app didn't get to close).
     static func partial(_ url: URL) -> URL { url.deletingPathExtension().appendingPathExtension("aac") }
 
-    /// Rewraps `partial(url)` into `url` without re-encoding, then removes the partial file.
-    /// A partial file next to an .m4a means the last rewrap was cut short: it is done again.
-    /// `until`: seconds to keep from the start (the silent tail of a meeting that ended by itself).
     nonisolated static func finish(_ url: URL, until: Double? = nil) async {
         let src = partial(url)
         guard FileManager.default.fileExists(atPath: src.path) else { return }
@@ -70,8 +59,6 @@ enum AudioFileWriter {
         }
     }
 
-    /// Adds `other` into `url` (two recordings on one clock from their first sample) and writes
-    /// the sum over `url` in its format; the longer of the two sets the length. False leaves both.
     nonisolated static func mix(_ other: URL, into url: URL) -> Bool {
         guard let a = try? AVAudioFile(forReading: url), let b = try? AVAudioFile(forReading: other) else { return false }
         let format = a.processingFormat
@@ -83,7 +70,7 @@ enum AudioFileWriter {
               let bufA = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk),
               let bufB = AVAudioPCMBuffer(pcmFormat: b.processingFormat, frameCapacity: chunk) else { return false }
         let converter = PCMConverter()
-        var pending: [Float] = [] // `other`, in `url`'s format, not mixed yet
+        var pending: [Float] = []
         var aDone = false, bDone = false
         do {
             while true {
@@ -99,7 +86,6 @@ enum AudioFileWriter {
                     if bufA.frameLength == 0 { aDone = true }
                 }
                 if aDone {
-                    // `url` ended first: the rest of `other` over silence.
                     let n = min(Int(chunk), pending.count)
                     if n == 0 { break }
                     bufA.frameLength = AVAudioFrameCount(n)
@@ -118,7 +104,6 @@ enum AudioFileWriter {
             try? FileManager.default.removeItem(at: tmp)
             return false
         }
-        // Closes the file before it takes `url`'s place.
         _ = consume out
         do {
             _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)

@@ -1,17 +1,11 @@
 import SwiftUI
 
-// The 说话人识别 controls in the notes and records windows; the engine is in SpeakerID.swift.
-
-/// Colours for 说话人 1, 2, 3…, cycling after four: not the accent ("live", and 你) nor link blue
-/// (times in the records window), distinct in lightness, all ≥ 4.5:1 on white.
 enum SpeakerColor {
     private static let inks: [Color] = [Color(red: 0.059, green: 0.482, blue: 0.424), Color(red: 0.478, green: 0.298, blue: 0.761),
                                         Color(red: 0.690, green: 0.227, blue: 0.478), Color(red: 0.541, green: 0.353, blue: 0)]
     static func ink(_ n: Int) -> Color { inks[(max(1, n) - 1) % inks.count] }
 }
 
-/// "说话人 2" above a line.
-/// The names given to voices in the meeting on show, by speaker number (set on the transcript's container).
 private struct SpeakerNamesKey: EnvironmentKey { static let defaultValue: [Int: String] = [:] }
 extension EnvironmentValues {
     var speakerNames: [Int: String] {
@@ -31,7 +25,6 @@ struct SpeakerTag: View {
     }
 }
 
-/// 现场 / 线上 beside a line in a meeting that heard the room and the Mac together.
 struct PlaceTag: View {
     let line: TranscriptLine
     var body: some View {
@@ -43,7 +36,6 @@ struct PlaceTag: View {
     }
 }
 
-/// Your own line: said with the talk key, so what the other side heard was its translation (同传).
 struct MeTag: View {
     var body: some View {
         HStack(spacing: 5) {
@@ -56,7 +48,6 @@ struct MeTag: View {
     }
 }
 
-/// A line from the other side whose voice isn't one of the people on show.
 struct UnknownSpeakerTag: View {
     var body: some View {
         HStack(spacing: 5) {
@@ -67,21 +58,14 @@ struct UnknownSpeakerTag: View {
     }
 }
 
-/// Above the transcript once voices are told apart: who is speaking, and a one-click way out. Each
-/// person opens `SpeakerEditor`: a popover in the records window; in the notes window (`editing`
-/// set) a card right below the row, since a popover in a panel that never activates the app closes
-/// as soon as it opens.
 struct SpeakerStrip: View {
     @ObservedObject var model: AppModel
     let session: Session
-    /// The notes window's voice being edited: the editor opens inline instead of as a popover.
     var editing: Binding<Int?>? = nil
     @State private var popover: Int?
 
     var body: some View {
         let numbered = SpeakerLabels.voiceNumbers(session)
-        // A one-to-one call has one voice, which `voiceNumbers` hides; show it anyway so it can be
-        // named and remembered for the next meeting.
         let numbers = numbered.isEmpty
             ? SpeakerLabels.singleVoice(session.lines).map { [$0: 1] } ?? [:]
             : numbered
@@ -131,8 +115,6 @@ struct SpeakerStrip: View {
     }
 }
 
-/// Correct one voice: its name (Ling's guess and people from 人名和术语 are a click away), or merge it
-/// into another voice. `inline` (the notes window): a click on a name or a merge applies at once.
 struct SpeakerEditor: View {
     @ObservedObject var model: AppModel
     @ObservedObject var namer: SpeakerNamer
@@ -147,7 +129,6 @@ struct SpeakerEditor: View {
     private var session: Session? { model.store.session(sessionID) }
 
     var body: some View {
-        // Gone once merged into someone else: the editor closes on the next turn.
         if let s = session,
            let n = SpeakerLabels.voiceNumbers(s)[voice]
             ?? (SpeakerLabels.singleVoice(s.lines) == voice ? 1 : nil) {
@@ -191,7 +172,6 @@ struct SpeakerEditor: View {
                         }
                     }
                     if inline && typing {
-                        // The panel holds the keyboard only while a name is typed; Return or Esc gives it back.
                         Text("键盘暂时在这里，会议软件收不到 · 回车保存 · Esc 交还")
                             .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.accentInk)
                             .fixedSize(horizontal: false, vertical: true)
@@ -324,7 +304,6 @@ struct SpeakerEditor: View {
         .buttonStyle(.plain)
     }
 
-    /// Ling's guess first, then people the notes mention, without names other voices already have.
     private func suggestions(_ s: Session, names: [Int: String], number: Int, guess: VoiceGuess?) -> [String] {
         let taken = Set(names.filter { $0.key != number }.values)
         var out: [String] = []
@@ -334,7 +313,6 @@ struct SpeakerEditor: View {
         return Array(out.prefix(4))
     }
 
-    /// Keeping Ling's name stores nothing, so a later, better guess can still replace it.
     private func apply(_ s: Session, _ guess: VoiceGuess?, _ typed: String) {
         let name = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         if let guess, name == guess.name { model.renameSpeaker(session: s.id, voice: voice, nil) }
@@ -343,9 +321,7 @@ struct SpeakerEditor: View {
     }
 }
 
-/// "这句是谁说的": the people on show, the ones speaking just before and after first. Picked → done.
 struct LineSpeakerPicker: View {
-    /// Voice → speaker number, for the voices on show.
     let voices: [Int: Int]
     let current: Int?
     let nearby: [Int]
@@ -381,7 +357,6 @@ struct LineSpeakerPicker: View {
     }
 }
 
-/// "说话人 6 已改成 David · 撤销", for a few seconds after a speaker edit.
 struct SpeakerUndoToast: View {
     @ObservedObject var model: AppModel
     let session: String?
@@ -401,8 +376,6 @@ struct SpeakerUndoToast: View {
     }
 }
 
-/// Debug render (`speakersRender`): the people row and the first lines, labelled as the transcript
-/// labels them (a name only where the speaker changes).
 struct SpeakerPreview: View {
     @ObservedObject var model: AppModel
     let session: Session

@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// 设置 › 通用 › 会后存一份.
 struct FolderExportSettings: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: AppSettings
@@ -89,7 +88,6 @@ struct FolderExportSettings: View {
     }
 }
 
-/// 存到哪里: an Obsidian vault first (a new Cicada folder in it), then 文稿 › Cicada, or any folder.
 struct FolderChoice: View {
     let current: URL?
     let done: (URL?) -> Void
@@ -156,7 +154,6 @@ struct FolderChoice: View {
     }
 }
 
-/// The record's line under its title: where its file is, or why it isn't there yet.
 struct FolderExportLine: View {
     @ObservedObject var exporter: FolderExporter
     @ObservedObject var model: AppModel

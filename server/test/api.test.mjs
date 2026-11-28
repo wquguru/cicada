@@ -1,8 +1,3 @@
-// End-to-end tests of the share API against a local Worker:
-//   cd server && wrangler d1 migrations apply cicada-share --local && wrangler dev --local
-//   node --test server/test/            (BASE=http://127.0.0.1:8787 by default)
-// .dev.vars must set JEV_FAKE=1 (and no ZENMUX_API_KEY) so the review is the local stand-in.
-// No dependencies: node's test runner, fetch and Web Crypto.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, webcrypto as wc } from "node:crypto";
@@ -20,7 +15,7 @@ async function device() {
   for (;;) {
     n.writeBigUInt64BE(BigInt(nonce++));
     const h = sha(Buffer.concat([pub, n]));
-    if (h[0] === 0 && h[1] === 0 && h[2] < 16) break; // 20 leading zero bits
+    if (h[0] === 0 && h[1] === 0 && h[2] < 16) break;
   }
   const r = await fetch(BASE + "/api/v1/devices", { method: "POST", body: JSON.stringify({ key: b64(pub), pow: b64(n), platform: "test", version: "0.0.1" }) });
   assert.equal(r.status, 201, await r.clone().text());
@@ -55,7 +50,7 @@ test("an open share round-trips the fixture document", async () => {
   const html = await page.text();
   assert.match(html, /<meta property="og:title" content="产品路线评审 · 知了">/);
   assert.match(page.headers.get("Content-Security-Policy"), /script-src 'self'/);
-  assert.doesNotMatch(html, /离线模式重连/); // the text itself never goes into the page's HTML
+  assert.doesNotMatch(html, /离线模式重连/);
 
   const stats = await (await me.call("GET", "/api/v1/shares?ids=" + s.id)).response.json();
   assert.equal(stats.shares[0].state, "live");
@@ -133,7 +128,7 @@ test("a password share opens only with the right verifier", async () => {
   const locked = await (await fetch(BASE + "/api/v1/s/" + s.id)).json();
   assert.deepEqual(locked, { locked: true, salt: b64(salt), iter });
   const page = await (await fetch(BASE + "/s/" + s.id, { headers: { "Accept-Language": "zh" } })).text();
-  assert.match(page, /<meta property="og:title" content="有人和你分享了一份会议记录">/); // no title for password shares
+  assert.match(page, /<meta property="og:title" content="有人和你分享了一份会议记录">/);
   const open = (v) => fetch(BASE + `/api/v1/s/${s.id}/open`, { method: "POST", body: JSON.stringify({ verifier: b64(v) }) });
   assert.equal((await open(await verifier("wrong"))).status, 403);
   const ok = await open(await verifier("ruby-41-lake"));

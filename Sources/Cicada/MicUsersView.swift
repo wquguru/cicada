@@ -5,7 +5,6 @@ extension MicUser.State {
     var isOther: Bool { if case .otherMic = self { true } else { false } }
 }
 
-/// The app's own icon, so the row reads at a glance.
 struct AppIcon: View {
     let bundleID: String
     var size: CGFloat = 28
@@ -22,30 +21,24 @@ struct AppIcon: View {
     }
 }
 
-/// "怎么改": the steps for one app, with its microphone checked live so the user sees it turn green.
 struct MicGuideView: View {
     @ObservedObject var model: AppModel
     let bundleID: String
     let name: String
     let close: () -> Void
 
-    /// The app's state now; idle once it closes its microphone.
     private var state: MicUser.State {
         model.micUsers.first { $0.bundleID == bundleID }?.state ?? .idle
     }
 
     private var micName: String { model.virtualMic?.name ?? "BlackHole 2ch" }
 
-    /// Only apps whose menus we've checked get exact steps; the rest get the plain instruction.
     private var steps: [String] {
         let tune = L("顺便关掉自动调节麦克风音量和降噪，译文会更清楚")
         switch bundleID {
         case "com.tencent.meeting", "us.zoom.xos":
             return [L("进会议后，点麦克风图标旁边的 ⌃"), L("在选择麦克风菜单里点 \(micName)"), tune]
-        // Browsers: the meeting page picks its own mic; Chrome can also set a default for every site.
         case "com.google.Chrome":
-            // With the system mic switched, a page left on "default" needs nothing; one set to a
-            // specific mic still has to be changed in the page.
             return [model.settings.autoSystemMic ? L("在会议网页的音频设置里，把麦克风选为 \(micName) 或“默认”")
                                                  : L("在会议网页的音频设置里，把麦克风选为 \(micName)"),
                     L("想让所有网页默认用它：Chrome 设置 › 隐私和安全 › 网站设置 › 麦克风"), tune]

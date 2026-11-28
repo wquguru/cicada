@@ -1,16 +1,8 @@
-// Gate: one Durable Object per key, for counts that must be exact (KV is eventually consistent and
-// D1 has a single writer, so neither suits a counter hit on every request). A key is a rate limit
-// ("rl:share:<device>"), a device's nonces ("nonce:<device>") or one share ("share:<id>": its views
-// and wrong passwords).
 import { DurableObject } from "cloudflare:workers";
 
-// Wrong passwords for one share: free for the first few, then each waits twice as long; at most
-// HOURLY an hour, and LOCK_AT in all locks the link for LOCK_FOR seconds. Not for good: anyone with
-// the link could otherwise lock it on purpose and leave the people it was meant for shut out.
 const FREE = 5, HOURLY = 20, LOCK_AT = 100, LOCK_FOR = 86400;
 
 export class Gate extends DurableObject {
-  /** Fixed-window limit: true while fewer than `limit` hits fell in this `window` seconds. */
   async hit(limit, window, cost = 1) {
     const t = Date.now() / 1000;
     let w = (await this.ctx.storage.get("w")) || { start: t, n: 0 };
@@ -22,7 +14,6 @@ export class Gate extends DurableObject {
     return { ok: true };
   }
 
-  /** False when this nonce was already used (a replayed request). Nonces are kept for `ttl` seconds. */
   async fresh(nonce, ttl) {
     const key = "n:" + nonce;
     if (await this.ctx.storage.get(key)) return false;
@@ -43,7 +34,6 @@ export class Gate extends DurableObject {
     return { views: (await this.ctx.storage.get("views")) || 0, wrongPasswords: a.fails, locked };
   }
 
-  /** May a password be tried now? */
   async mayTry() {
     const t = Date.now() / 1000;
     const a = (await this.ctx.storage.get("attempts")) || { fails: 0, last: 0, hour: t, inHour: 0 };
@@ -67,7 +57,6 @@ export class Gate extends DurableObject {
     await this.ctx.storage.put("attempts", a);
   }
 
-  /** Forget the share (it was revoked or expired). */
   async clear() {
     await this.ctx.storage.deleteAll();
   }
@@ -78,7 +67,6 @@ export class Gate extends DurableObject {
     if (!current || current < at) await this.ctx.storage.setAlarm(at);
   }
 
-  /** Rate-limit windows and nonces are short-lived: drop what has run out. Share counters stay. */
   async alarm() {
     const t = Date.now();
     const items = await this.ctx.storage.list();
@@ -94,7 +82,6 @@ export function gate(env, key) {
   return env.GATE.get(env.GATE.idFromName(key));
 }
 
-/** A rate limit as the routes use it: null when allowed, else the 429 to send. */
 export async function limit(env, key, max, window, cost = 1) {
   const r = await gate(env, "rl:" + key).hit(max, window, cost);
   return r.ok ? null : r.retryAfter;

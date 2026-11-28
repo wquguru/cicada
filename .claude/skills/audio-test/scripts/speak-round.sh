@@ -1,15 +1,4 @@
 #!/bin/zsh
-# One 同声传译 round on the Mac dev build, scored. The ESP32 says "my" three sentences near the mic
-# while the talk key is held (lsctl talkDown / talkUp), one press each. Usage:
-#   speak-round.sh <label> [quiet|meeting|silent] [volume 0-100]
-#     quiet    the Mac plays nothing
-#     meeting  the Mac plays meeting.wav (English, no breaks) from the speakers through every press
-#     silent   meeting.wav plays and the key is held, but nobody says anything
-# Env: VP (speakVP on|off: the talk key's mic through echo cancellation, default on as in the app), MIC
-# (打开麦克风 on|off during the round, default off), SPEAKMIC (the talk key's mic, a name part; default the
-# MacBook's: with AirPods as the system input the talk key would hear them), OUT, WORK (as room-round.sh).
-# Prints per press what was heard and sent, whether the meeting's English got into what I said,
-# what reached the room's lines with MIC on, and the time from release to the translation.
 set -e
 here=${0:A:h}
 repo=${here:h:h:h:h}

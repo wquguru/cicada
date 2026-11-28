@@ -1,18 +1,12 @@
 import AVFoundation
 import Foundation
 
-/// What the service's audio model (Ming) heard in one stretch of speech.
 struct CloudHeard: Equatable, Sendable {
     var lang: String
     var original: String
-    /// nil when it was dropped (not in the target's script): the text translator tries the original.
     var translation: String?
 }
 
-/// 先用○○听: while a speech model downloads, the AI service's audio model hears the meeting instead.
-/// The ports' design and wording, unchanged (linux/cicada/core/segmenter.py and translator.py `hear`):
-/// the audio is cut into stretches of speech, and each comes back as its language, what was said and
-/// its translation, in one call.
 enum CloudHearing {
     static func prompt(target: String, hint: String?, names: [String]) -> String {
         var p = "You transcribe and interpret meeting audio into \(TranslationService.englishName(target)). "
@@ -24,9 +18,6 @@ enum CloudHearing {
         return p
     }
 
-    /// Why listening is quiet when the service failed to hear three stretches in a row and there is
-    /// nothing on this Mac to go back to. A 5xx (a gateway in front of the server) answered: the
-    /// service is erring, not out of reach (AICheck's serverError words).
     static func trouble(_ error: Error, service: String) -> String {
         switch error as? LingClient.Failure {
         case .invalidKey?: L("key 已失效，到设置 › AI 服务里重填")
@@ -36,8 +27,6 @@ enum CloudHearing {
         }
     }
 
-    /// Tested wording (Windows M0): adding "NONE if there is no speech" or "the same text if already
-    /// in it" gets the gateway's canned "作为一个人工智能语言模型…" refusal instead.
     static func instruction(target: String) -> String {
         "Reply in exactly three lines:\n"
             + "LANG: <BCP-47 code of the spoken language, e.g. en, zh-CN, ja>\n"
@@ -45,15 +34,10 @@ enum CloudHearing {
             + "TRANSLATION: <its translation into \(TranslationService.englishName(target))>"
     }
 
-    /// Room for a reply to `seconds` of audio: a fast talker's original and translation fit; a reply
-    /// that runs on repeating itself ("滴答" ×800 from typing) stops early.
     static func tokens(seconds: Double) -> Int {
         seconds <= 0 ? 800 : min(800, Int(60 + 40 * seconds))
     }
 
-    /// `LANG: … / ORIGINAL: … / TRANSLATION: …`. Drops replies without an original, "NONE" (music,
-    /// silence) and noise; a translation not in the target's script is dropped and leaves the original
-    /// for the text translator.
     static func parse(_ reply: String, target: String, hint: String?, seconds: Double) -> CloudHeard? {
         var lang: String?, original: String?, translation: String?
         func take(_ line: String, _ label: String) -> String? {
@@ -81,9 +65,6 @@ enum CloudHearing {
         return CloudHeard(lang: code, original: o, translation: t)
     }
 
-    /// What a speech model (`/audio/transcriptions`) heard: the text, in the language the server
-    /// reports ("zh", "chinese"), else the one its script shows, else the meeting's. No translation:
-    /// the text translator does that, as for the Mac's own recognition. nil for nothing or noise.
     static func transcript(_ text: String, reported: String?, hint: String?, target: String, seconds: Double) -> CloudHeard? {
         let o = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !o.isEmpty, o.contains(where: { $0.isLetter || $0.isNumber }), !isNoise(o, seconds: seconds) else { return nil }
@@ -105,7 +86,6 @@ enum CloudHearing {
         return CloudHeard(lang: code, original: o, translation: code == target ? o : nil)
     }
 
-    /// What Ming says the language is ("zh", "zh-Hans", "cmn") as a source code.
     static func normalize(_ reported: String?, fallback: String) -> String {
         guard let reported, !reported.trimmingCharacters(in: .whitespaces).isEmpty else { return fallback }
         let r = reported.trimmingCharacters(in: CharacterSet(charactersIn: " .`\""))
@@ -116,8 +96,6 @@ enum CloudHearing {
         return (2...3).contains(head.count) ? head : fallback
     }
 
-    // Ming describing the audio instead of transcribing it: "（无语音内容）", "[Music]", "这段音频是一段旋律，
-    // 没有说话声。". A bracketed note beside real words ("（笑）好的") keeps the words.
     private static let annotation = #"[(（\[【][^)）\]】]*[)）\]】]|♪"#
     private static let noSpeech = [
         "没有说话", "无语音", "没有语音", "没有人声", "无人声", "没有人说话", "无人说话",
@@ -131,10 +109,6 @@ enum CloudHearing {
         "음", "어", "아", "응", "흠", "으",
     ].map { Array($0) }
 
-    /// Ming writes something for every stretch it is sent, speech or not: hold music, a ringback tone,
-    /// a fan or typing came back as "嗯。", "嗯，嗯，嗯…" or "滴答" ×800. That is noise: fillers only, one
-    /// short sound six or more times over, or more than anyone says in `seconds` (0: unknown). A short
-    /// real answer ("对", "好的", "喂，能听到吗") stays. Same rules and lists as the ports.
     static func isNoise(_ original: String, seconds: Double = 0) -> Bool {
         let text = original.lowercased().replacingOccurrences(of: annotation, with: " ", options: .regularExpression)
         if noSpeech.contains(where: { text.contains($0) }) { return true }
@@ -144,14 +118,12 @@ enum CloudHearing {
         }
         if !word.isEmpty { words.append(word) }
         if words.isEmpty || words.allSatisfy(fillerWord) { return true }
-        // Each CJK character is a unit, as a word is elsewhere.
         let units: [String] = words.flatMap { w in w.contains(where: cjk) ? w.map { String($0) } : [String(w)] }
         let n = units.count
         for p in 1...4 where n >= 6 * p && (p..<n).allSatisfy({ units[$0] == units[$0 - p] }) { return true }
         return seconds > 0 && Double(n) > max(12, 12 * seconds)
     }
 
-    /// Made of fillers only, a held sound shortened first: "嗯嗯嗯", "hmmmm"; "えーと" is not.
     private static func fillerWord(_ raw: [Character]) -> Bool {
         var w: [Character] = []
         for c in raw where w.count < 2 || w[w.count - 1] != c || w[w.count - 2] != c { w.append(c) }
@@ -169,7 +141,6 @@ enum CloudHearing {
             || (0xF900...0xFAFF).contains(v) || (0xAC00...0xD7AF).contains(v)
     }
 
-    /// 16 kHz mono 16-bit samples as a WAV file in memory (44-byte RIFF header).
     static func wav(_ samples: [Int16]) -> Data {
         var d = Data(capacity: 44 + samples.count * 2)
         func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
@@ -185,22 +156,16 @@ enum CloudHearing {
     }
 }
 
-/// Cuts 16 kHz audio into stretches of speech by loudness alone: a pause of 0.6 s ends one, and one
-/// that runs to 8 s is cut at its quietest moment in the last 2 s, so a word is split as rarely as
-/// possible (Ming has no word timings to put it back together). The ports' Segmenter, same numbers.
-/// Not thread-safe: one queue feeds it.
 struct CloudSegmenter {
     struct Piece {
-        /// Seconds since the first sample fed.
         let start: Double
         let samples: [Int16]
         var seconds: Double { Double(samples.count) / 16000 }
     }
 
-    static let frame = 480 // 30 ms
-    static let threshold: Float = 0.01 // AudioRouter's gate (about -40 dBFS)
+    static let frame = 480
+    static let threshold: Float = 0.01
     static let pause = 0.6, maxLength = 8.0, minSpeech = 0.25, preRoll = 0.15, tail = 0.15, cutWindow = 2.0
-    /// Loud frames' 90th / 10th percentile below this: steady sound (a fan, hum, hiss), not speech.
     static let steady: Float = 2.0
 
     private var pending: [Int16] = []
@@ -223,7 +188,6 @@ struct CloudSegmenter {
         pending.removeFirst(i)
     }
 
-    /// Ends the open stretch (a cut was asked for, or listening stopped).
     mutating func flush(emit: (Piece) -> Void) {
         guard !current.isEmpty else { return }
         close(current.count - quiet * Self.frame + Int(Self.tail * 16000), emit: emit)
@@ -259,7 +223,6 @@ struct CloudSegmenter {
         if Double(quiet * f) >= Self.pause * 16000 {
             close(current.count - quiet * f + Int(Self.tail * 16000), emit: emit)
         } else if Double(current.count) >= Self.maxLength * 16000 {
-            // The quietest frame in the last 2 s; the rest starts the next stretch.
             let from = max(1, levels.count - Int(Self.cutWindow * 16000 / Double(f)))
             var cut = from
             for i in from..<levels.count where levels[i] < levels[cut] { cut = i }
@@ -286,7 +249,6 @@ struct CloudSegmenter {
         quiet = 0
         loud = 0
         if speech { emit(Piece(start: (start * 1000).rounded() / 1000, samples: samples)) }
-        // A forced cut carries on with the remainder; after a pause the remainder is silence.
         if restLevels.contains(where: { $0 >= Self.threshold }) {
             currentStart = start + Double(end) / 16000
             current = rest
@@ -297,10 +259,6 @@ struct CloudSegmenter {
     }
 }
 
-/// The meeting heard by the service instead of on this Mac, as a `RecognitionStream`, so the rest of
-/// listening (the record, notes, voices, subtitles) works as it does with the on-device model. Each
-/// stretch is one call (~2.2 s whatever its length); calls overlap, and lines come back in order.
-/// Only finished lines: there is no partial text.
 final class CloudStream: RecognitionStream, @unchecked Sendable {
     typealias Hear = @MainActor @Sendable (_ wav: Data, _ seconds: Double) async -> CloudHeard?
 
@@ -316,7 +274,6 @@ final class CloudStream: RecognitionStream, @unchecked Sendable {
     private var calls: [Int: Task<Void, Never>] = [:]
     private var ended = false
 
-    /// `format`: the analyzer's, when it is 16 kHz mono 16-bit, so the audio held for it can be replayed.
     init(format: AVAudioFormat? = nil, hear: @escaping Hear) {
         if let format, format.sampleRate == 16000, format.channelCount == 1, format.commonFormat == .pcmFormatInt16 {
             self.format = format
@@ -336,7 +293,6 @@ final class CloudStream: RecognitionStream, @unchecked Sendable {
         }
     }
 
-    /// Stretches sent and not back yet: a file being imported is fed only a little ahead of them.
     var backlog: Int { queue.sync { calls.count } }
 
     func finalize(through seconds: Double) async throws {
@@ -349,7 +305,6 @@ final class CloudStream: RecognitionStream, @unchecked Sendable {
             ended = true
             deliver()
         }
-        // Calls in flight come back within their 12 s timeout.
         for _ in 0..<150 {
             if queue.sync(execute: { next > issued }) { break }
             try? await Task.sleep(for: .milliseconds(100))
@@ -367,8 +322,6 @@ final class CloudStream: RecognitionStream, @unchecked Sendable {
         continuation.finish()
     }
 
-    /// On `queue`. A stretch nobody spoke in (hold music, a ringtone, an alert) isn't sent: Ming
-    /// would write something for it anyway, and a minute on hold is some thirty calls.
     private func send(_ piece: CloudSegmenter.Piece) {
         if let v = SoundKind.judge(piece.samples), v.speech < SoundKind.speechLine {
             debugLog(String(format: "hear: not speech, not sent (speech %.2f, music %.2f, %.1f s)", v.speech, v.music, piece.seconds))
@@ -384,7 +337,6 @@ final class CloudStream: RecognitionStream, @unchecked Sendable {
             self?.queue.async {
                 guard let self else { return }
                 self.calls[index] = nil
-                // `.some`: a stretch that was noise still takes its turn.
                 self.done[index] = .some(heard.map {
                     Recognition.Piece(text: $0.original, isFinal: true, start: start, end: end, confidence: nil,
                                       language: $0.lang, translation: $0.translation)
@@ -394,7 +346,6 @@ final class CloudStream: RecognitionStream, @unchecked Sendable {
         }
     }
 
-    /// On `queue`: lines in the order they were spoken; a stretch that was noise is skipped.
     private func deliver() {
         while let piece = done.removeValue(forKey: next) {
             if let piece { continuation.yield(piece) }

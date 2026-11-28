@@ -1,18 +1,4 @@
 #!/usr/bin/env python3
-"""Writes the room test's clips into a folder (16 kHz mono WAV, 52 s each, on one timeline):
-
-  mac.wav    five English sentences (Samantha) at 0, 10, 20, 30, 40 s: the online side, from the speakers
-  table.wav  six Chinese sentences (Tingting) for the ESP32 speaker: three in the gaps (6, 25, 47 s),
-             three over the Mac's speech (11, 31, 41 s)
-  music.wav  chords and a beat, no words: what the Mac plays instead of mac.wav in the music round
-
-For 同声传译 (speak-round.sh):
-  me1.wav … me3.wav  what "I" say, one sentence each (Tingting), for the ESP32 while the talk key is held
-  meeting.wav        the online side talking without a break (Samantha, the five sentences twice), from
-                     the speakers while I talk: its echo must not be what gets interpreted
-
-Different languages on the two sides, so every line in the record says where it came from.
-Usage: clips.py <folder>"""
 import array, math, os, random, subprocess, sys, wave
 
 MAC = ["Revenue grew twelve percent compared to last quarter, mostly from enterprise.",

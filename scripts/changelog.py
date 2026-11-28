@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""Writes a version's CHANGELOG.md section from the commits since the last tag.
-
-scripts/changelog.py 1.0.1            # replaces "## Unreleased" (or adds a section) dated today
-scripts/changelog.py 1.0.1 --print    # only prints the section
-
-Release notes are the commit subjects, grouped by platform (one version covers them all): the scope
-picks it, (windows) (android) (linux) or (site) for the website, (ios) none yet, anything else Mac; feat: goes under
-New and fix: under Fixed; chore/docs/build/test/refactor stay out. Every release ships every
-platform, so one with no feat or fix still gets a group saying so. `fix(windows,linux):` lands in both.
-Each line links its commit. Lines written by hand under "## Unreleased" stay on top, as the
-release's one-line summary. Run again for the same version (a draft recut after a fix), it rewrites
-that version's section and keeps its summary.
-"""
 import datetime
 import os
 import re
@@ -31,24 +18,19 @@ def commits():
     try:
         since = git("describe", "--tags", "--abbrev=0") + "..HEAD"
     except subprocess.CalledProcessError:
-        since = "HEAD"  # no tag yet: everything
+        since = "HEAD"
     out = git("log", "--reverse", "--format=%H%x09%s", since)
     entries = [line.split("\t", 1) for line in out.splitlines() if line]
-    # A commit reverted in the same release never shipped: drop it. The revert names it in its body
-    # ("Reverts 8e9623b" or git's "This reverts commit <sha>"), short or full.
     bodies = git("log", "--format=%B", since)
     gone = re.findall(r"\b[Rr]everts (?:commit )?([0-9a-f]{7,40})\b", bodies)
     return [(sha, subject) for sha, subject in entries if not any(sha.startswith(g) for g in gone)]
 
 
 PLATFORMS = {"mac": "Mac", "windows": "Windows", "android": "Android", "linux": "Linux", "site": "Website"}
-# Platforms in the repo that no release builds yet: their commits stay out of the notes instead of
-# falling to Mac (a `feat(ios):` line would read as a Mac feature).
 UNSHIPPED = {"ios"}
 
 
 def platforms(scope):
-    """The groups a commit's scope puts it in: Mac unless it names another platform."""
     scopes = re.split(r"[,\s]+", scope or "")
     names = [PLATFORMS[s] for s in scopes if s in PLATFORMS]
     if not names and any(s in UNSHIPPED for s in scopes):
@@ -71,13 +53,11 @@ def section(version, summary, entries=None):
         lines += [summary, ""]
     for name, kinds in groups.items():
         if not any(kinds.values()):
-            # Every release ships every platform (one version for all), so an app with nothing new
-            # still gets its group: scripts/release_platforms.sh and the site read the groups.
             if name != "Website":
                 lines += [f"### {name}", "", "No changes; released to keep every platform on the same version.", ""]
             continue
         lines += [f"### {name}", ""]
-        if name == "Website":  # the site has no new/fixed split, as before
+        if name == "Website":
             lines += [*kinds["New"], *kinds["Fixed"], ""]
             continue
         for kind, items in kinds.items():
@@ -92,8 +72,6 @@ def main():
     version = sys.argv[1]
     path = os.path.join(ROOT, "CHANGELOG.md")
     text = open(path, encoding="utf-8").read()
-    # The "## Unreleased" block, if any: its text becomes the summary. A recut replaces the
-    # version's own section instead, keeping the summary above its first platform group.
     m = re.search(r"^## Unreleased\n(.*?)(?=^## |\Z)", text, re.M | re.S)
     summary = m.group(1).strip() if m else ""
     if not m:

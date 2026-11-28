@@ -1,12 +1,4 @@
 #!/bin/zsh
-# One room-test round on the Mac dev build, scored. Usage:
-#   room-round.sh <label> [mac|music|none] [volume 0-100]
-# Env: OUT (output device name part, default "MacBook Pro Speakers"; "BlackHole" stands in for
-# headphones), ECHO (roomEcho bypass|on|off, default bypass as in the app), GATE (roomGate on|off, default on),
-# TABLE (on|off: play table.wav on the ESP32, default on), WORK (clips and tools, default
-# $TMPDIR/cicada-room-test).
-# Prints: mac/room line counts, echoes dropped, English room lines (echo that got through), and
-# for each table sentence gap|over and the share of its characters found in the room lines.
 set -e
 here=${0:A:h}
 repo=${here:h:h:h:h}

@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// Serves a package that is not BlackHole.
 final class FakePackage: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }

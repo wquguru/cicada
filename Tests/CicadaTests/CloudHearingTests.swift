@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// The ports' hearing tests (linux/tests/test_core.py `Hearing`, segmenter tests), same cases.
 struct CloudHearingTests {
     @Test func parsesMingReplies() {
         let h = CloudHearing.parse("LANG: en\nORIGINAL: Hello there.\nTRANSLATION: 你好。", target: "zh-CN", hint: nil, seconds: 0)
@@ -16,8 +15,6 @@ struct CloudHearingTests {
         #expect(CloudHearing.parse("lang: ja-JP\noriginal: はい\ntranslation: 是", target: "zh-CN", hint: nil, seconds: 0)?.lang == "ja")
     }
 
-    /// A gateway answering 502 to every stretch is the service erring, said with its code, not
-    /// "can't reach"; the network and the key keep their own words.
     @Test func saysWhyHearingStopped() {
         let erring = CloudHearing.trouble(LingClient.Failure.http(502), service: "ZenMux")
         let away = CloudHearing.trouble(LingClient.Failure.network, service: "ZenMux")
@@ -104,7 +101,6 @@ struct CloudHearingTests {
         #expect(CloudHearing.transcript("회의는 금요일입니다.", reported: nil, hint: nil, target: "zh-CN", seconds: 2)?.lang == "ko")
         #expect(CloudHearing.transcript("Hola a todos.", reported: "spanish", hint: nil, target: "zh-CN", seconds: 2)?.lang == "es")
         #expect(CloudHearing.transcript("Bonjour.", reported: "fr", hint: nil, target: "zh-CN", seconds: 2)?.lang == "fr")
-        // Already in the language it's translated into: shown as it is.
         let same = CloudHearing.transcript("周五发布。", reported: "zh", hint: nil, target: "zh-CN", seconds: 2)
         #expect(same?.translation == "周五发布。")
         #expect(CloudHearing.transcript("  ", reported: nil, hint: nil, target: "en", seconds: 1) == nil)

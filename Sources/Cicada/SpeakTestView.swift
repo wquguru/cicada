@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Settings › 同声传译 › 试一句: run one sentence through the real chain, play back what the room
-/// received, show where it broke and how long each stage took.
 struct SpeakTestView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var tester: SpeakTester
@@ -108,7 +106,7 @@ struct SpeakTestView: View {
         let name: String
         let detail: String
         let time: Double?
-        let state: Int // 0 waiting, 1 running, 2 done, 3 broken
+        let state: Int
         var playable: URL?
     }
 
@@ -144,7 +142,6 @@ struct SpeakTestView: View {
     }
 
     private func voiceName(_ r: SpeakTestResult) -> String {
-        // "ming" / "zenmux", or "system (zenmux failed)" when the stream fell back to the Mac's voice.
         let who = r.voice.contains("(") ? String(r.voice.drop { $0 != "(" }.dropFirst().prefix { $0 != " " }) : r.voice
         let cloud = who == "ming" ? "Ming" : AIProvider.named(who).name
         let v = r.voice.contains("failed") ? L("本机（\(cloud) 失败）") : r.voice.hasPrefix("system") ? L("本机声音") : cloud
@@ -335,7 +332,6 @@ struct SpeakTestView: View {
                 } else if AudioDevices.virtualMic != nil {
                     SoftButton(L("让系统认出它"), dark: true) { model.installer.reload() }
                 }
-                // Tells "the voice itself is broken" from "it never reached the room".
                 if let text = r.translation, let id = model.voiceID(for: r.to) {
                     SoftButton(model.previewing == id ? L("正在播放…") : L("在扬声器上听译文")) {
                         model.previewVoice(id, language: r.to, text: text)
@@ -379,7 +375,6 @@ struct SpeakTestView: View {
         }
     }
 
-    /// The talk key only listens while speak-back is on (and, for the right ⌥, with Input Monitoring).
     private var talkKeyWorks: Bool { model.settings.speakEnabled && !model.talkNeedsPermission }
 
     private func seconds(_ v: Double) -> String { L("\(String(format: "%.1f", v)) 秒") }

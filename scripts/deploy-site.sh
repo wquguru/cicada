@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Builds the website and deploys it with the share service: one Worker, "cicada-site"
-# (server/wrangler.jsonc), serving cicada.indaloop.app. The site is its static assets; /s/* and
-# /api/* run server/src. The custom domain is attached to the Worker in Cloudflare, so the config
-# declares no routes and a deploy leaves it alone. Needs `wrangler login` once, and
-# scripts/share-setup.sh once (the database, the bucket and the ZenMux key).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

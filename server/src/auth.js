@@ -1,8 +1,3 @@
-// Who is asking, without accounts. Each app install makes an Ed25519 key pair and registers the
-// public key once, paying a small proof of work so that minting many devices costs time. Every
-// write after that is signed: method, path, time, a one-off nonce and the body's hash, so a request
-// can be neither altered nor replayed. A device identity is not trusted for anything but rate limits
-// and owning its shares (anyone can make a new one); changing a share also needs its manage token.
 import { b64url, unb64, hex, sha256, now, fail, ipKey } from "./util.js";
 import { gate, limit } from "./gate.js";
 
@@ -23,10 +18,8 @@ export async function deviceId(pubkey) {
   return hex((await sha256(pubkey)).slice(0, 16));
 }
 
-/** POST /api/v1/devices {key, pow, platform, version} → {device} */
 export async function register(request, env) {
   const ip = await ipKey(request, env);
-  // A household or office shares one address, hence a few a day rather than one; tests raise it.
   const wait = await limit(env, "devices:" + ip, Number(env.DEVICES_PER_IP_DAY || 5), 86400);
   if (wait) return fail(429, "rate_limited", { retryAfter: wait });
   const body = await request.json().catch(() => null);
@@ -48,11 +41,6 @@ export async function register(request, env) {
   return { device: id };
 }
 
-/**
- * Checks a signed request. Returns { device, body } (the raw body text, already verified), or a
- * Response to send back. Headers: X-Cicada-Device, -Time, -Nonce, -Signature over
- * "METHOD\nPATH\nTIME\nNONCE\nsha256hex(body)".
- */
 export async function signed(request, env) {
   const h = (k) => request.headers.get("X-Cicada-" + k) || "";
   const id = h("Device"), time = Number(h("Time")), nonce = h("Nonce"), sig = unb64(h("Signature"));

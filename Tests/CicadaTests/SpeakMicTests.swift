@@ -16,15 +16,11 @@ private final class MicFrames: RecognitionStream, @unchecked Sendable {
     func cancel() async {}
 }
 
-// Requires microphone permission and a virtual system input with a different format from
-// the real mic. Opt in locally: CI has neither these devices nor microphone permission.
 @MainActor @Suite(.enabled(if: ProcessInfo.processInfo.environment["CICADA_TEST_MIC"] == "1"))
 struct SpeakMicTests {
-    /// The system input (BlackHole) and this Mac's own microphone.
     private func devices() throws -> (original: OutputDevice, mic: OutputDevice) {
         let original = try #require(AudioDevices.defaultInput)
         try #require(original.isVirtualMic, "Select BlackHole as the system input before this hardware test")
-        // A continuity microphone may be listed first: hardware tests must only open this Mac's mic.
         let mic = try #require(AudioDevices.inputs().first {
             AudioDevices.transport($0.id) == kAudioDeviceTransportTypeBuiltIn
         })
@@ -47,7 +43,6 @@ struct SpeakMicTests {
             speak.pressBegan()
             try #require(speak.phase == .listening)
             try await Task.sleep(for: .milliseconds(500))
-            // Cancel rather than release: this regression test must never translate or play audio.
             speak.pressCancelled()
             #expect(frames.count > before)
             #expect(speak.phase == .idle)
@@ -75,8 +70,7 @@ struct SpeakMicTests {
             #expect(recorder.phase == .recording)
             try await Task.sleep(for: .milliseconds(500))
             let size = (try? FileManager.default.attributesOfItem(atPath: recorder.url.path)[.size] as? Int) ?? 0
-            #expect(size > 8_000)  // a quarter second of 16 kHz 16-bit audio
-            // Cancel: the sample is deleted, never transcribed or uploaded.
+            #expect(size > 8_000)
             recorder.cancel()
         }
         #expect(AudioDevices.defaultInput?.uid == original.uid)

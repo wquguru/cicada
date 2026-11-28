@@ -1,10 +1,5 @@
 import Foundation
 
-/// The share document (v1): what goes to the share page, made from a meeting record. Only these
-/// fields leave the Mac: never the record's file paths (`sourcePath` has the user's name in it),
-/// Ling's guesses at names with the lines they came from, or the record's own bookkeeping. Speakers
-/// are 说话人 N unless the user chose to show names. The ports produce the same bytes
-/// (Tests/fixtures/share), and server/src/doc.js reads exactly these fields.
 struct ShareDoc: Codable, Equatable {
     struct Line: Codable, Equatable {
         var t: Double
@@ -42,7 +37,6 @@ struct ShareDoc: Codable, Equatable {
     var langs: [String]
     var notes: Notes?
     var lines: [Line]
-    /// How many parts the user left out (the review flagged them): the page says so.
     var hidden: Int
 }
 
@@ -51,7 +45,6 @@ enum ShareScope: String, CaseIterable {
 }
 
 enum ShareProjection {
-    /// `removed`: indices into the record's lines the user took out; `dropNotes` leaves the notes out.
     static func doc(_ s: Session, scope: ShareScope, names: Bool, removed: Set<Int> = [], dropNotes: Bool = false) -> ShareDoc {
         let numbers = SpeakerLabels.numbers(s)
         let nameMap = names ? SpeakerLabels.names(s) : [:]
@@ -83,7 +76,6 @@ enum ShareProjection {
                         notes: notes, lines: lines, hidden: hidden)
     }
 
-    /// The meeting's usual direction ("en" → "zh"), by the most lines.
     static func languages(_ lines: [TranscriptLine]) -> [String] {
         var count: [String: Int] = [:], first: [String: Int] = [:]
         for (i, l) in lines.enumerated() where l.dst != nil {
@@ -99,7 +91,6 @@ enum ShareProjection {
         String(code.split(separator: "-").first ?? Substring(code)).lowercased()
     }
 
-    /// One decimal: the page shows seconds, and short numbers keep the bytes the same on every platform.
     private static func round(_ t: Double) -> Double { (t * 10).rounded() / 10 }
 
     private static let iso = ISO8601DateFormatter()

@@ -1,12 +1,8 @@
 import Foundation
 
-/// Dev builds (and the debug mode): notices the main thread stuck and has `sample` record every
-/// thread's stack while it still is, so a freeze nobody can reproduce on demand (the talk key with
-/// the room mic open) leaves its frame behind. One sample per stall, written next to the log.
 final class MainThreadWatchdog: @unchecked Sendable {
     static let shared = MainThreadWatchdog()
 
-    /// A main thread silent this long counts as stuck.
     static let stuckAfter = 2.0
 
     private let lock = NSLock()
@@ -29,8 +25,6 @@ final class MainThreadWatchdog: @unchecked Sendable {
         var stuckSince: Date?
         while true {
             Thread.sleep(forTimeInterval: 0.25)
-            // The first ping to run after a stall marks when the main thread came back: the sample
-            // itself takes seconds, so the time this loop next looks is too late.
             DispatchQueue.main.async { [self] in
                 lock.withLock {
                     if resumedAt == nil, stalled { resumedAt = Date() }
@@ -50,7 +44,6 @@ final class MainThreadWatchdog: @unchecked Sendable {
         }
     }
 
-    /// `sample` blocks this thread for its duration, which is fine: there is one stall to record.
     private func sample(silentFor silent: Double) {
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "")
         let path = DevBuild.logPath.replacingOccurrences(of: ".log", with: "-hang-\(stamp).txt")

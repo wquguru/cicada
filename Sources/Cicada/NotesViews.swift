@@ -1,32 +1,20 @@
 import AppKit
 import SwiftUI
 
-// Notes and transcript views shared by the live notes window and the main window (meeting
-// records). The look follows the canvas: white ground, grey blocks for what matters most,
-// framed lists with hairlines, orange only for what is happening now.
-
 // MARK: - Notes
 
 struct NotesContentView: View {
     let notes: MeetingNotes
     var fresh: Set<String> = []
-    /// The meeting is still going: the last topic is "正在讲".
     var live = false
-    /// The main window's page: the summary as a lead paragraph, quiet section labels, rules
-    /// between rows instead of cards.
     var document = false
     var updating = false
     var summaryJustChanged = false
-    /// The time of the last line the notes cover ("到 03:52").
     var coveredUntil: Double?
-    /// Where the last topic ends when the meeting is over (its last line).
     var endedAt: Double?
-    /// Lines heard since `coveredUntil` that the notes don't cover yet (shown under the last topic).
     var behind = 0
     var onJump: (Double) -> Void = { _ in }
-    /// 改正听错的词's part of 人名和术语 (the words fixed, the ones waiting), from the notes window.
     var fixTerms: AnyView? = nil
-    /// A finished meeting on the main window's page: the summary, conclusions and to-dos change in place.
     var editing: NotesEditHooks? = nil
 
     var body: some View {
@@ -98,7 +86,6 @@ struct NotesContentView: View {
         }
     }
 
-    /// Scroll target for a topic (the live notes window keeps the current one in view).
     static func topicID(_ topic: NoteTopic) -> String { "topic-\(topic.id)" }
 
     @ViewBuilder
@@ -142,8 +129,6 @@ struct NotesContentView: View {
     }
 }
 
-/// The main window's page: the conclusions first in one quiet block, the summary, then the topics
-/// as numbered rows that open to their points. Less on screen at once than the live window's cards.
 private struct DocumentNotesView: View {
     let notes: MeetingNotes
     let fresh: Set<String>
@@ -155,7 +140,6 @@ private struct DocumentNotesView: View {
     @State private var hovered: NoteEdit.Target?
     @State private var draft = ""
     @State private var draftOwner = ""
-    /// The owner as the row showed it when opened: unchanged means keep the stored one ("说话人2").
     @State private var shownOwner = ""
     @FocusState private var focused: Bool
 
@@ -223,8 +207,6 @@ private struct DocumentNotesView: View {
 
     // MARK: Editing in place
 
-    /// A row that opens for editing when clicked: on hover it lifts onto white (or grey on the white
-    /// page) and shows a pencil. Buttons inside it (the time link) keep their own clicks.
     @ViewBuilder
     private func editable<Content: View>(_ target: NoteEdit.Target, inset: CGFloat, hoverFill: Color = .white,
                                          @ViewBuilder content: () -> Content) -> some View {
@@ -248,8 +230,6 @@ private struct DocumentNotesView: View {
         }
     }
 
-    /// The app's own field: white, radius 9, a hairline, the accent when focused; never the system's
-    /// blue ring.
     private func fieldFrame<V: View>(_ field: V, radius: CGFloat = 9) -> some View {
         field
             .textFieldStyle(.plain)
@@ -317,7 +297,6 @@ private struct DocumentNotesView: View {
         .onExitCommand { editing?.open(nil) }
     }
 
-    /// Fill the field from the piece being opened and put the caret in it.
     private func load() {
         guard let target = editing?.current else { return }
         switch target {
@@ -341,8 +320,6 @@ private struct DocumentNotesView: View {
         editing.save(target, draft, owner)
     }
 
-    /// A conclusion reads as a plain sentence, numbered, with its numbers and dates marked; clicking it
-    /// jumps to the lines behind it. One with little support stays grey.
     private func conclusion(_ item: NoteItem, index: Int, todo: Bool) -> some View {
         let weak = item.support == 0
         let text = item.withOwner
@@ -363,8 +340,6 @@ private struct DocumentNotesView: View {
     }
 }
 
-/// Numbers with their units and day words ("5000 元", "20 岁", "3月3日", "周五晚上") in a conclusion,
-/// marked so the facts can be picked out at a glance.
 enum Highlight {
     private static let pattern = try! NSRegularExpression(pattern:
         "(\\d+\\s*月\\s*\\d+\\s*[日号])"
@@ -376,7 +351,6 @@ enum Highlight {
         var out = AttributedString(text)
         let ns = text as NSString
         for m in pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
-            // A lone digit (list numbers, "第1") is noise; keep multi-digit numbers, units and days.
             let hit = ns.substring(with: m.range)
             if hit.count < 2 { continue }
             guard let r = Range(m.range, in: text),
@@ -462,7 +436,6 @@ private struct DocumentTopicRow: View {
 
 private struct TopicView: View {
     let topic: NoteTopic
-    /// The next topic's start, or the meeting's end; nil while it is still being discussed.
     let end: Double?
     let current: Bool
     let fresh: Set<String>
@@ -487,7 +460,6 @@ private struct TopicView: View {
                 Text(topic.summary).font(.system(size: 13)).foregroundStyle(Palette.secondary).lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            // Each point's time and 新 sit on a line above it, so the text keeps the column's whole width.
             ForEach(Array(topic.points.enumerated()), id: \.offset) { i, p in
                 VStack(alignment: .leading, spacing: 3) {
                     if topic.pointTime(i) != nil || fresh.contains(p) {
@@ -508,7 +480,6 @@ private struct TopicView: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(current ? Palette.accentWash : .clear))
     }
 
-    /// "01:04–02:02", or "02:03 起" for the topic being discussed.
     private var range: String {
         let from = NotesEngine.clock(topic.start)
         guard let end, end > topic.start + 1 else { return current ? L("\(from) 起") : from }
@@ -516,8 +487,6 @@ private struct TopicView: View {
     }
 }
 
-/// Under the last topic while the notes are behind the meeting: how much isn't in them yet, and a
-/// way to read it in the transcript meanwhile.
 struct NotesBehindRow: View {
     let after: Double
     let lines: Int
@@ -543,7 +512,6 @@ struct NotesBehindRow: View {
     }
 }
 
-/// A small time that jumps to that moment in the transcript.
 struct TimeLink: View {
     let text: String
     let t: Double
@@ -565,12 +533,9 @@ struct TimeLink: View {
     }
 }
 
-/// A fishbone drawn upright for a narrow window: the question on top, branches alternating on
-/// either side of a spine. A branch no transcript line backs is dashed.
 struct FishboneView: View {
     let fishbone: Fishbone
     var onJump: (Double) -> Void = { _ in }
-    /// Drawn for 复制为图片 or 复制纪要: no hint, no menu.
     var forPicture = false
 
     var body: some View {
@@ -643,9 +608,6 @@ struct FishboneView: View {
 
 // MARK: - Transcript
 
-/// When the user last turned a scroll wheel or swiped the trackpad in this app. SwiftUI also moves
-/// a scroll view by itself (rows measured late, text rewrapping after a resize), so only a recent
-/// real scroll may pause following.
 @MainActor
 enum UserScroll {
     private static var last = Date.distantPast
@@ -662,44 +624,25 @@ enum UserScroll {
     static var recent: Bool { Date().timeIntervalSince(last) < 0.6 }
 }
 
-/// The transcript grouped under the notes' topics, oldest first. While live it follows the
-/// newest line; scrolling up pauses that and collects new lines into a "↓ N 句新内容" button.
-/// A search highlights matches in place instead of hiding the lines around them.
-///
-/// Every paragraph is its own lazy child, so a long
-/// meeting lays out only what is on screen. What is being said right now is `partial`, a view that
-/// watches the speech itself: with `.equatable()` a new word redraws that row, not the list.
 struct TranscriptListView<Partial: View>: View, Equatable {
     let lines: [TranscriptLine]
     let topics: [NoteTopic]
-    /// Spellings to highlight: the query, plus the notes' misrecognised forms of a name.
     var terms: [String] = []
     var currentMatch: String?
     var bilingual = true
     var live = false
-    /// `partial` is on show (`TranscriptPartial.shows`).
     var partialShown = false
     var jumpTo: Double?
-    /// Line id → speaker number for the other side's lines (SpeakerLabels).
     var speakers: [String: Int] = [:]
-    /// When listening began, for the start mark shown before the first line.
     var startedAt: Date?
-    /// Speech is coming in but its language isn't known yet: 此刻 says so instead of waiting.
     var identifying = false
-    /// Voice → speaker number on show; with `onAssign`, a paragraph's name opens "这段是谁说的".
     var voices: [Int: Int] = [:]
-    /// The voice being edited above: its paragraphs are tinted.
     var marked: Int?
-    /// 电脑和会议室 heard both: each paragraph says 现场 or 线上 (RecordList.heardBoth).
     var places = false
-    /// Lines the meeting record's own recognizer is still settling: their words may change.
     var settling: Set<String> = []
-    /// Lines whose voice is still being heard (`AppModel.voicePending`).
     var voicePending: Set<String> = []
     var onAssign: ((Set<String>, Int) -> Void)?
-    /// 改回 on a fixed word: the line goes back to what was heard.
     var onRevert: ((String, LineFix) -> Void)?
-    /// Debug renders: every fixed paragraph shows its words as if pointed at.
     var revealFixes = false
     @ViewBuilder var partial: Partial
 
@@ -732,7 +675,6 @@ struct TranscriptListView<Partial: View>: View, Equatable {
         return out
     }
 
-    /// One lazy child: a topic's title, or a paragraph (one person's lines close together).
     private enum Item: Identifiable {
         case header(title: String, start: Double, gap: Bool)
         case paragraph([TranscriptLine], label: Bool)
@@ -751,15 +693,12 @@ struct TranscriptListView<Partial: View>: View, Equatable {
         for (gi, g) in gs.enumerated() {
             if !g.title.isEmpty { out.append(.header(title: g.title, start: g.start, gap: gi > 0)) }
             for (i, p) in TranscriptParagraphs.group(g.lines, speakers, pending: voicePending).enumerated() {
-                // With voices told apart, a name only where the speaker changes (and atop each topic).
-                // Every paragraph carries its name when voices are on: it is also where it's corrected.
                 out.append(.paragraph(p, label: speakers.isEmpty || !voices.isEmpty || i == 0 || starts.contains(p[0].id)))
             }
         }
         return out
     }
 
-    /// The scroll target for a line: the paragraph it is in.
     private func target(_ line: TranscriptLine) -> String {
         for item in items { if case .paragraph(let ls, _) = item, ls.contains(where: { $0.id == line.id }) { return item.id } }
         return line.id
@@ -796,8 +735,6 @@ struct TranscriptListView<Partial: View>: View, Equatable {
                     .padding(.top, 8).padding(.bottom, 12)
                 }
                 .onLegacyBottomDistance { distance in
-                    // macOS 14: only the reader's own scrolling changes following; anything else that
-                    // moves the bottom (new lines, translations, resizing) is followed.
                     if UserScroll.recent {
                         if distance < 40 { if !following { following = true } }
                         else if following, distance > 60 { following = false; seenCount = lines.count }
@@ -808,14 +745,10 @@ struct TranscriptListView<Partial: View>: View, Equatable {
                 .topFade()
                 .onScrollEdgeChange { old, new in
                     if new.height != old.height || new.container != old.container {
-                        // Not only new lines move the bottom: a translation arriving under its line,
-                        // topic headers from a notes update, rows the lazy stack only now measured,
-                        // the window resizing. Following means staying on the newest line through all of them.
                         if new.distance > 1 { follow(proxy) }
                     } else if new.distance < 40 {
                         if !following { following = true }
                     } else if following, new.distance > 60, UserScroll.recent {
-                        // The reader scrolled up (content growing or reflowing never pauses following).
                         following = false
                         seenCount = lines.count
                     }
@@ -850,8 +783,6 @@ struct TranscriptListView<Partial: View>: View, Equatable {
         }
     }
 
-    /// A row the lazy stack hasn't drawn yet lands where its height was guessed: jump, then settle
-    /// once it is measured.
     private func reveal(_ line: TranscriptLine, anchor: UnitPoint, _ proxy: ScrollViewProxy) {
         let id = target(line)
         proxy.scrollTo(id, anchor: anchor)
@@ -860,8 +791,6 @@ struct TranscriptListView<Partial: View>: View, Equatable {
         }
     }
 
-    /// Once per turn of the run loop, after layout: scrolling from inside a layout pass, while rows
-    /// are still being measured, could leave the view past the end of what is drawn (a blank window).
     private func follow(_ proxy: ScrollViewProxy) {
         guard live, following, !searching, !followQueued else { return }
         followQueued = true
@@ -949,9 +878,6 @@ struct TranscriptListView<Partial: View>: View, Equatable {
                     Text(highlighted(dst, current: isMatch)).font(.system(size: 13)).foregroundStyle(Palette.secondary)
                         .lineSpacing(2).textSelection(.enabled)
                 }
-                // 改正听错的词: pointing at the paragraph shows what each fixed word was heard as.
-                // The line being said is shown open too: hover in the notes panel, which never takes
-                // focus, is not to be counted on.
                 if hovered == l.id || revealFixes || latest, !fixed.isEmpty, let onRevert {
                     FixedWords(fixes: fixed, onRevert: onRevert).padding(.top, 2)
                 }
@@ -981,7 +907,6 @@ struct TranscriptListView<Partial: View>: View, Equatable {
 }
 
 extension TranscriptListView {
-    /// The voices speaking just before and after a paragraph, most likely the right one.
     func nearby(_ ls: [TranscriptLine]) -> [Int] {
         guard let i = lines.firstIndex(where: { $0.id == ls[0].id }) else { return [] }
         let j = i + ls.count
@@ -993,13 +918,8 @@ extension TranscriptListView {
     }
 }
 
-/// The notes window's transcript reads as paragraphs: one person's lines within 30 seconds of the
-/// paragraph's first are one block, one time, instead of a row and a rule for every fragment.
-/// A fast speaker fills 30 seconds with a wall of text (issue #20): a paragraph that has reached
-/// `full` takes no more lines.
 enum TranscriptParagraphs {
     static let span: Double = 30
-    /// Two or three sentences: Chinese or Japanese characters, or words.
     static let full = (cjk: 80, words: 40)
 
     static func isFull(_ lines: [TranscriptLine]) -> Bool {
@@ -1011,13 +931,6 @@ enum TranscriptParagraphs {
     static func group(_ lines: [TranscriptLine], _ speakers: [String: Int], pending: Set<String> = []) -> [[TranscriptLine]] {
         var out: [[TranscriptLine]] = []
         var key: String?
-        // Before any number is on show (two voices with five lines each), a question and its answer
-        // would read as one block: a known voice that differs from the paragraph's starts a new one.
-        // Short lines' voices are left out, as for numbers: they are too often wrong. A line with no
-        // voice was like none heard so far (or too short to start one): next to a known voice that is
-        // more often someone else ("Great." / "Let's lock that in" after the answer), so it counts as
-        // a voice of its own (`noVoice`), which the paragraphs' voices then hold. One still being
-        // heard (`pending`) stays put meanwhile rather than jump out and back.
         var voice: Int?
         let noVoice = -1
         for l in lines {
@@ -1037,7 +950,6 @@ enum TranscriptParagraphs {
         return out
     }
 
-    /// The lines as shown, each fixed word with a dotted underline.
     static func joinFixed(_ lines: [TranscriptLine]) -> AttributedString {
         var out = AttributedString()
         var plain = ""
@@ -1054,7 +966,6 @@ enum TranscriptParagraphs {
                 guard let lo = AttributedString.Index(m.lowerBound, within: a), let hi = AttributedString.Index(m.upperBound, within: a) else { continue }
                 a[lo..<hi].underlineStyle = Text.LineStyle(pattern: .dot, color: Palette.tertiary)
             }
-            // Words waiting for the user (这样改对吗？) get a pale wash, as heard.
             for f in l.fixes ?? [] where f.ask == true {
                 if let r = a.range(of: f.from) { a[r].backgroundColor = Palette.accentPale }
             }
@@ -1064,7 +975,6 @@ enum TranscriptParagraphs {
         return out
     }
 
-    /// Sentences side by side: a space between words, none after Chinese or Japanese.
     static func join(_ parts: [String]) -> String {
         var out = ""
         for p in parts.map({ $0.trimmingCharacters(in: .whitespaces) }) where !p.isEmpty {
@@ -1078,18 +988,14 @@ enum TranscriptParagraphs {
 }
 
 enum TranscriptPartial {
-    /// The caption keeps the last sentence after it is finished: only show text not yet a line.
     static func shows(_ partial: String, live: Bool, after last: String?) -> Bool {
         let p = partial.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A lone "." from background noise is not someone speaking.
         guard live, p.rangeOfCharacter(from: .alphanumerics) != nil else { return false }
         guard let last else { return true }
         return !last.contains(p) && !p.contains(last)
     }
 }
 
-/// The line being spoken, under the transcript. It watches the app itself so each new word redraws
-/// only this row (`TranscriptListView` decides whether it shows).
 struct LivePartialRow: View {
     @ObservedObject var model: AppModel
     let startedAt: Date?
@@ -1116,7 +1022,6 @@ struct LivePartialRow: View {
 }
 
 extension View {
-    /// A scroll view's top edge fades to white, so a line scrolled half out of view doesn't look cut off.
     func topFade(_ height: CGFloat = 24) -> some View {
         mask {
             VStack(spacing: 0) {
@@ -1128,8 +1033,6 @@ extension View {
 
 }
 
-/// The transcript before anyone has spoken: the start mark, two rows in the bilingual shape
-/// lines will take, and 此刻 waiting for the first words.
 struct TranscriptWaitingView: View {
     var startedAt: Date?
     var identifying = false
@@ -1187,7 +1090,6 @@ struct TranscriptWaitingView: View {
     }
 }
 
-/// A text caret blinking once a second.
 struct BlinkingCaret: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
@@ -1224,8 +1126,6 @@ struct Tag: View {
     }
 }
 
-/// 人名和术语: the corrected spellings first (what the reader can't work out alone), at most
-/// `shown` until asked for the rest. All of them still go to the translation glossary.
 struct TermChips: View {
     static let shown = 8
     let terms: [NoteTerm]
@@ -1237,7 +1137,6 @@ struct TermChips: View {
         let extra = list.count - Self.shown
         FlowLayout(spacing: 6) {
             ForEach(all || extra <= 0 ? list : Array(list.prefix(Self.shown))) { t in
-                // What was misheard goes on its own small line, so a long note wraps beside the name.
                 VStack(alignment: .leading, spacing: 1) {
                     (Text(t.name).bold() + Text(t.note.isEmpty ? "" : " \(t.note)"))
                         .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
@@ -1269,8 +1168,6 @@ struct FramedList<Content: View>: View {
     }
 }
 
-/// Wraps chips onto as many lines as needed. A chip wider than the row is given the row's width,
-/// so its text wraps inside it instead of running past the edge.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 6
 
@@ -1304,15 +1201,12 @@ struct FlowLayout: Layout {
 }
 
 // MARK: - Motion (notes in progress)
-// One moving thing at a time says the app is working. Driven by TimelineView rather than
-// repeatForever animations, which the window's once-a-second redraw would restart.
 
 func phase(_ date: Date, period: Double, delay: Double = 0) -> Double {
     let t = date.timeIntervalSinceReferenceDate - delay
     return (t.truncatingRemainder(dividingBy: period) + period).truncatingRemainder(dividingBy: period) / period
 }
 
-/// A small orange ring spinner.
 struct Spinner: View {
     var size: CGFloat = 16
     var track = Palette.accentPale
@@ -1331,7 +1225,6 @@ struct Spinner: View {
     }
 }
 
-/// "…" whose dots light up one after another.
 struct AnimatedDots: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 15)) { ctx in
@@ -1344,18 +1237,13 @@ struct AnimatedDots: View {
     }
 }
 
-/// The live dot beside "正在记录", breathing slowly.
-/// 共享屏幕时让对方看到 as a lamp. On: an orange dot whose halo breathes outward, the first
-/// breath a wider ring so turning it on is seen without any words (words would show in the
-/// shared screen). Off: a small hollow grey ring, quiet. Reduce Motion holds the halo still.
 struct CapturableMark: View {
     let on: Bool
-    /// The dot's diameter; the halo spills past it, so leave room around the mark.
     var size: CGFloat = 8
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var since = Date()
 
-    private static let off = Color(red: 0.663, green: 0.682, blue: 0.722) // #A9AEB8
+    private static let off = Color(red: 0.663, green: 0.682, blue: 0.722)
 
     var body: some View {
         Group {
@@ -1366,7 +1254,6 @@ struct CapturableMark: View {
             } else {
                 TimelineView(.animation(minimumInterval: 1 / 30)) { ctx in
                     let age = ctx.date.timeIntervalSince(since)
-                    // Starts expanding the moment it turns on: 0 → 1 → 0 over 2.4 s.
                     let t = 0.5 - 0.5 * cos(phase(ctx.date, period: 2.4, delay: since.timeIntervalSinceReferenceDate) * 2 * .pi)
                     let first = min(1, age / 0.7)
                     ZStack {
@@ -1393,8 +1280,6 @@ struct LiveDot: View {
     }
 }
 
-/// A placeholder line with a light sweeping across it. `warm` is the pale orange used inside
-/// the topic being updated.
 struct SkeletonBar: View {
     var fraction: CGFloat = 1
     var height: CGFloat = 12
@@ -1418,10 +1303,7 @@ struct SkeletonBar: View {
     }
 }
 
-/// Listening, no notes asked for yet: one quiet status row, then the notes' own shape waiting to be
-/// filled, so the first version lands where the reader is already looking.
 struct NotesListeningView: View {
-    /// Lines heard so far; the first notes request waits for a few of them.
     var heard = 0
 
     var body: some View {
@@ -1447,7 +1329,6 @@ struct NotesListeningView: View {
                 topicSlot(time: "00:00", lines: [0.52, 0.88, 0.7])
                 topicSlot(time: "--:--", lines: [0.4, 0.76]).opacity(0.6)
             }
-            // Wraps: the English chips don't fit one line in a narrow window.
             FlowLayout(spacing: 6) {
                 Text("会整理出").font(.system(size: 12)).foregroundStyle(Palette.tertiary).padding(.vertical, 4)
                 ForEach([L("结论"), L("待办"), L("人名和术语"), L("鱼骨图")], id: \.self) { t in
@@ -1474,7 +1355,6 @@ struct NotesListeningView: View {
     }
 }
 
-/// Four small orange bars rising and falling: "listening", at the size of a line of text.
 struct SoundBars: View {
     var height: CGFloat = 22
 
@@ -1493,8 +1373,6 @@ struct SoundBars: View {
     }
 }
 
-/// The first version of the notes is being written: a spinner, how much has been heard, and
-/// the shape of the notes shimmering where they will appear.
 struct NotesGeneratingView: View {
     var heard: Int?
 
@@ -1552,8 +1430,6 @@ struct FadeIn: ViewModifier {
     }
 }
 
-/// "已经 10 分钟没人说话 · 60 秒后结束": the meeting is about to end by itself. In the notes window
-/// and the menu panel; neither takes focus, so a click lands on the buttons at once.
 struct MeetingEndingStrip: View {
     @ObservedObject var model: AppModel
     let pending: MeetingEndWatch.Pending
@@ -1581,7 +1457,6 @@ struct MeetingEndingStrip: View {
 }
 
 
-/// Under a paragraph being pointed at: each fixed word, what it was heard as, and 改回.
 struct FixedWords: View {
     let fixes: [(line: String, fix: LineFix)]
     let onRevert: (String, LineFix) -> Void
@@ -1603,14 +1478,11 @@ struct FixedWords: View {
     }
 }
 
-/// 这样改对吗？: a name the Mac couldn't check by sound, asked about once. Clicks only: the notes
-/// window never takes focus. 对 fixes every line waiting on it and adds it to the word list.
 struct FixConfirmCard: View {
     let line: TranscriptLine
     let fix: LineFix
     let count: Int
     let onAnswer: (Bool) -> Void
-    /// ×: 稍后再看, asked again after the meeting.
     var onLater: (() -> Void)? = nil
 
     var body: some View {
@@ -1652,8 +1524,6 @@ struct FixConfirmCard: View {
     }
 }
 
-/// 人名和术语, the fixing part: each word fixed in this meeting with what it was heard as and how
-/// often (a click shows those lines), and the names still waiting, with ✓ and ×.
 struct FixTermsView: View {
     @ObservedObject var fixes: LiveFixes
     let session: Session
@@ -1708,7 +1578,6 @@ struct FixTermsView: View {
         }
     }
 
-    /// The words fixed in a meeting, most fixed first: what each was heard as, and how often.
     static func fixedWords(_ s: Session) -> [(word: String, heard: [String], count: Int)] {
         var out: [String: (heard: [String], count: Int)] = [:]
         for l in s.lines {
@@ -1721,8 +1590,6 @@ struct FixTermsView: View {
                 out[word] = e
             }
         }
-        // Ties by word: a Dictionary's order differs with each instance, and this runs on every
-        // redraw (the window ticks each second), so the chips would swap places.
         return out.map { ($0.key, $0.value.heard, $0.value.count) }
             .sorted { $0.count != $1.count ? $0.count > $1.count : $0.word < $1.word }
     }

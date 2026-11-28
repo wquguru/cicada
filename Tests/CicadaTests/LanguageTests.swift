@@ -35,13 +35,10 @@ import Testing
         func c(_ lang: Lang, _ chars: Int, _ score: Double) -> LanguageDetector.Candidate {
             .init(lang: lang, confidence: score, chars: chars, text: "", score: score)
         }
-        // The room before anyone spoke, and a two-character fragment.
         #expect(LanguageDetector.saysNothing([c(zh, 3, 0.09), c(english, 0, 0)]))
         #expect(LanguageDetector.saysNothing([c(zh, 2, 0.26), c(japanese, 0, 0)]))
-        // A short sentence, and Chinese that the English model writes out as words.
         #expect(!LanguageDetector.saysNothing([c(zh, 7, 0.86), c(english, 0, 0)]))
         #expect(!LanguageDetector.saysNothing([c(zh, 3, 0.44), c(english, 10, 0.2)]))
-        // One model only: its answer still decides.
         #expect(!LanguageDetector.saysNothing([c(zh, 2, 0.26)]))
     }
 
@@ -62,7 +59,6 @@ import Testing
         #expect(myLanguage(systemLanguages: prefs) == mine)
     }
 
-    /// Subtitles and notes agree: unless they speak my language, subtitles are in it.
     @Test(arguments: [["en-CA", "zh-Hans-CA"], ["zh-Hans-CN", "en-US"], ["ja-JP", "en-US"], ["en-US"]])
     func subtitlesFollowMyLanguage(prefs: [String]) {
         let mine = myLanguage(systemLanguages: prefs)
@@ -86,26 +82,19 @@ import Testing
 
     @Test func likelyLanguagesPutLastThenSystemThenEnglish() {
         let locales = { (l: [Lang]) in l.map(\.locale) }
-        // A Chinese Mac with nothing detected yet: Chinese first, English to compare it with.
         #expect(locales(likelySourceLanguages(last: nil, systemLanguages: ["zh-Hans-CN"])) == ["zh-CN", "en-US"])
-        // Traditional Chinese still listens with the Mandarin model.
         #expect(locales(likelySourceLanguages(last: nil, systemLanguages: ["zh-Hant-TW", "en-US"])) == ["zh-CN", "en-US"])
         #expect(locales(likelySourceLanguages(last: "ja-JP", systemLanguages: ["fr-FR", "en-GB"])) == ["ja-JP", "fr-FR", "en-US"])
-        // Languages with no speech model are skipped; English is always there.
         #expect(locales(likelySourceLanguages(last: "xx", systemLanguages: ["it-IT"])) == ["en-US"])
     }
 
     @Test func autoStartsInTheMacLanguageNotEnglish() {
         let en = sourceLanguages.first { $0.code == "en" }!
         let zh = sourceLanguages.first { $0.code == "zh-CN" }!
-        // `candidates` comes in sourceLanguages order, English first. A fresh Chinese Mac must
-        // still start in Chinese; otherwise the English model transcribes Chinese as English.
         #expect(initialSourceLanguage(candidates: [en, zh], last: nil,
                                       systemLanguages: ["zh-Hans-CN"]) == zh)
-        // A last meeting in English still wins, as before.
         #expect(initialSourceLanguage(candidates: [en, zh], last: "en-US",
                                       systemLanguages: ["zh-Hans-CN"]) == en)
-        // Only English installed: English is the only thing it can start.
         #expect(initialSourceLanguage(candidates: [en], last: nil,
                                       systemLanguages: ["zh-Hans-CN"]) == en)
     }

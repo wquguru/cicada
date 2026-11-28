@@ -1,5 +1,4 @@
 #!/bin/bash
-# Runs the unit tests. With only the Command Line Tools, Swift Testing lives outside the default search paths.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 scripts/check-agents.py

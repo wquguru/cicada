@@ -4,7 +4,6 @@ import Speech
 
 // MARK: - Probe
 
-/// What one rehearsal press went through, filled in by `SpeakEngine` stage by stage.
 @MainActor
 final class SpeakProbe {
     var released: Date?
@@ -39,8 +38,6 @@ final class SpeakProbe {
 // MARK: - Scoring (pure)
 
 enum SpeakScore {
-    /// Words for comparing what was sent with what came back: CJK by character, others by word,
-    /// lower-cased, punctuation dropped.
     static func tokens(_ text: String) -> [String] {
         var out: [String] = []
         var word = ""
@@ -66,7 +63,6 @@ enum SpeakScore {
         }
     }
 
-    /// Share of the sent words that came back, from the word-level edit distance: 1 = identical.
     static func match(sent: String, heard: String) -> Double {
         let a = tokens(sent), b = tokens(heard)
         guard !a.isEmpty else { return b.isEmpty ? 1 : 0 }
@@ -82,15 +78,12 @@ enum SpeakScore {
     }
 
     struct Signal: Equatable {
-        /// Seconds from the start of the recording to the first sound; nil = silence throughout.
         var onset: Double?
         var peakDB: Double
         var clipped: Int
         var voiced: Double
     }
 
-    /// Looks at a mono recording in 10 ms windows. The virtual mic is digital: silence is exact
-    /// zeros, so a low threshold finds the first syllable without false starts.
     static func signal(_ samples: [Float], rate: Double, threshold: Float = 0.003) -> Signal {
         let window = max(1, Int(rate / 100))
         var onset: Double?
@@ -118,7 +111,6 @@ enum SpeakScore {
                       clipped: clipped, voiced: Double(voicedWindows) / 100)
     }
 
-    /// Bars for the little waveform, 0…1.
     static func bars(_ samples: [Float], count: Int) -> [Float] {
         guard !samples.isEmpty, count > 0 else { return [] }
         let slice = max(1, samples.count / count)
@@ -128,7 +120,6 @@ enum SpeakScore {
         }
     }
 
-    /// Ling's verdict: `{"score": 0–100, "issue": "…"}`.
     static func parseJudge(_ reply: String) -> (score: Int, issue: String)? {
         guard let start = reply.firstIndex(of: "{"), let end = reply.lastIndex(of: "}"),
               let data = String(reply[start...end]).data(using: .utf8),
@@ -141,12 +132,10 @@ enum SpeakScore {
 
 // MARK: - Result
 
-/// One rehearsal: every stage's output, the timings, and where it broke if it did.
 struct SpeakTestResult {
     enum Stage: Int, CaseIterable { case mic, recognize, translate, voice, room }
     enum Meaning: Equatable {
         case score(Int, String)
-        /// No Ling key: what the room heard, translated back, for the user to judge.
         case back(String)
         case unchecked
     }
@@ -166,7 +155,6 @@ struct SpeakTestResult {
     var translate: Double?
     var synth: Double?
     var arrive: Double?
-    /// Key released → the room's first sound, measured on the virtual mic's recording.
     var firstHeard: Double?
     var heardSeconds: Double = 0
     var heardPeakDB: Double = -120
@@ -183,7 +171,6 @@ struct SpeakTestResult {
         broken == nil && (intelligibility ?? 1) >= 0.6 && { if case .score(let s, _) = meaning { s >= 60 } else { true } }()
     }
 
-    /// Timings and checks only, never the words (like the diagnostics report).
     var report: String {
         func s(_ v: Double?) -> String { v.map { String(format: "%.2f s", $0) } ?? "-" }
         var lines = [
@@ -203,20 +190,14 @@ struct SpeakTestResult {
 
 // MARK: - Tester
 
-/// "试一句": one real press through the whole speak-back chain, with the virtual mic's input side
-/// recorded so the user hears exactly what the meeting app receives, then scored without them:
-/// signal on the virtual mic, the recording transcribed again on this Mac and compared with the
-/// translation that was sent, and (with a Ling key) whether the meaning survived.
 @MainActor
 final class SpeakTester: ObservableObject {
     enum Mode: String { case voice, sample }
     enum Phase: Equatable {
         case idle
         case preparing
-        /// Voice mode: waiting for the user to speak (button or talk key).
         case ready
         case talking
-        /// The chain is running; `reached` says how far.
         case working
         case scoring
         case done
@@ -231,9 +212,7 @@ final class SpeakTester: ObservableObject {
     let speak: SpeakEngine
     let ling: LingClient
     let settings: AppSettings
-    /// The app's translation chain (for the back-translation without a Ling key).
     var translate: ((_ text: String, _ from: String, _ to: String) async -> String?)?
-    /// A real press measured end to end.
     var onLatency: ((Double) -> Void)?
 
     private var probe: SpeakProbe?
@@ -273,7 +252,6 @@ final class SpeakTester: ObservableObject {
         running = Task { await run(mode) }
     }
 
-    /// Voice mode: the on-screen button, same as holding the talk key.
     func beginTalking() {
         guard phase == .ready else { return }
         phase = .talking
@@ -343,7 +321,6 @@ final class SpeakTester: ObservableObject {
         }
         await watch(probe)
         guard !Task.isCancelled, phase != .idle else { return }
-        // The tail of the voice is still in Core Audio's buffers.
         try? await Task.sleep(nanoseconds: 600_000_000)
         let heard = recorder.stop()
         self.recorder = nil
@@ -352,7 +329,6 @@ final class SpeakTester: ObservableObject {
         finish(with: r)
     }
 
-    /// Follows the probe so the progress list moves while the chain runs.
     private func watch(_ probe: SpeakProbe) async {
         let follow = Task { @MainActor [weak self] in
             while !Task.isCancelled, !probe.done {
@@ -414,13 +390,11 @@ final class SpeakTester: ObservableObject {
             }
         }
 
-        // Where it broke: the first stage with nothing coming out.
         if !r.sample, (r.micPeakDB ?? -120) < -50 {
             r.broken = .mic
             r.problem = L("麦克风几乎没收到声音：检查系统设置里的输入设备")
         } else if p.text.isEmpty {
             r.broken = .recognize
-            // An Intel Mac hears only through Ming: without a Ling key nothing could have been heard.
             r.problem = Recognition.cloudOnly && !ling.hearsAudio ? L("请先在设置 › AI 服务里填入 Ling key")
                 : L("没听出说了什么：靠近麦克风再说一次")
         } else if p.translation == nil {
@@ -447,8 +421,6 @@ final class SpeakTester: ObservableObject {
         contentLog("speak test texts: \(r.source) => \(r.translation ?? "-") => heard \(r.heard)")
     }
 
-    /// With a Ling key: one small call that scores whether the meaning survived. Without: the
-    /// room's words translated back into the speaker's language, for the user to judge.
     private func judge(original: String, from: String, heard: String, to: String) async -> SpeakTestResult.Meaning {
         if ling.usable {
             let content = """
@@ -510,7 +482,6 @@ final class SpeakTester: ObservableObject {
         return peak > 0 ? 20 * log10(Double(peak) / 32768) : -120
     }
 
-    /// A sentence in the speaker's language in the Mac's voice: the "sample" input.
     private static func synthesize(_ text: String, locale: String) async -> [AVAudioPCMBuffer] {
         let synth = AVSpeechSynthesizer()
         let u = AVSpeechUtterance(string: text)
@@ -522,7 +493,6 @@ final class SpeakTester: ObservableObject {
         return buffers
     }
 
-    /// The room's audio transcribed again in its language, downloading the model if needed.
     private static func transcribe(_ buffers: [AVAudioPCMBuffer], code: String) async -> String {
         let locale = sourceLanguages.first { $0.code == code }?.locale ?? (code == "zh-TW" ? "zh-TW" : code)
         try? await Recognition.install(locale)

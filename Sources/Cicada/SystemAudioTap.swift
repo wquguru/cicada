@@ -7,12 +7,6 @@ import Speech
 
 // MARK: - System audio tap
 
-/// Captures the audio that is currently going to the default output device.
-/// This uses Core Audio process taps, so it only needs the "System Audio
-/// Recording" privacy grant and never asks for Screen Recording.
-/// Whether 系统音频录制 was allowed. Refused, the tap still starts and hears only silence, so
-/// starting proves nothing; TCC's own preflight is the one way to tell (loaded at run time; nil
-/// when it isn't there, and then starting is taken as allowed, as before).
 enum SystemAudioPermission {
     enum Status { case granted, denied, unknown }
 
@@ -28,31 +22,22 @@ enum SystemAudioPermission {
     }
 }
 
-/// What the guide knows of 系统音频录制. Refused, turning it on later in System Settings only takes
-/// once Cicada is reopened (macOS says so too), so the guide offers that.
 enum SystemAudioAccess: Equatable {
     case unknown, granted, refused
 
-    /// `tapRan`: listening to the system audio (not the room), which only runs once allowed; pausing
-    /// doesn't take that away. `status`: what TCC says, nil when it can't be read.
     func next(status: SystemAudioPermission.Status?, tapRan: Bool) -> Self {
         let now: Self = tapRan ? .granted : self
         switch status {
         case nil: return now
         case .granted: return .granted
         case .denied: return .refused
-        // Not yet asked as far as TCC can tell: a tap that ran says otherwise.
         case .unknown: return now == .granted ? .granted : .unknown
         }
     }
 }
 
 final class SystemAudioTap {
-    /// Called on the real-time audio thread. Must not block.
     var onAudio: ((AVAudioPCMBuffer) -> Void)?
-    /// Called on the main queue when the output device changes its sample rate. A Bluetooth headset
-    /// drops to 16 or 24 kHz when a meeting opens its mic: the tap's format no longer matches and it
-    /// hears nothing, so it must start again.
     var onRateChange: (() -> Void)?
     private var rateListener: (device: AudioObjectID, block: AudioObjectPropertyListenerBlock)?
     private static let rateAddress = AudioObjectPropertyAddress(
@@ -103,8 +88,6 @@ final class SystemAudioTap {
         return status == noErr && obj != kAudioObjectUnknown ? obj : nil
     }
 
-    /// How many input channels a device has: a headset, AirPods or a virtual machine's sound
-    /// device has a microphone on the same device as its speakers.
     static func inputChannels(_ device: AudioObjectID) -> Int {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamConfiguration,
@@ -144,8 +127,6 @@ final class SystemAudioTap {
     func start() throws {
         stop()
 
-        // Exclude our own process so the app's spoken translations never
-        // come back in as subtitles.
         let desc = CATapDescription(stereoGlobalTapButExcludeProcesses: Self.ownProcessObject().map { [$0] } ?? [])
         desc.name = "Cicada"
         desc.isPrivate = true
@@ -201,11 +182,6 @@ final class SystemAudioTap {
                                       &device, UInt32(MemoryLayout<AudioObjectID>.size))
         guard status == noErr else { throw fail(Int(status), L("无法连接音频聚合设备（\(status)）")) }
 
-        // Two rates. The unit can't convert on its input side, so the client format takes the rate
-        // the unit reports, or every render fails with -10863. But the samples come at the
-        // aggregate's rate, which the output device sets: a headset in a call runs it at 16 kHz while
-        // the unit still says 48, and read as 48 kHz those samples are a third of the speed and
-        // nothing is recognized. AudioRouter resamples from the aggregate's rate.
         var hardware = AudioStreamBasicDescription()
         var hardwareSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         let read = AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 1,
@@ -227,16 +203,12 @@ final class SystemAudioTap {
         guard let clientFormat = AVAudioFormat(streamDescription: &asbd) else { throw fail(-3, L("无法创建音频格式")) }
         self.clientFormat = clientFormat
         self.monoFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: samplesRate, channels: 1, interleaved: false)
-        // Pre-allocate so the real-time callback normally doesn't allocate.
         self.renderBuffer = AVAudioPCMBuffer(pcmFormat: clientFormat, frameCapacity: 4096)
 
         status = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1,
                                       &asbd, UInt32(MemoryLayout<AudioStreamBasicDescription>.size))
         guard status == noErr else { throw fail(Int(status), L("无法设置音频格式（\(status)）")) }
 
-        // The aggregate's inputs are the output device's own inputs first, then the tap. When the
-        // output device has a microphone (a headset, AirPods, a virtual machine's sound device),
-        // the first two channels are that microphone, not what the Mac plays: skip past them.
         let mics = Self.defaultOutputDevice().map(Self.inputChannels) ?? 0
         if mics > 0 {
             var map: [Int32] = [Int32(mics), Int32(mics + 1)]

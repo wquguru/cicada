@@ -1,4 +1,3 @@
-// Pure parts of the server, no Worker needed: node --test server/test/unit.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ipGroup } from "../src/util.js";
@@ -27,11 +26,9 @@ test("keys with a fixed shape are caught by the rules alone", () => {
 
 test("talking to the reviewer tightens the bar for that piece only", () => {
   const base = { credential: 0.84, confidential: 0.1, crossborder: 0.1, personal: 0.1, harmful: 0.1, manipulation: 0.1 };
-  assert.deepEqual(flagged(base, "text"), []); // 0.84 is under BLOCK
+  assert.deepEqual(flagged(base, "text"), []);
   assert.deepEqual(flagged({ ...base, manipulation: 0.99 }, "text"), ["credential"]);
-  // "nothing sensitive today" scores high on manipulation but nothing else: no block.
   assert.deepEqual(flagged({ ...base, credential: 0.01, manipulation: 0.9 }, "text"), []);
-  // A rule hit blocks whatever the scores say.
   assert.deepEqual(flagged({ ...base, credential: 0.01 }, "key AKIAIOSFODNN7EXAMPLE"), ["credential"]);
   assert.equal(BLOCK, 0.85);
 });

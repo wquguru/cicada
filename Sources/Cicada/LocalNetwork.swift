@@ -1,13 +1,7 @@
 import Foundation
 import Network
 
-/// Tells "macOS won't let Cicada reach the local network" apart from "the server is down": both
-/// fail a request the same way, but only one is fixed in System Settings. Asked only after a
-/// request to a server on the local network failed, so it never brings up the permission prompt
-/// for anyone who doesn't use one.
 enum LocalNetworkProbe {
-    /// The path to `url`'s host and port is held back because the local network permission is off.
-    /// Nothing is sent; the connection is dropped as soon as the path is known, or after 2 s.
     static func denied(_ url: URL) async -> Bool {
         guard let host = url.host, !host.isEmpty,
               let port = NWEndpoint.Port(rawValue: UInt16(url.port ?? (url.scheme == "https" ? 443 : 80))) else { return false }

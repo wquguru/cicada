@@ -1,21 +1,4 @@
 #!/usr/bin/env python3
-"""Builds the website (served from Cloudflare, see scripts/deploy-site.sh) from site/ into build/site/.
-
-Languages: Chinese at /, English, Japanese and Korean under /en/, /ja/, /ko/. Each has the home page
-(site/index.html), the downloads (site/download.html → download/) and the setup guide (site/start.html
-→ start/); {{t.key}} in a template is filled
-from site/i18n/<lang>.json, and the build stops if a language lacks a key the others have.
-header.html and footer.html are shared. site/changelog.json is the Chinese changelog (newest first;
-"date": null = not released yet) and only exists in Chinese: the other languages link to GitHub Releases.
-Also writes changelog/index.html, feed.xml (Atom), sitemap.xml and robots.txt.
-
-Download links go to each platform's own newest release (scripts/release_platforms.sh): since 1.1.2
-every release ships every platform, but 1.0.0 to 1.1.1 shipped only the ones that changed. A version counts once changelog.json gives it a date; a platform with none yet shows 即将发布.
-
-    python3 scripts/site.py                 # → build/site
-    python3 -m http.server -d build/site    # preview at http://localhost:8000/
-SITE_URL overrides the public address (default: https://cicada.indaloop.app/).
-"""
 import html
 import json
 import os
@@ -31,7 +14,6 @@ OUT = os.path.join(ROOT_DIR, "build", "site")
 SITE = (os.environ.get("SITE_URL") or "https://cicada.indaloop.app/").rstrip("/") + "/"
 REPO = "https://github.com/wquguru/cicada"
 DOWNLOAD = REPO + "/releases/latest"
-# The files each platform's release carries (release.yml); {v} is the version.
 PLATFORMS = ["mac", "windows", "linux", "android"]
 ASSETS = {
     "mac": {"dmg": "Cicada-{v}-macOS-AppleSilicon.dmg", "zip": "Cicada-{v}-macOS-AppleSilicon.zip",
@@ -40,26 +22,16 @@ ASSETS = {
     "linux": {"tar": "Cicada-{v}-Linux.tar.gz"},
     "android": {"apk": "Cicada-{v}-Android.apk"},
 }
-# Releases whose files were named otherwise: Windows 1.1.0 only has Cicada-Setup.exe and -arm64.exe.
 OLD_ASSETS = {("windows", "1.1.0"): {"x64": "Cicada-Setup.exe", "arm64": "Cicada-Setup-arm64.exe"}}
-# The first release with an Intel Mac build: older ones have no Intel link.
 FIRST_INTEL = (1, 3, 0)
-# The author on X: the app is not notarized yet, so a real person to ask helps people trust the first launch.
 X = "https://x.com/wquguru"
 STATIC = ["style.css", "icon.svg", "icon.png", "og.png", "og-en.png", "og-ja.png", "og-ko.png", "img", "audio", "share.js"]
-# The home page's meeting with sound, in the language its reader listens to (the English page's is
-# Chinese): file, length in seconds, and who talks when as (person, start, end), one turn per
-# subtitle. Both clips come from scripts/make-sample.sh; the English one is the app's onboarding
-# sample (keep its turns in step with `SamplePlayer.turns`) and is copied in at build time.
 SAMPLES = {
     "en": ("audio/meeting-en.m4a", 8.8, [(0, 0.25, 2.34), (1, 2.56, 6.97), (0, 7.17, 8.45)]),
     "zh": ("audio/meeting-zh.m4a", 7.8, [(0, 0.25, 2.21), (1, 2.43, 5.89), (0, 6.09, 7.45)]),
 }
 SAMPLE_FOR = {"zh": "en", "ja": "en", "ko": "en", "en": "zh"}
-# The 同声传译 scene's line as the room hears it (make-sample.sh speak), and when in the scene's
-# 10 s loop it starts: at 说进会议.
 SPEAK_AT = 5.5
-# (code, path prefix); the first is the default language, served at the root.
 LANGS = [("zh", ""), ("en", "en/"), ("ja", "ja/"), ("ko", "ko/")]
 FONT_BASE = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=Noto+Sans+SC:wght@400;500;700;900"
 FONT_EXTRA = {"ja": "&amp;family=Noto+Sans+JP:wght@400;500;700;900", "ko": "&amp;family=Noto+Sans+KR:wght@400;500;700;900"}
@@ -81,7 +53,6 @@ def write(rel, text):
 
 
 def strings():
-    """site/i18n/<lang>.json, checked to have the same keys in every language."""
     out = {}
     for code, _ in LANGS:
         with open(os.path.join(SRC, "i18n", code + ".json"), encoding="utf-8") as f:
@@ -94,7 +65,6 @@ def strings():
 
 
 def translate(text, t):
-    """{{t.key}} → the string (HTML allowed; a bare & is escaped)."""
     def value(m):
         v = t.get(m.group(1))
         if not isinstance(v, str):
@@ -128,8 +98,6 @@ def rev():
 
 
 def shipped_platforms():
-    """{version: platforms it shipped}, from CHANGELOG.md's groups as scripts/release_platforms.sh reads
-    them: a section with no platform group (1.0.0's Highlights) shipped the Mac app."""
     out, cur = {}, None
     for line in open(os.path.join(ROOT_DIR, "CHANGELOG.md"), encoding="utf-8"):
         m = re.match(r"^## (\d+\.\d+\.\d+)\b", line)
@@ -143,9 +111,8 @@ def shipped_platforms():
 
 
 def downloads(released):
-    """{platform: (version, {asset: url})} for each platform's newest released version that has it."""
     shipped, out = shipped_platforms(), {}
-    for r in released:  # newest first
+    for r in released:
         for p in shipped.get(r["version"], ()):
             if p not in out:
                 v = r["version"]
@@ -160,7 +127,6 @@ PLATFORM_NAMES = {"mac": "Mac", "windows": "Windows", "linux": "Linux", "android
 
 
 def download_cards(t, dl):
-    """One card per platform: its system, its buttons for its own newest release, or 即将发布."""
     arrow = ('<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
              'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="M6 11l6 6 6-6"/><path d="M5 20h14"/></svg>')
     cards = []
@@ -247,17 +213,14 @@ def main():
     shutil.copy2(os.path.join(ROOT_DIR, "Resources", "sample", "sample.m4a"), os.path.join(OUT, SAMPLES["en"][0]))
 
     tr = strings()
-    urls = []  # (absolute url, last modified) for the sitemap
+    urls = []
 
     def page(template, code, rel, extra, alternates=True, current=None, shell=False):
-        """Writes one page: `rel` is its path under the site ("en/start/"), `code` its language.
-        `shell`: the share page, served by the Worker at /s/<id> rather than where it is built, so
-        its links are absolute; it stays out of the sitemap, and its strict CSP allows no inline script."""
         t = tr[code]
         prefix = dict(LANGS)[code]
         depth = rel.count("/")
         root = "/" if shell else "../" * depth
-        kind = rel[len(prefix):]  # "" or "start/" or "changelog/"
+        kind = rel[len(prefix):]
         langs = LANGS if alternates else [(code, prefix)]
         alts = {c: root + p + kind for c, p in langs}
         links = "".join(
@@ -271,14 +234,12 @@ def main():
         hreflang = "\n".join(f'<link rel="alternate" hreflang="{tr[c]["html_lang"]}" href="{SITE}{p}{kind}">' for c, p in langs)
         if alternates:
             hreflang += f'\n<link rel="alternate" hreflang="x-default" href="{SITE}en/{kind}">'
-        # What the download buttons become on another system (footer.html's script); the page itself
-        # always works as the Mac download, without JS too.
         primary = {"mac": "dmg", "windows": "x64", "linux": "tar", "android": "apk"}
         dl_json = {p: {"url": dl[p][1][primary[p]], "label": t["dl_" + p]} for p in PLATFORMS if p in dl}
         v = dict(common, ROOT=root, HOME=root + prefix, LANG=code,
                  DOWNLOAD_PAGE=root + prefix + "download/", DL_JSON=json.dumps(dl_json, ensure_ascii=False),
                  DOWNLOAD_CURRENT=' aria-current="page"' if current == "download" else "",
-                 OG_IMAGE=SITE + ("og.png" if code == "zh" else f"og-{code}.png"),  # share card in the page's language (scripts/site-og.html)
+                 OG_IMAGE=SITE + ("og.png" if code == "zh" else f"og-{code}.png"),
                  CHANGELOG=(root + "changelog/") if code == "zh" else REPO + "/releases",
                  START_CURRENT=' aria-current="page"' if current == "start" else "",
                  CANONICAL=SITE + rel, HREFLANG=hreflang, LANG_LINKS=links, LANG_LINKS_FOOT=foot_links,
@@ -299,9 +260,8 @@ def main():
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     for code, prefix in LANGS:
         t = tr[code]
-        # Home
         apps = "".join(f"<li>{e(a)}</li>" for a in t["apps"])
-        apps += "".join(f'<li aria-hidden="true">{e(a)}</li>' for a in t["apps"])  # second copy for the seamless loop
+        apps += "".join(f'<li aria-hidden="true">{e(a)}</li>' for a in t["apps"])
         latest_section = ""
         if code == "zh":
             cards = []
@@ -326,11 +286,9 @@ def main():
         }
         def road(items):
             return "".join(f"<li><b>{e(h)}</b><span>{e(p)}</span></li>" for h, p in items)
-        # The second item is the older-macOS one: it carries the tag that ties it to the FAQ's first answer.
         road_next = "".join(
             f'<li><b>{e(h)}</b>' + (f'<em>{e(t["road_tag"])}</em>' if i == 1 else "") + f'<span>{e(p)}</span></li>'
             for i, (h, p) in enumerate(t["road_items"]))
-        # The first answer ("will it run on my Mac?") is open and has a fixed id the setup page links to.
         faq = "".join(
             f'<details class="card rv"{" open" if i == 0 else ""} id="faq-{"mac" if i == 0 else i + 1}">'
             f'<summary>{e(q)}<i aria-hidden="true"></i></summary><p>{e(a)}</p></details>'
@@ -349,22 +307,17 @@ def main():
             "REQS": "".join(f"<div><dt>{e(k)}</dt><dd>{e(val)}</dd></div>" for k, val in t["reqs"]),
             "FAQ": faq, "FAQLD": json.dumps(faq_ld, ensure_ascii=False).replace("</", "<\\/"),
             "JSONLD": json.dumps(app_ld, ensure_ascii=False).replace("</", "<\\/")})
-        # Downloads
         page("download.html", code, prefix + "download/", {
             "CARDS": download_cards(t, dl), "CMP": compare_table(t)}, current="download")
-        # Setup guide
         howto = {"@context": "https://schema.org", "@type": "HowTo", "name": t["start_h1"], "inLanguage": t["html_lang"],
                  "description": t["start_desc"], "totalTime": "PT5M",
                  "step": [{"@type": "HowToStep", "position": i + 1, "name": t[k]} for i, k in enumerate(["s1_h", "s2_h", "s3_h"])]}
         page("start.html", code, prefix + "start/", {
             "JSONLD": json.dumps(howto, ensure_ascii=False).replace("</", "<\\/")}, current="start")
-        # Shared meeting (the Worker serves it at /s/<id>; share.js fills it in). The words share.js
-        # needs at run time go in as JSON.
         share_text = {k[len("share_js_"):]: t[k] for k in t if k.startswith("share_js_")}
         page("share.html", code, prefix + "share/", {
             "SHARE_TEXT": json.dumps(share_text, ensure_ascii=False).replace("</", "<\\/")}, alternates=False, shell=True)
 
-    # Changelog
     counts = {k: sum(1 for r in log for i in r["items"] if i["kind"] == k) for k, _ in KINDS}
     filters = f'<button type="button" data-kind="all" aria-pressed="true">全部<span>{sum(counts.values())}</span></button>'
     filters += "".join(f'<button type="button" data-kind="{k}" aria-pressed="false">{n}<span>{counts[k]}</span></button>'
@@ -384,7 +337,6 @@ def main():
         "RELEASES": "".join(release_html(r, latest["version"]) for r in log),
         "JSONLD": json.dumps(crumbs_ld, ensure_ascii=False)}, alternates=False, current="changelog")
 
-    # Atom feed: released versions only
     entries = []
     for r in released:
         body = "".join(f"<li><strong>{e(i['title'])}</strong>{e(i['text'])}</li>" for i in r["items"])

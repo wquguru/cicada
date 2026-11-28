@@ -80,7 +80,6 @@ import Testing
         var w = watch()
         #expect(w.tick(at: at(5_000), calls: zoom, said: true) == nil)
         #expect(w.pending == nil)
-        // Without following apps, a call says nothing.
         var plain = watch(followApps: false)
         #expect(plain.tick(at: at(600), calls: zoom, said: true) == nil)
         #expect(plain.pending?.reason == .silence)
@@ -91,10 +90,8 @@ import Testing
         #expect(w.tick(at: at(599), calls: [:], said: false) == nil)
         #expect(w.tick(at: at(600), calls: [:], said: false) == .nobodySpoke)
         #expect(w.pending == nil)
-        // Even when silence only prompts: there is nothing to keep, so no countdown.
         var e = watch(.end)
         #expect(e.tick(at: at(600), calls: [:], said: false) == .nobodySpoke)
-        // Off, or a meeting app in a call (a muted webinar), keeps listening.
         var off = watch(.off)
         #expect(off.tick(at: at(5_000), calls: [:], said: false) == nil)
         var call = watch()
@@ -106,7 +103,6 @@ import Testing
         _ = w.tick(at: at(10), calls: zoom, said: false)
         #expect(w.tick(at: at(500), calls: [:], said: false) == nil)
         #expect(w.pending == nil)
-        // A call that ended before anyone spoke is forgotten once someone does.
         w.heard(at: at(5_001))
         #expect(w.tick(at: at(5_002), calls: [:], said: true) == nil)
         #expect(w.pending == nil)

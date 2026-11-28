@@ -7,40 +7,28 @@ enum Palette {
     static let line = Color(red: 0.894, green: 0.902, blue: 0.918)
     static let secondary = Color(red: 0.353, green: 0.373, blue: 0.42)
     static let tertiary = Color(red: 0.42, green: 0.44, blue: 0.50)
-    /// Body text in the records window: darker than the greys, lighter than headings.
     static let body = Color(red: 0.239, green: 0.255, blue: 0.29)
-    /// Times you can click to jump to the original, and the numbers that order notes: the logo's
-    /// orange as ink, so text stays in the brand's family while the bright accent stays "live".
     static let link = Color(red: 0.70, green: 0.23, blue: 0.08)
-    /// Highlighter behind numbers and dates in the conclusions.
     static let mark = Color(red: 1.0, green: 0.906, blue: 0.639)
     static let accent = Color(red: 0.91, green: 0.33, blue: 0.17)
     static let accentInk = Color(red: 0.70, green: 0.23, blue: 0.08)
     static let accentPale = Color(red: 0.99, green: 0.93, blue: 0.906)
-    /// Controls, chips, search fields.
     static let fill = Color(red: 0.949, green: 0.953, blue: 0.961)
-    /// Emphasis blocks (summary, setting cards).
     static let raised = Color(red: 0.961, green: 0.965, blue: 0.973)
-    /// Current row while something is live.
     static let accentWash = Color(red: 1.0, green: 0.98, blue: 0.973)
     static let ok = Color(red: 0.122, green: 0.478, blue: 0.271)
     static let okPale = Color(red: 0.906, green: 0.961, blue: 0.925)
     static let error = Color(red: 0.706, green: 0.137, blue: 0.094)
     static let errorPale = Color(red: 0.992, green: 0.925, blue: 0.918)
-    /// Headings over placeholder shapes while notes are being written.
     static let placeholder = Color(red: 0.722, green: 0.741, blue: 0.776)
 }
 
-/// A service in trouble, said the same way wherever it shows: a dot, what waits for what · what
-/// still works, and at most one action. Colour sits in the dot only, so a passing wait doesn't
-/// read as a fault: yellow waits and comes back by itself, red needs you, grey is just so you know.
 struct StatusLine: View {
     enum Tone { case waiting, needsYou, info }
     let tone: Tone
     let text: String
     var action: (title: String, run: () -> Void)? = nil
 
-    /// #C98A00: the warn ink is too dark to tell from the text at 6 pt.
     static let waitingDot = Color(red: 0.788, green: 0.541, blue: 0.0)
 
     var body: some View {
@@ -71,14 +59,11 @@ struct LogoTile: View {
 
 typealias ChoiceOption = (id: String, title: String)
 
-/// A gray rounded row that opens a menu, used for the language choices.
 struct ChoiceRow: View {
     let label: String
     let value: String
     var badge: String? = nil
-    /// 40pt instead of 44, for the menu bar panel where four rows sit one above the other.
     var compact = false
-    /// Groups the menu separates; a header is its grey section title.
     let sections: [(header: String?, options: [ChoiceOption])]
     let onPick: (String) -> Void
 
@@ -96,8 +81,6 @@ struct ChoiceRow: View {
 
     var body: some View {
         Menu {
-            // Sections, not Dividers: the menu draws the separators itself, and a Divider next to
-            // a headed Section would draw a second one.
             ForEach(sections.indices, id: \.self) { i in
                 if let header = sections[i].header {
                     Section(header) { buttons(sections[i].options) }
@@ -143,8 +126,6 @@ struct MenuPanelView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: AppSettings
 
-    /// Languages without a speech model on this Mac sit in their own group under one line saying
-    /// picking one downloads it, rather than a suffix on every row.
     private var sourceSections: [(header: String?, options: [ChoiceOption])] {
         let auto = model.candidates.map(\.name).joined(separator: "、")
         let ready = sourceLanguages.filter { model.installed.isEmpty || model.installed.contains($0.locale) }
@@ -152,7 +133,6 @@ struct MenuPanelView: View {
         return [
             (nil, [("auto", auto.isEmpty ? L("自动识别") : L("自动识别（\(auto)）"))]),
             (nil, ready.map { ($0.locale, $0.name) }),
-            // macOS 14/15 can't download one: the language is added to Dictation in System Settings.
             (Recognition.legacy ? L("要先加进系统的听写语言") : L("选中后自动下载语音模型"), missing.map { ($0.locale, $0.name) }),
         ]
     }
@@ -168,10 +148,8 @@ struct MenuPanelView: View {
         }
     }
 
-    /// The panel's natural height, measured; past what the screen can show it scrolls.
     @State private var contentHeight: CGFloat = 0
 
-    /// A popover taller than the screen is cut off at the top (a small screen, the menu bar on it).
     private var maxHeight: CGFloat { (NSScreen.main?.visibleFrame.height ?? 900) - 24 }
 
     var body: some View {
@@ -205,7 +183,6 @@ struct MenuPanelView: View {
                     }
                     HStack(spacing: 6) {
                         Circle().fill(model.running ? Palette.accent : Color.gray.opacity(0.5)).frame(width: 7, height: 7)
-                        // Two lines: "English (detecting…) → 简体中文" doesn't fit one beside the switch.
                         Text(model.running ? model.summary : model.autoEnded ? L("会议已自动结束") : L("已暂停"))
                             .font(.system(size: 12)).foregroundStyle(Palette.secondary).lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -218,12 +195,10 @@ struct MenuPanelView: View {
             }
 
             if let p = model.ending { MeetingEndingStrip(model: model, pending: p, compact: true) }
-            // In subtitle-bar mode this is where the bar sends you to pick.
             if model.running { LanguageNotice(model: model) }
             if model.hybridMicDenied { hybridMicStrip }
             if let next = model.roomMicLost { roomMicLostStrip(next) }
             AIServiceStrip(model: model, ling: model.ling)
-            // Right under the header: below the settings it was easy to miss.
             UpdateBanner(updates: model.updates, model: model)
 
             VStack(spacing: 6) {
@@ -232,7 +207,6 @@ struct MenuPanelView: View {
                 }
                 ChoiceRow(label: L("翻译成"),
                           value: targetName(model.listen.resolvedTarget),
-                          // "Follow system" leaves no room for the language name in the panel.
                           badge: settings.target == "system" ? (uiIsChinese ? L("跟随系统") : L("系统")) : nil,
                           compact: true, options: targetOptions) {
                     model.targetSelection = $0
@@ -290,8 +264,6 @@ struct MenuPanelView: View {
         .background(Color.white)
     }
 
-    /// The panel's actions as three equal buttons, so they read as buttons rather than loose
-    /// grey words. No version line: an update shows its own strip above, and 设置 › 会议记录 checks.
     private var footer: some View {
         VStack(spacing: 8) {
             HStack(spacing: 6) {
@@ -302,8 +274,6 @@ struct MenuPanelView: View {
         }
     }
 
-    /// The picked 实时纪要 tile is also the notes window's open/close switch, so the panel
-    /// needs no separate row for it.
     private func pickDisplay(_ mode: String) {
         if mode == "notes", settings.displayMode == "notes" {
             model.notesShown ? model.hideNotesWindow() : model.openNotesWindow()
@@ -324,7 +294,6 @@ private struct PanelHeightKey: PreferenceKey {
 }
 
 extension MenuPanelView {
-    /// 电脑和会议室 without the microphone: the Mac's side is still recorded.
     var hybridMicStrip: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
@@ -340,7 +309,6 @@ extension MenuPanelView {
 }
 
 extension MenuPanelView {
-    /// 外接麦克风断开了: what Cicada did instead. Goes away by itself.
     func roomMicLostStrip(_ next: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("外接麦克风断开了").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
@@ -351,7 +319,6 @@ extension MenuPanelView {
     }
 }
 
-/// Under the panel's status: the file being transcribed in the background, if any.
 struct PanelImportLine: View {
     @ObservedObject var importer: FileImporter
     @ObservedObject var store: SessionStore
@@ -371,8 +338,6 @@ struct PanelImportLine: View {
 }
 
 extension MenuPanelView {
-    /// The settings of the chosen display mode only, so switching modes swaps one card
-    /// instead of reshuffling the section.
     @ViewBuilder var displayCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             switch settings.displayMode {
@@ -390,7 +355,6 @@ extension MenuPanelView {
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             default:
-                // Shown only without a Ling key: the notes window itself opens and closes from the tile.
                 Text(Recognition.cloudOnly ? L("填入 Ling key 后才能识别语音、出字幕和纪要") : L("填入 API key 后可生成纪要；文字记录照常保存"))
                     .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -401,10 +365,8 @@ extension MenuPanelView {
         .background(RoundedRectangle(cornerRadius: 11).fill(Palette.ground))
     }
 
-    /// Both 字幕条 choices share one width so their right edges line up; English sizes to fit and may stack.
     private var segmentWidth: CGFloat { 160 }
 
-    /// A label and its control on one line, or stacked when the English runs too wide.
     private func cardRow<C: View>(_ title: String, @ViewBuilder control: () -> C) -> some View {
         let label = Text(title).font(.system(size: 12)).foregroundStyle(Palette.ink)
         let c = control()
@@ -430,7 +392,6 @@ extension MenuPanelView {
 // MARK: - 麦克风 in the panel
 
 extension MenuPanelView {
-    /// 打开麦克风: the people in the room join the meeting the Mac is hearing.
     var micRow: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
@@ -445,10 +406,6 @@ extension MenuPanelView {
     }
 }
 
-/// 打开麦克风 / 关闭麦克风, the same switch in the panel and the notes window. In the panel it is
-/// the dark button while off (the thing to do) and a quiet one while on; in the notes window's
-/// header it sits beside 结束 like it, tinted while the microphone is on. Its chevron picks the
-/// microphone, where the user is when the room sounds wrong rather than in Settings.
 struct MicButton: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: AppSettings
@@ -478,8 +435,6 @@ struct MicButton: View {
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(border(on), lineWidth: 1))
     }
 
-    /// The room's microphones, with 自动 first naming the one it would take. A chosen one that is
-    /// unplugged shows as 自动 until it is back.
     private func chooser(_ on: Bool) -> some View {
         let choices = AudioDevices.roomMicChoices()
         let chosen = choices.contains { $0.device.uid == settings.roomMicUID } ? settings.roomMicUID : ""
@@ -488,7 +443,6 @@ struct MicButton: View {
             Picker(L("会议室用哪个麦克风"), selection: Binding(get: { chosen }, set: { model.setRoomMic($0) })) {
                 Text(auto.map { L("自动（\($0)）") } ?? L("自动")).tag("")
                 ForEach(choices, id: \.device.uid) { c in
-                    // A headset hears its wearer, not the table: fine for your own notes, so say it.
                     Text(c.bluetooth ? L("\(c.device.name)（只听得到戴的人）") : c.device.name).tag(c.device.uid)
                 }
             }
@@ -528,7 +482,6 @@ extension MenuPanelView {
     private var speakTarget: String { targetName(model.speak.targetCode) }
     private var talkKeyName: String { settings.talkKey.display }
 
-    /// What the switch changes, on hover and in the one-time question.
     private var speakMicLine: String {
         if settings.listensToRoom { return L("译文从扬声器念出来") }
         guard let mic = model.virtualMic?.name else { return L("先装好虚拟麦克风，对方才听得到") }
@@ -539,8 +492,6 @@ extension MenuPanelView {
         L("打开：\(speakMicLine)，按住 \(talkKeyName) 说话\n关掉：全部还原")
     }
 
-    /// 同声传译: the first time the switch asks in place what it changes; once on, the talk key is
-    /// the section, and whatever stops the room hearing you shows on it.
     var speakSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
@@ -579,7 +530,6 @@ extension MenuPanelView {
         if on != settings.speakEnabled { model.enableSpeaking(on) }
     }
 
-    /// Asked once: switching the system mic is a change people should hear about before it happens.
     private var speakQuestion: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("打开后：").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
@@ -614,12 +564,10 @@ extension MenuPanelView {
         .font(.system(size: 12))
     }
 
-    /// The first thing keeping the room from hearing you, with the one action that fixes it.
     private var talkProblem: (text: String, button: String, action: () -> Void)? {
         if model.talkNeedsPermission {
             return (L("按键还需要“输入监控”权限"), L("去允许"), model.allowTalkKey)
         }
-        // In 会议室 the translation is read out loud: no virtual mic, no meeting app to set up.
         if settings.listensToRoom { return nil }
         if model.virtualMic == nil {
             return (L("虚拟麦克风还没装好"), L("设置"), { model.openSettings(.speak) })
@@ -679,7 +627,6 @@ extension MenuPanelView {
     }
 }
 
-/// The talk key drawn as a key: raised while it waits, pressed down while you hold it.
 struct TalkKeyCap: View {
     let text: String
     let pressed: Bool
@@ -699,12 +646,10 @@ struct TalkKeyCap: View {
     }
 }
 
-/// One of 实时纪要 / 字幕条 / 不显示 in the menu bar panel: a small picture of what shows on screen.
 struct DisplayTile: View {
     static let modes = ["notes", "bar", "none"]
     let mode: String
     let selected: Bool
-    /// Under the picked tile's name: what clicking it again does.
     var caption: String? = nil
     let action: () -> Void
 
@@ -731,7 +676,6 @@ struct DisplayTile: View {
                 }
             }
             .padding(.top, 10).padding(.bottom, 8).padding(.horizontal, 4)
-            // The row grows by the caption; every tile takes the row's height.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: 11).fill(selected ? Color.white : Palette.ground))
             .overlay(RoundedRectangle(cornerRadius: 11).stroke(selected ? Palette.ink : .clear, lineWidth: 2))
@@ -782,11 +726,9 @@ struct KeyCap: View {
     }
 }
 
-/// One of the panel's footer buttons: an icon over its name on a grey tile.
 struct PanelAction: View {
     let title: String
     let symbol: String
-    /// 退出: grey ink, it ends the app rather than opening something.
     var quiet = false
     let action: () -> Void
     @State private var hover = false
@@ -822,29 +764,22 @@ struct MainWindowView: View {
     @State private var dropping = false
     @State private var selection: String?
     @State private var query = ""
-    /// Which of the shown record's matches the search is on (#33: a search opens the line, not just the meeting).
     @State private var matchIndex = 0
     @State private var view = "both"
     @State private var tab = "notes"
     @State private var jumpTo: Double?
-    /// A topic's time picked in the notes, for the bilingual column beside them.
     @State private var quoteJump: Double?
     @State private var detailWidth: CGFloat = 0
-    /// The title block has scrolled away: a slim bar with the title and tabs stays on top.
     @State private var pinned = false
     @FocusState private var searchFocused: Bool
-    /// The bilingual column beside the notes is opt-in: three full columns of text read as crowded.
     @AppStorage("mainShowQuotes") private var showQuotes = false
     @State private var showOlder = false
-    /// 分享…: the meeting whose share sheet is open.
     @State private var sharing: Session?
-    /// 改这句…: the line being rewritten, and what the editor opens with.
     @State private var editingLine: String?
     @State private var editingStart = ""
     @State private var hoveredLine: String?
     @State private var wordClick = WordClick()
 
-    /// Wide enough for the notes and the bilingual transcript side by side.
     private var sideBySide: Bool { showQuotes && wideEnough }
     private var wideEnough: Bool { detailWidth >= 940 }
 
@@ -856,7 +791,6 @@ struct MainWindowView: View {
         }
     }
 
-    /// The search in the shown record: its terms (misheard names too), the lines found, the one being looked at.
     private var searchTerms: [String] { TranscriptSearch.terms(query, notes: current?.notes?.terms ?? []) }
     private var matches: [String] { TranscriptSearch.matches(current?.lines ?? [], searchTerms) }
     private var currentMatch: String? {
@@ -870,7 +804,6 @@ struct MainWindowView: View {
         matchIndex = (min(matchIndex, n - 1) + d + n) % n
     }
 
-    /// A search that finds lines in the shown record opens its transcript at the first one.
     private func showMatches() {
         matchIndex = 0
         if !matches.isEmpty, let s = current, importer.status(of: s) == nil { tab = "transcript" }
@@ -878,16 +811,12 @@ struct MainWindowView: View {
 
     private var current: Session? { store.session(selection ?? store.sessions.first?.id) }
 
-    /// The shown record's audio: an imported file, or the meeting's own recording once it has ended.
     private func loadPlayer() {
         guard let s = current, s.id != store.liveID else { player.load(nil); return }
         player.load(s, recording: s.hasAudio ? store.systemAudioURL(s.id) : nil)
     }
 
     var body: some View {
-        // One white sheet; the list sits on a faint tint instead of behind a rule. The listening
-        // pill lives in the window's toolbar (`MainToolbar`). With no meetings yet, only the
-        // welcome shows: an empty list is noise.
         HStack(spacing: 0) {
             if !store.sessions.isEmpty {
                 sidebar
@@ -901,7 +830,6 @@ struct MainWindowView: View {
         }
         .background(Color.white.ignoresSafeArea())
         .background(Button("") { searchFocused = true }.keyboardShortcut("f").opacity(0))
-        // Recordings and videos dropped anywhere on the window become records.
         .dropDestination(for: URL.self) { urls, _ in
             let files = urls.filter(FileImporter.importable)
             guard !files.isEmpty else { return false }
@@ -912,11 +840,8 @@ struct MainWindowView: View {
         .onChange(of: current?.id, initial: true) { _, _ in loadPlayer() }
         .onChange(of: query) { _, _ in showMatches() }
         .onChange(of: selection) { _, _ in if !query.isEmpty { showMatches() } }
-        // A meeting that ends while it is shown, and its recording once it is rewrapped into an .m4a.
         .onChange(of: store.liveID) { _, _ in loadPlayer() }
-        // Opened afresh: a file opened before the room was mixed in (#19) would play one side only.
         .onChange(of: store.audioFinished) { _, id in if id == current?.id { player.unload(); loadPlayer() } }
-        // A click on a line's words: its selectable text takes the mouse before the row's tap.
         .onAppear {
             wordClick.install(line: { hoveredLine.flatMap { id in editingLine == id ? nil : id } }) { id in
                 guard let s = current, player.sessionID == s.id, player.ready,
@@ -971,7 +896,6 @@ struct MainWindowView: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    // The newest day shows; older ones fold under one row until asked for (or searched).
                     let all = RecordList.groups(filtered)
                     let folded = query.isEmpty && !showOlder && all.count > 1
                     ForEach(Array((folded ? Array(all.prefix(1)) : all).enumerated()), id: \.element.title) { i, g in
@@ -1004,12 +928,10 @@ struct MainWindowView: View {
         }
         .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 14)
         .onChange(of: selection) { _, id in
-            // A meeting picked from elsewhere (search, the notes window) shouldn't hide in a fold.
             if let id, let first = RecordList.groups(filtered).first, !first.sessions.contains(where: { $0.id == id }) { showOlder = true }
         }
     }
 
-    /// Where the search is in the shown record: 本场 2 / 7, and a way to the previous and next line.
     private var matchBar: some View {
         let n = matches.count
         return HStack(spacing: 2) {
@@ -1036,8 +958,6 @@ struct MainWindowView: View {
         return Button {
             selection = s.id
         } label: {
-            // Titles only: the time and length are on the page (and in the tooltip). Unpicked rows
-            // stay grey so the one being read stands out.
             HStack(spacing: 8) {
                 if live { BreathingDot(size: 6) }
                 if s.sourceFile != nil {
@@ -1088,7 +1008,6 @@ struct MainWindowView: View {
         }
     }
 
-    /// Being transcribed or waiting to be.
     private func working(_ s: Session) -> Bool {
         switch importer.status(of: s) {
         case .running, .queued: return true
@@ -1096,7 +1015,6 @@ struct MainWindowView: View {
         }
     }
 
-    /// The list row's word for an imported file still being worked on.
     private func rowTag(_ status: FileImporter.Status) -> String {
         switch status {
         case .queued: return L("排队中")
@@ -1131,7 +1049,6 @@ struct MainWindowView: View {
                     HStack(spacing: 0) {
                         SessionNotesView(model: model, engine: model.notes, ling: model.ling, session: s,
                                          header: AnyView(header(s)), bar: { toTop in AnyView(pinnedBar(s, column: 600, inset: 44, toTop: toTop)) }) { t in
-                            // Beside the notes, a topic's time scrolls the column; otherwise it opens the transcript.
                             if sideBySide { quoteJump = t } else { jumpTo = t; tab = "transcript" }
                         }
                         if sideBySide {
@@ -1142,7 +1059,6 @@ struct MainWindowView: View {
                     transcript(s)
                 }
                 if s.id == store.liveID { liveNow }
-                // Under the page, not in its header: the controls stay while the transcript scrolls.
                 if player.sessionID == s.id, s.id != store.liveID, player.ready || player.missing {
                     RecordingPlayerBar(player: player)
                         .frame(maxWidth: 680, alignment: .leading)
@@ -1159,7 +1075,6 @@ struct MainWindowView: View {
         }
     }
 
-    /// No meetings yet: the logo, one line and the one thing to do.
     private var welcome: some View {
         VStack(spacing: 0) {
             BrandMark(size: 72).shadow(color: Palette.accent.opacity(0.22), radius: 14, y: 8)
@@ -1187,7 +1102,6 @@ struct MainWindowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// 此刻: the sentence being heard, pinned under the page while the meeting is live.
     @ViewBuilder private var liveNow: some View {
         let src = model.liveSource.trimmingCharacters(in: .whitespacesAndNewlines)
         if !src.isEmpty || !model.languageAsk.isEmpty || model.modelFetch != nil || model.cloud.listening || model.cloud.back != nil {
@@ -1200,7 +1114,6 @@ struct MainWindowView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(src).font(.system(size: 13)).foregroundStyle(Palette.secondary)
                         .lineLimit(2).truncationMode(.head)
-                    // 听不出 replaces the stuck 正在识别语言…; it says what to do instead.
                     if !model.liveTranslation.isEmpty, model.languageAsk.isEmpty {
                         Text(model.liveTranslation).font(.system(size: 15)).foregroundStyle(Palette.ink)
                             .lineLimit(2).truncationMode(.head)
@@ -1216,7 +1129,6 @@ struct MainWindowView: View {
         }
     }
 
-    /// Text tabs, the transcript's language choice and 导出…, under the title: no toolbar band.
     private func tabsRow(_ s: Session) -> some View {
         HStack(alignment: .center, spacing: 22) {
             tabs(s)
@@ -1225,7 +1137,6 @@ struct MainWindowView: View {
         }
     }
 
-    /// Notes wait until an imported file is transcribed to the end.
     private func activeTab(_ s: Session) -> String { importer.status(of: s) != nil ? "transcript" : tab }
 
     private func tabs(_ s: Session) -> some View {
@@ -1237,7 +1148,6 @@ struct MainWindowView: View {
         }
     }
 
-    /// The transcript's language choice (or 原话 beside the notes) and 导出….
     private func tools(_ s: Session) -> some View {
         let active = activeTab(s)
         return HStack(alignment: .center, spacing: 22) {
@@ -1255,7 +1165,6 @@ struct MainWindowView: View {
                 .buttonStyle(.plain)
                 .help(showQuotes ? L("收起原话") : L("在纪要旁显示原话"))
             }
-            // Not while the meeting is still going, nor before an import has its text.
             Button { sharing = s } label: {
                 Text("分享…").font(.system(size: 13)).foregroundStyle(Palette.secondary)
             }
@@ -1306,8 +1215,6 @@ struct MainWindowView: View {
         .buttonStyle(.plain)
     }
 
-    /// Once the title block scrolls away: the title (a click goes back to the top) and the tabs row,
-    /// so switching tabs, the transcript's language or exporting never needs a scroll back up.
     private func pinnedBar(_ s: Session, column: CGFloat = 680, inset: CGFloat = 40, toTop: @escaping () -> Void) -> some View {
         HStack(spacing: 18) {
             Button(action: toTop) {
@@ -1319,7 +1226,6 @@ struct MainWindowView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain).help(L("回到顶部"))
-            // The title takes what the tabs and tools leave, so the bar keeps to the text column.
             .frame(maxWidth: .infinity, alignment: .leading)
             Rectangle().fill(Self.hairline).frame(width: 1, height: 14)
             tabs(s).padding(.top, 6)
@@ -1333,11 +1239,9 @@ struct MainWindowView: View {
         .transition(.opacity)
     }
 
-    /// One grey line of facts, the editable title, then the tabs: the top of the page, scrolling with it.
     private func header(_ s: Session) -> some View {
         let live = s.id == store.liveID
         let notes = live ? model.notes.notes : s.notes
-        // When and how long up front; the languages and notes version wait in the tooltip.
         let more = [RecordList.pair(s, short: false),
                     notes.flatMap { $0.isEmpty ? nil : ($0.final ? L("完整版纪要") : L("速记版纪要")) }]
         return VStack(alignment: .leading, spacing: 0) {
@@ -1376,7 +1280,6 @@ struct MainWindowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The bilingual lines beside the notes, so the record's two languages show without switching tabs.
     private func quotes(_ s: Session) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -1416,11 +1319,8 @@ struct MainWindowView: View {
         s.lines.first(where: { $0.t >= t - 1 }) ?? s.lines.last
     }
 
-    /// Whitespace between lines, no rules; the picked line gets a soft fill.
     private func quoteRow(_ l: TranscriptLine, speaker: Int?, picked: Bool, label: Bool = true, voices: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            // Only once voices are told apart (or for your own lines): one speaker needs no label;
-            // and only where the speaker changes.
             if !label {
             } else if let speaker { SpeakerTag(number: speaker).padding(.bottom, 2) }
             else if voices, l.speaker != "me" { UnknownSpeakerTag().padding(.bottom, 2) }
@@ -1447,7 +1347,6 @@ struct MainWindowView: View {
     private func transcript(_ s: Session) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                // The header outside the lazy stack, so it is never dropped and always reports where it is.
                 VStack(alignment: .leading, spacing: 0) {
                 header(s).padding(.bottom, 16)
                     .id(PinnedHeader.top)
@@ -1456,7 +1355,6 @@ struct MainWindowView: View {
                     let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s) : [:]
                     if !speakers.isEmpty || (settings.speakerVoices && SpeakerLabels.singleVoice(s.lines) != nil) { SpeakerStrip(model: model, session: s).padding(.bottom, 8) }
                     let both = RecordList.heardBoth(s.lines)
-                    // In a meeting that heard the room and the Mac, a change of place starts a new run too.
                     let starts = SpeakerLabels.runStarts(s.lines, speakers).union(both ? RecordList.placeStarts(s.lines) : [])
                     let voices = SpeakerLabels.voiceNumbers(s)
                     let playingLine = player.lineID(in: s)
@@ -1491,7 +1389,6 @@ struct MainWindowView: View {
             .onUserScroll(ownSince: { player.ownScroll }) { if player.sessionID == s.id { player.userScrolled() } }
             .overlay(alignment: .bottom) { FixToast(fixes: model.fixes).padding(.bottom, 18) }
             .overlay(alignment: .bottom) {
-                // Scrolled away from what is playing: one way back.
                 if player.sessionID == s.id, !player.following, let id = player.lineID(in: s),
                    let l = s.lines.first(where: { $0.id == id }) {
                     Button { player.follow() } label: {
@@ -1516,7 +1413,6 @@ struct MainWindowView: View {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
-            // The transcript follows the recording while it plays, until scrolled by hand.
             .onChange(of: player.lineID(in: s)) { _, id in
                 if player.playing, player.following, let id {
                     player.ownScroll = Date()
@@ -1531,15 +1427,12 @@ struct MainWindowView: View {
             }
             .onChange(of: currentMatch) { _, id in
                 guard let id else { return }
-                // Going to a line found while the recording plays stops following it, as a scroll by
-                // hand does: otherwise the next line heard pulls the page back within seconds.
                 if player.sessionID == s.id { player.userScrolled() }
                 withAnimation { proxy.scrollTo(id, anchor: .center) }
             }
             .onAppear {
                 if let t = jumpTo, let l = s.lines.first(where: { $0.t >= t - 1 }) { proxy.scrollTo(l.id, anchor: .top) }
                 else if let id = currentMatch {
-                    // Opened by a search: the lazy list needs a moment to lay out before it can go to the line found.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo(id, anchor: .center) }
                 }
                 jumpTo = nil
@@ -1554,7 +1447,6 @@ struct MainWindowView: View {
         let hovered = playable && hoveredLine == l.id && editingLine != l.id
         return HStack(alignment: .top, spacing: 16) {
             if playable {
-                // The recording plays from this line (so does a click anywhere on it).
                 Button { player.play(from: l.t) } label: {
                     HStack(spacing: 3) {
                         if hovered { Image(systemName: "play.fill").font(.system(size: 8)) }
@@ -1574,7 +1466,6 @@ struct MainWindowView: View {
                 HStack(spacing: 6) {
                     if !label {
                     } else if voices, !me, let s = shownSession {
-                        // A click on whose line it is: say it was someone else's, or name the voice.
                         Menu {
                             if let v = l.voice {
                                 Button(L("标记人名…")) { model.promptSpeakerName(session: s.id, voice: v) }
@@ -1591,7 +1482,6 @@ struct MainWindowView: View {
                         .help(L("这句是谁说的"))
                     } else if let speaker { SpeakerTag(number: speaker) }
                     else if let s = shownSession, let v = l.voice {
-                        // A one-to-one call (or a voice not on show yet): make 对方 clickable to name.
                         Menu {
                             Button(L("标记人名…")) { model.promptSpeakerName(session: s.id, voice: v) }
                             if model.settings.speakerMemory, s.id != model.store.liveID {
@@ -1608,7 +1498,6 @@ struct MainWindowView: View {
                         .help(L("标记这个人叫什么"))
                     }
                     else if shownSession?.sourceFile == nil {
-                        // An imported file has no "other side": its lines carry no label.
                         if me { MeTag() } else {
                             Text("对方").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.secondary)
                         }
@@ -1630,7 +1519,6 @@ struct MainWindowView: View {
                         .foregroundStyle(l.dst == nil ? Palette.tertiary : Palette.ink)
                         .textSelection(.enabled)
                 }
-                // Pointing at a line: what its fixed words were heard as, 改回, and 改这句….
                 if hoveredLine == l.id, editingLine != l.id, let s = shownSession {
                     HStack(spacing: 8) {
                         let fixed = (l.fixes ?? []).filter(\.applied).map { (l.id, $0) }
@@ -1644,13 +1532,10 @@ struct MainWindowView: View {
             Spacer(minLength: 0)
             PlayingBars(on: current && player.playing).frame(width: 14).padding(.top, 4)
         }
-        // The padding is part of the line, so there is no dead strip between two lines.
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .onHover { inside in if inside { hoveredLine = l.id } else if hoveredLine == l.id { hoveredLine = nil } }
-        // A click anywhere on the line plays from it; a drag selects text instead (a tap ends without moving).
         .onTapGesture { if playable, editingLine != l.id { player.play(from: l.t) } }
-        // The line the recording is playing; a lighter fill under the pointer when a click would play it.
         .background(RoundedRectangle(cornerRadius: 10).fill(current ? Palette.accentPale : hovered ? Palette.raised : .clear)
             .padding(.horizontal, -10))
         .animation(.easeOut(duration: 0.2), value: current)
@@ -1658,7 +1543,6 @@ struct MainWindowView: View {
 }
 
 extension MainWindowView {
-    /// "这句是谁说的": the people on show; the line takes that voice.
     @ViewBuilder
     func assignMenu(_ s: Session, _ l: TranscriptLine, _ voices: [Int: Int]) -> some View {
         let names = SpeakerLabels.names(s)
@@ -1672,16 +1556,12 @@ extension MainWindowView {
     }
 }
 
-/// A meeting's notes in the main window: the same notes view as the live window, or a way to
-/// make them for a meeting recorded without a key.
 struct SessionNotesView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var engine: NotesEngine
     @ObservedObject var ling: LingClient
     let session: Session
-    /// The page's title block, scrolling with the notes.
     var header: AnyView = AnyView(EmptyView())
-    /// The slim bar shown on top once the header scrolls away, given a way back to the top.
     var bar: ((@escaping () -> Void) -> AnyView)? = nil
     let onJump: (Double) -> Void
     @State private var pinned = false
@@ -1726,7 +1606,6 @@ struct SessionNotesView: View {
                     .background(RoundedRectangle(cornerRadius: 18).fill(Palette.raised))
                 }
             }
-            // A narrow measure and a tall top margin: the page reads as one quiet column.
             .frame(maxWidth: 600, alignment: .leading)
             .padding(.horizontal, 44).padding(.top, 52).padding(.bottom, 64)
             .frame(maxWidth: .infinity)
@@ -1741,21 +1620,17 @@ struct SessionNotesView: View {
     }
 }
 
-/// A page's title block scrolling out of its scroll view, which names its coordinate space `space`.
 enum PinnedHeader {
     static let space = "cicada.page"
     static let top = "cicada.page.top"
 }
 
 extension View {
-    /// Sets `pinned` while this view's bottom is above the scroll view's top edge.
     func pinnedHeader(_ pinned: Binding<Bool>) -> some View {
         onGeometryChange(for: Bool.self) { $0.frame(in: .named(PinnedHeader.space)).maxY < 0 } action: { pinned.wrappedValue = $0 }
     }
 }
 
-/// Under 此刻 while "auto" can't tell the language yet: the second speech model coming in, or,
-/// when nothing more will settle it, 听不出 with the likely languages to pick from.
 struct LanguageNotice: View {
     @ObservedObject var model: AppModel
 
@@ -1791,8 +1666,6 @@ struct LanguageNotice: View {
         }
     }
 
-    /// macOS reports a speech model's download only as not started or done, so a bar that fills
-    /// would sit at its start: a moving one and the time waited say it is still coming.
     private func fetchCard(_ fetch: ModelFetch) -> some View {
         let offer = model.cloud.offered ? model.cloud.service : nil
         return VStack(alignment: .leading, spacing: 6) {
@@ -1816,7 +1689,6 @@ struct LanguageNotice: View {
         }
     }
 
-    /// The service hears the meeting: lines come whole and a little late, and the audio leaves the Mac.
     private func cloudCard(_ service: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
@@ -1847,8 +1719,6 @@ struct LanguageNotice: View {
         return String(format: "%d:%02d", s / 60, s % 60)
     }
 
-    /// None of the installed models hear their language: the likely ones not installed come first
-    /// (picking one downloads it and replays the start), the installed ones in case the check was wrong.
     private var notInstalledCard: some View {
         let installed = model.candidates
         let names = installed.map(\.name)
@@ -1885,10 +1755,7 @@ struct LanguageNotice: View {
         }
     }
 
-    /// The model 听不出 needed couldn't be had: why, the one thing that helps, and the languages
-    /// already on the Mac to go on with meanwhile.
     private func problemCard(_ p: ModelProblem) -> some View {
-        // Chosen in settings, the language isn't swapped from here.
         let installed = model.settings.sourceMode == .auto ? model.candidates.filter { $0 != p.lang } : []
         return VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
@@ -1904,7 +1771,6 @@ struct LanguageNotice: View {
                 case .other, .limit: SoftButton(L("再试一次"), dark: true) { model.retryModel() }
                 case .offline: EmptyView()
                 }
-                // Not offline: the service is out of reach then too.
                 if p.cause != .offline, model.running, let service = model.cloud.service {
                     SoftButton(L("先用 \(service) 听")) { model.startCloud() }
                 }
@@ -1932,16 +1798,11 @@ struct LanguageNotice: View {
 }
 
 extension Notification.Name {
-    /// Debug `play:<seconds>`: the shown record plays from there.
     static let debugPlay = Notification.Name("cicada.debugPlay")
     static let debugMainSearch = Notification.Name("cicada.debugMainSearch")
-    /// Debug `shareSheet:<id>`: the 分享… sheet opens for that record (no id: it closes).
     static let debugShareSheet = Notification.Name("cicada.debugShareSheet")
 }
 
-/// A click on the words of a transcript line plays from it, as a click elsewhere on the line does:
-/// selectable text takes the mouse before SwiftUI's tap. A drag (selecting) or a double click
-/// (a word) does nothing; the time and 改这句… keep their own buttons.
 final class WordClick {
     private var monitor: Any?
 
@@ -1949,8 +1810,6 @@ final class WordClick {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { e in
             guard e.clickCount == 1, let id = line(), Self.onText(e) else { return e }
-            // The text tracks the mouse until it is let go, and its mouse-up never reaches a
-            // monitor: look once that tracking is over.
             let start = NSEvent.mouseLocation
             Self.whenReleased(within: 1) {
                 let now = NSEvent.mouseLocation
@@ -1961,7 +1820,6 @@ final class WordClick {
         }
     }
 
-    /// Once the button is up (a click, not a press held to select): checked every 50 ms.
     private static func whenReleased(within seconds: Double, _ action: @escaping () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             if NSEvent.pressedMouseButtons & 1 == 0 { action() } else if seconds > 0.05 { whenReleased(within: seconds - 0.05, action) }
@@ -1973,8 +1831,6 @@ final class WordClick {
         monitor = nil
     }
 
-    /// The mouse went down on selectable text, not on a button or the row's empty space (which
-    /// the row's own tap handles).
     private static func onText(_ e: NSEvent) -> Bool {
         guard let content = e.window?.contentView,
               let hit = content.hitTest(content.convert(e.locationInWindow, from: nil)) else { return false }

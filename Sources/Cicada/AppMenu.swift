@@ -1,8 +1,5 @@
 import AppKit
 
-/// The menus in the top-left of the screen. They show while the main, settings or onboarding
-/// window is in front (the app is a regular app then; the notes window never activates it).
-/// The Edit menu also makes ⌘C / ⌘V / ⌘A work in text fields.
 @MainActor
 final class AppMenu: NSObject, NSMenuItemValidation {
     private weak var model: AppModel?
@@ -69,7 +66,6 @@ final class AppMenu: NSObject, NSMenuItemValidation {
         display.addItem(item(L("共享屏幕时对方可见"), #selector(toggleCapturable)))
         add(display, to: main)
 
-        // Standard actions with no target go down the responder chain (text fields, selectable text).
         let edit = NSMenu(title: L("编辑"))
         edit.addItem(item(L("撤销"), Selector(("undo:")), "z", chain: true))
         edit.addItem(item(L("重做"), Selector(("redo:")), "z", [.command, .shift], chain: true))
@@ -118,8 +114,6 @@ final class AppMenu: NSObject, NSMenuItemValidation {
         main.addItem(top)
     }
 
-    /// Right-click on the Dock icon: the four things reached for most. Titles follow the meeting
-    /// through `validateMenuItem`, as in the menu bar.
     func dockMenu() -> NSMenu {
         let m = NSMenu()
         m.addItem(item(L("停止记录"), #selector(toggleRecording)))
@@ -164,7 +158,6 @@ final class AppMenu: NSObject, NSMenuItemValidation {
         case #selector(search):
             return notesWindow.isVisible
         case #selector(checkUpdates):
-            // Becomes the update itself once one is found; greyed while downloading.
             if let u = model.updates.update {
                 item.title = L("安装 \(u.version) 并重新打开")
                 return model.updates.progress == nil
@@ -183,7 +176,6 @@ final class AppMenu: NSObject, NSMenuItemValidation {
     @objc private func checkUpdates() {
         guard let model else { return }
         if model.updates.update != nil { model.updates.install(model: model); return }
-        // The answer shows on the panel's version line, as for a check made there (no alert).
         model.updates.checkNow()
         model.openPanel?()
     }

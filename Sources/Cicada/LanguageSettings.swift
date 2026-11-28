@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Settings › 语言: every language choice in one place — what the other side speaks, whether and
-/// into what it is translated, what the notes are written in, and the speak-back pair — under a
-/// line that reads the whole route.
 struct LanguageSettings: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: AppSettings
@@ -53,10 +50,8 @@ struct LanguageSettings: View {
 
     // MARK: The route
 
-    /// 对方说 English → 字幕 简体中文 · 纪要 简体中文 / 你说 中文 → 对方听到 English
     private var route: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // English runs wider than the card: the notes get a line of their own.
             if uiIsChinese {
                 HStack(spacing: 8) {
                     heardRoute

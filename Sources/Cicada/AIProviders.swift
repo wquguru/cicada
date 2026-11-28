@@ -1,13 +1,5 @@
 import Foundation
 
-/// The AI services the app can use. Ling is the reference (everything works, prompts are tuned on
-/// it); the others are OpenAI-compatible and cover text, and some of them voices. Only Ling clones
-/// the user's voice and hears audio (Ming), so with any other service speak-back hears on this Mac
-/// and translates the text.
-///
-/// Recommended models come first in every menu and are the defaults: good enough, then cheapest,
-/// Chinese first, no reasoning (measured 2026-11: OpenRouter / ZenMux catalogs, Artificial Analysis
-/// TTS arena). `inclusionai/ling-*` is Ling itself on the aggregators, so the prompts carry over.
 struct AIProvider: Identifiable, Equatable {
     enum Kind: String, CaseIterable, Identifiable {
         case ling, openrouter, zenmux, openai, custom
@@ -16,24 +8,18 @@ struct AIProvider: Identifiable, Equatable {
 
     struct Model: Equatable {
         let id: String
-        /// Why it is recommended, a short UI line.
         let note: String
     }
 
     let id: Kind
     let name: String
-    /// nil for `custom`: the user's address.
     let base: URL?
-    /// Where to create a key.
     let site: URL?
     let textModels: [Model]
-    /// Empty: this service has no voices here, the room hears the Mac's.
     let voiceModels: [Model]
-    /// Voices of `voiceModels` (all Gemini TTS: the same names in every language).
     let voices: [CloudVoice]
     let clones: Bool
     let hearsAudio: Bool
-    /// Ling's account allows ~2 requests per second across every model; the aggregators allow far more.
     let spacing: TimeInterval
 
     var hasVoices: Bool { !voiceModels.isEmpty }
@@ -68,15 +54,12 @@ struct AIProvider: Identifiable, Equatable {
                       Model(id: "google/gemini-3.8-flash-lite-tts", note: L("更省"))],
         voices: gemini, clones: false, hearsAudio: false, spacing: 0.1)
 
-    /// No voices: `/audio/speech` models shut down 2027-01-06 and their successor is Realtime-only.
     static let openai = AIProvider(
         id: .openai, name: "OpenAI", base: URL(string: "https://api.openai.com/v1/"),
         site: URL(string: "https://platform.openai.com/api-keys"),
         textModels: [Model(id: "gpt-5.4-nano", note: L("够用、更省"))],
         voiceModels: [], voices: [], clones: false, hearsAudio: false, spacing: 0.1)
 
-    /// Any OpenAI-compatible address (a company gateway, Ollama, LM Studio…). Voices only when the
-    /// user names a speech model; plain standard requests, none of Ling's workarounds.
     static let custom = AIProvider(
         id: .custom, name: L("自定义服务"), base: nil, site: nil,
         textModels: [], voiceModels: [], voices: [], clones: false, hearsAudio: false, spacing: 0.1)
@@ -85,8 +68,6 @@ struct AIProvider: Identifiable, Equatable {
 
     static func named(_ raw: String) -> AIProvider { all.first { $0.id.rawValue == raw } ?? .ling }
 
-    /// http only on this Mac or the local network (Ollama, LM Studio, a GPU box at home or work, a
-    /// Tailscale address); anything else must be https.
     static func customBase(_ raw: String) -> URL? {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !s.isEmpty else { return nil }
@@ -97,14 +78,10 @@ struct AIProvider: Identifiable, Equatable {
         return url.scheme == "http" && isNearby(host) ? url : nil
     }
 
-    /// This Mac: a key isn't needed.
     static func isLocal(_ hostOrURL: String) -> Bool {
         ["localhost", "127.0.0.1", "::1"].contains(host(of: hostOrURL))
     }
 
-    /// This Mac or the local network: plain http is allowed and a key isn't needed. Private IPv4
-    /// (10/8, 172.16/12, 192.168/16), link-local, Tailscale's 100.64/10, IPv6 unique and link-local
-    /// addresses, and `.local` names.
     static func isNearby(_ hostOrURL: String) -> Bool {
         let h = host(of: hostOrURL).lowercased()
         if isLocal(h) || h.hasSuffix(".local") { return true }
@@ -127,45 +104,30 @@ struct AIProvider: Identifiable, Equatable {
     }
 }
 
-/// A built-in voice of a cloud speech model.
 struct CloudVoice: Equatable {
     let id: String
-    /// "女" / "男", localized.
     let gender: String
 }
 
-/// What one call needs to know about the service in use, resolved from settings each time.
 struct AIConfig: Equatable {
     var provider: AIProvider
-    /// nil: a custom service without a valid address yet.
     var base: URL?
     var textModel: String
-    /// nil: no voices with this service (the Mac's speak).
     var voiceModel: String?
     var voiceBase: URL?
-    /// The voice a custom speech model speaks with (others pick per language).
     var customVoice: String?
-    /// A custom service's speech recognition model (`/audio/transcriptions`) and its address; nil
-    /// when recognition stays on this Mac.
     var hearModel: String? = nil
     var hearBase: URL? = nil
-    /// A custom service's notes (实时纪要, 说话人, files' corrections): another model, and with
-    /// 另一个服务 another server with its own key. nil: the same as translation.
     var notesModel: String? = nil
     var notesBase: URL? = nil
-    /// 另一个服务 is picked: notes use their own key file when there is one.
     var notesOwnService = false
-    /// 另一个服务 with an address that can't be used (http to the internet): notes fail the check.
     var notesBadAddress = false
 
     var hasVoices: Bool { voiceModel != nil && voiceBase != nil }
-    /// The meeting is recognized by the custom service instead of on this Mac.
     var transcribes: Bool { provider.id == .custom && hearModel != nil && hearBase != nil }
 
-    /// Notes go somewhere translation doesn't: they get their own check, result and start gate.
     var notesApart: Bool { provider.id == .custom && (notesModel != nil || notesBase != nil || notesOwnService) }
 
-    /// What a notes call is sent with: notes' model at notes' address, the rest as translation.
     var forNotes: AIConfig {
         guard notesApart else { return self }
         var c = self
@@ -174,18 +136,12 @@ struct AIConfig: Equatable {
         return c
     }
 
-    /// The voices the room can pick from with this service.
     var voices: [CloudVoice] {
         guard hasVoices else { return [] }
         if provider.id == .custom { return customVoice.map { [CloudVoice(id: $0, gender: "")] } ?? [] }
         return provider.voices
     }
 
-    /// The request body, shaped for the service: each one turns thinking off its own way, and
-    /// OpenAI's current models take neither `max_tokens` nor a temperature. A custom service gets
-    /// `chat_template_kwargs` (vLLM, SGLang and llama.cpp pass it to the chat template, which is
-    /// how Qwen3 turns thinking off); `templateKwargs` false leaves it out for a server that
-    /// refused it.
     func shape(_ body: inout [String: Any], maxTokens: Int, templateKwargs: Bool = true) {
         switch provider.id {
         case .ling:
@@ -206,8 +162,6 @@ struct AIConfig: Equatable {
         }
     }
 
-    /// The model thought before answering, which makes every translation slow: a `reasoning_content`
-    /// (or `reasoning`) field, reasoning tokens in the usage, or a `<think>` block in the answer.
     static func thought(_ root: [String: Any]) -> Bool {
         let message = ((root["choices"] as? [[String: Any]])?.first?["message"]) as? [String: Any]
         for k in ["reasoning_content", "reasoning"] {
@@ -218,8 +172,6 @@ struct AIConfig: Equatable {
         return (message?["content"] as? String)?.contains("<think>") ?? false
     }
 
-    /// Text models from a `/models` reply, recommended ones first. Leaves out what cannot chat
-    /// (speech, transcription, images, embeddings) when the service says so, or by name for OpenAI.
     static func textModels(fromCatalog data: Data, recommended: [String]) -> [String] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let list = root["data"] as? [[String: Any]] else { return recommended }

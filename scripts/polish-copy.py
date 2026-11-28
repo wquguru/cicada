@@ -20,7 +20,6 @@ import urllib.request
 MODEL = "google/gemini-4-argon"
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 LANGS = {"en": "English", "ja": "Japanese", "ko": "Korean"}
-# English is the README GitHub shows; Chinese stays the source the others are translated from.
 READMES = {"zh": "README.zh-CN.md", "en": "README.md", "ja": "README.ja.md", "ko": "README.ko.md"}
 
 STYLE = """文风：像一个懂行的朋友在说话，口语、直接、短句；先说用户得到什么，再说必要的条件。
@@ -83,7 +82,6 @@ def changelog(version=None):
 
 
 def sections(text):
-    """The header block, then one chunk per '## ' heading; the four READMEs share this order."""
     return re.split(r"(?m)^(?=## )", text)
 
 
@@ -98,7 +96,6 @@ def write_sections(path, parts):
 
 def readme(ref):
     zh_path = os.path.join(ROOT, READMES["zh"])
-    # Tags before the English README took over README.md kept the Chinese one there.
     shown = subprocess.run(["git", "show", f"{ref}:{READMES['zh']}"], cwd=ROOT, capture_output=True, text=True)
     if shown.returncode:
         shown = subprocess.run(["git", "show", f"{ref}:README.md"], cwd=ROOT, capture_output=True,

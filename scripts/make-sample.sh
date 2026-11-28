@@ -1,13 +1,4 @@
 #!/bin/bash
-# Builds the onboarding sample, Resources/sample/sample.m4a: a short meeting voiced by Ming with
-# the Ling key in Application Support. The app plays it through afplay so its own system-audio
-# capture hears it (the app excludes its own process). Ming's output varies a little between runs:
-# after regenerating, re-measure the turns (silencedetect below) into `SamplePlayer.turns` and the
-# website's `SAMPLES["en"]` (scripts/site.py), which plays the same clip on its home page.
-#
-#   scripts/make-sample.sh       # the English meeting (app + website)
-#   scripts/make-sample.sh zh    # the same meeting in Chinese, for the English website: site/audio/meeting-zh.m4a
-#   scripts/make-sample.sh speak # the website's 同声传译 line as the room hears it: site/audio/speak-{en,zh}.m4a
 set -euo pipefail
 cd "$(dirname "$0")/.."
 KEY_FILE="$HOME/Library/Application Support/LiveSubs/ling-api-key"
@@ -15,7 +6,7 @@ KEY_FILE="$HOME/Library/Application Support/LiveSubs/ling-api-key"
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 
-say() { # out voice text
+say() {
   python3 -I - "$1" "$2" "$3" "$KEY_FILE" <<'PY'
 import sys, json, base64, urllib.request
 out, voice, text, key_file = sys.argv[1:]

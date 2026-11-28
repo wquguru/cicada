@@ -1,9 +1,6 @@
 import AVFoundation
 import Foundation
 
-/// Turns the recorded stretches of one local voice in a meeting into a profile embedding. This is
-/// deliberately separate from the live clusterer: it also works after the app restarted, for an old
-/// record the user wants to add to the library.
 enum SpeakerEnrollmentError: LocalizedError {
     case noAudio
     case notEnoughSpeech
@@ -29,7 +26,6 @@ enum SpeakerEnrollment {
     static let minimumSeconds = 6.0
     private static let maximumClipSeconds = 12.0
 
-    /// `audioURL`: the meeting's system recording, or an imported file's source.
     static func build(session: Session, voice: Int, audioURL: URL,
                       packageURL: URL? = nil) async throws -> SpeakerEnrollmentResult {
         try await Task.detached(priority: .utility) {
@@ -63,8 +59,6 @@ enum SpeakerEnrollment {
         return SpeakerEnrollmentResult(embedding: mean, clips: embeddings.count, seconds: seconds)
     }
 
-    /// 16 kHz mono floats from `start` to `end` seconds, converting the file's rate and channels.
-    /// `ImportVoices.read` is only for files already decoded to 16 kHz; meeting .m4a files are not.
     private static func read(_ file: AVAudioFile, from start: Double, to end: Double) -> [Float]? {
         let rate = file.processingFormat.sampleRate
         let first = AVAudioFramePosition(max(0, start) * rate)
@@ -78,7 +72,6 @@ enum SpeakerEnrollment {
             guard let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: want),
                   (try? file.read(into: buf, frameCount: want)) != nil, buf.frameLength > 0 else { break }
             input.frameLength = frames + buf.frameLength
-            // AVAudioPCMBuffer has no append API: copy into the backing float channels.
             if let src = buf.floatChannelData, let dst = input.floatChannelData {
                 for ch in 0..<Int(file.processingFormat.channelCount) {
                     dst[ch].advanced(by: Int(frames)).update(from: src[ch], count: Int(buf.frameLength))

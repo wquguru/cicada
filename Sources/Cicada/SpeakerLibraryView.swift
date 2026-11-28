@@ -1,9 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The local people library: voices remembered by voiceprint, plus what the user knows about the
-/// person. Voiceprints are biometric data: every row can be
-/// removed here, and nothing is uploaded.
 struct SpeakerLibraryView: View {
     @ObservedObject var model: AppModel
     @State private var editing: UUID?
@@ -128,7 +125,6 @@ struct SpeakerLibraryView: View {
     }
 }
 
-/// Edit the human part of a person's profile; the voiceprint itself stays untouched.
 struct SpeakerProfileEditor: View {
     @ObservedObject var model: AppModel
     let profile: SpeakerProfile

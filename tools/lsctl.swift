@@ -1,12 +1,5 @@
 import Foundation
 
-// lsctl [--json] [--timeout <s>] <command>          send one debug command, wait for its reply
-// lsctl [--timeout <s>] --wait '<path> <op> <value>'  poll `state` until it holds, e.g. 'display.notesWindow.visible == true'
-// lsctl --no-reply <command>                          fire and forget, as lsctl always did
-//
-// Exit: 0 done, 1 the command failed, 2 no reply (app not running, debug control off, old build),
-// 3 unknown command, 64 bad usage. stdout: `data` as JSON; stderr: the command's log lines and errors.
-
 var args = Array(CommandLine.arguments.dropFirst())
 var json = false, noReply = false, timeout: Double?, waitExpr: String?
 while let a = args.first, a.hasPrefix("--") {
@@ -20,11 +13,9 @@ while let a = args.first, a.hasPrefix("--") {
     }
 }
 let cmd = args.joined(separator: " ")
-// One reply comes in well under a second; a condition may take a while (a model to load, a window).
 let limit = timeout ?? (waitExpr == nil ? 3 : 10)
 if cmd.isEmpty && waitExpr == nil { FileHandle.standardError.write("usage: lsctl [--json] [--timeout s] [--wait expr] <command>\n".data(using: .utf8)!); exit(64) }
 
-// CICADA_DEBUG_CHANNEL picks one running copy (see DevBuild.debugChannel).
 let channel = ProcessInfo.processInfo.environment["CICADA_DEBUG_CHANNEL"].map { $0.isEmpty ? "" : "." + $0 } ?? ""
 let name = "com.wquguru.cicada.debug" + channel
 let center = DistributedNotificationCenter.default()
@@ -36,7 +27,6 @@ let observer = center.addObserver(forName: Notification.Name(name + ".reply"), o
     replies[id] = o
 }
 
-/// Sends one command and runs the run loop until its reply comes, or nil after `limit` seconds.
 func send(_ cmd: String, limit: Double) -> [String: Any]? {
     let id = String(UUID().uuidString.prefix(8)).lowercased()
     center.postNotificationName(Notification.Name(name), object: cmd, userInfo: ["id": id], deliverImmediately: true)
@@ -57,7 +47,6 @@ func exitCode(_ r: [String: Any]) -> Int32 {
     return (r["error"] as? [String: Any])?["code"] as? String == "unknown_command" ? 3 : 1
 }
 
-/// `notes.state == idle`, `display.notesWindow.visible == true`, `room.voicedSeconds > 2`.
 func holds(_ expr: String, in state: [String: Any]) -> Bool {
     let ops = ["==", "!=", ">=", "<=", ">", "<"]
     guard let op = ops.first(where: { expr.contains($0) }) else { return false }
@@ -89,7 +78,6 @@ if !cmd.isEmpty {
         exit(2)
     }
     if json { print(jsonText(r)) } else {
-        // stdout is only `data`, so `lsctl state | jq` works; what the command logged goes to stderr.
         for l in r["log"] as? [String] ?? [] { FileHandle.standardError.write((l + "\n").data(using: .utf8)!) }
         if let d = r["data"] { print(jsonText(d)) }
         if let e = r["error"] as? [String: Any] { FileHandle.standardError.write("lsctl: \(e["code"] ?? "") \(e["message"] ?? "")\n".data(using: .utf8)!) }
@@ -98,8 +86,6 @@ if !cmd.isEmpty {
 }
 
 if let waitExpr {
-    // A wait is its own budget: --timeout is how long the condition may take, not one reply.
-    // The section is the path up to its first dot, space or operator (`problem == x` is top level).
     let section = String(waitExpr.trimmingCharacters(in: .whitespaces).prefix { $0 != "." && $0 != " " && !"=!<>".contains($0) })
     let end = Date().addingTimeInterval(limit)
     var last: [String: Any]?

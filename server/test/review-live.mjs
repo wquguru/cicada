@@ -1,7 +1,3 @@
-// Runs the real review (Jev via ZenMux) on meeting records, to see what it would block:
-//   NODE_USE_ENV_PROXY=1 ZENMUX_API_KEY=… node server/test/review-live.mjs <session.json>…
-// Builds a rough share document from each record (all lines, the notes) and prints the scores.
-// Costs a fraction of a cent per meeting; not part of the automatic tests.
 import { readFileSync } from "node:fs";
 import { review } from "../src/review.js";
 

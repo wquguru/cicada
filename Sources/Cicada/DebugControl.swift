@@ -1,19 +1,13 @@
 import AppKit
 import Foundation
 
-/// The reply to one `tools/lsctl` command. lsctl waits for it by id instead of grepping the log, so an
-/// agent knows a command ran, failed or doesn't exist from the exit code alone. A command sent without
-/// an id (an older lsctl) gets no reply, as before.
 struct DebugReply {
     var id: String
     var ok = true
     var error: (code: String, message: String)?
-    /// JSON-safe values only (`JSONSerialization`).
     var data: Any?
-    /// What the command logged while it ran on the main thread; later lines (from Tasks) stay in the log.
     var log: [String] = []
 
-    /// A distributed notification carries the reply, so it stays small: the newest lines win.
     static let maxLogLines = 200
     static let maxLogBytes = 48_000
 
@@ -30,17 +24,12 @@ struct DebugReply {
     }
 }
 
-/// Lines logged on the main thread while a debug command runs (see `debugLog`).
 nonisolated(unsafe) var debugLogCapture: [String]?
 
-/// The command being run: cases mark a failure or hand back data through it.
 @MainActor enum DebugRun {
     static var reply: DebugReply?
 }
 
-/// A debug command couldn't do what it was asked: logged, and the reply says so (lsctl exits 1).
-/// It writes `DebugRun.reply`, so never call it (or what calls it) from the right side of an
-/// assignment to `DebugRun.reply?.…`: overlapping access aborts. Build the value first.
 @MainActor func debugFail(_ message: String, code: String = "failed") {
     debugLog(message)
     DebugRun.reply?.ok = false
@@ -61,9 +50,6 @@ extension AppModel {
             Notification.Name(DevBuild.debugChannel + ".reply"), object: reply.json(), userInfo: nil, deliverImmediately: true)
     }
 
-    /// `state[:section,…]`: what the app is doing now, as JSON, for agents (`lsctl state`, `lsctl --wait`).
-    /// Read straight from the engines, never a copy. No keys or tokens, only whether there is one;
-    /// what was said only with the debug setting on, as in the log.
     func debugSnapshot(_ only: [String]) -> [String: Any] {
         let content = settings.debug
         var all: [String: () -> Any] = [:]
@@ -96,7 +82,6 @@ extension AppModel {
             "music": self.roomListen.echoGate.playingMusic(), "micSilent": self.roomMicSilent,
             "micLost": self.roomMicLost ?? "", "micDenied": self.hybridMicDenied, "held": self.heldRoom.count,
             "voicedSeconds": self.roomListen.router.stats().voicedTotal,
-            // The microphone it hears now, the one chosen beside 打开麦克风 ("" = 自动) and the choices.
             "mic": (self.settings.hearsBoth ? self.roomListen : self.listen).roomMicUID ?? "",
             "micChosen": self.settings.roomMicUID,
             "mics": AudioDevices.roomMicChoices().map { "\($0.device.uid)=\($0.device.name)" },

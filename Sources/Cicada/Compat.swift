@@ -1,9 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// SwiftUI that macOS 14 lacks, with what it gets instead.
 extension View {
-    /// The pointing hand over something clickable.
     @ViewBuilder func linkPointer() -> some View {
         if #available(macOS 15, *) {
             pointerStyle(.link)
@@ -12,8 +10,6 @@ extension View {
         }
     }
 
-    /// Where a scroll view's content sits against its bottom edge (15 and later; 14 has
-    /// `onLegacyBottomDistance` below).
     @ViewBuilder func onScrollEdgeChange(_ action: @escaping (ScrollEdge, ScrollEdge) -> Void) -> some View {
         if #available(macOS 15, *) {
             onScrollGeometryChange(for: ScrollEdge.self) { g in
@@ -25,9 +21,6 @@ extension View {
         }
     }
 
-    /// The user scrolled by hand: a trackpad, a wheel or the scroller, not our own `scrollTo` (macOS 15
-    /// and later; 14 never reports it, so a playing transcript just keeps following). A mouse wheel
-    /// animates like `scrollTo` does, so an animation counts unless we started one just before.
     @ViewBuilder func onUserScroll(ownSince: @escaping () -> Date, _ action: @escaping () -> Void) -> some View {
         if #available(macOS 15, *) {
             onScrollPhaseChange { _, phase in
@@ -42,7 +35,6 @@ extension View {
         }
     }
 
-    /// The content scrolled (macOS 15 and later).
     @ViewBuilder func onScrolled(_ action: @escaping () -> Void) -> some View {
         if #available(macOS 15, *) {
             onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, _ in action() }
@@ -53,8 +45,6 @@ extension View {
 }
 
 extension View {
-    /// macOS 14: how far `bottomMarker` (the content's last view) is below the visible area,
-    /// measured by geometry since `onScrollGeometryChange` is 15 and later. Does nothing on 15+.
     @ViewBuilder func onLegacyBottomDistance(_ action: @escaping (CGFloat) -> Void) -> some View {
         if #available(macOS 15, *) {
             self
@@ -64,14 +54,12 @@ extension View {
                     Color.clear.preference(key: LegacyScrollEdge.Container.self, value: g.size.height)
                 })
                 .onPreferenceChange(LegacyScrollEdge.Container.self) { LegacyScrollEdge.container = $0 }
-                // The lazy stack doesn't draw a marker scrolled far out of view: that's far from the bottom.
                 .onPreferenceChange(LegacyScrollEdge.Bottom.self) { y in
                     action(y < 0 ? .greatestFiniteMagnitude : y - LegacyScrollEdge.container)
                 }
         }
     }
 
-    /// Put on the content's last view (macOS 14, with `onLegacyBottomDistance` on the scroll view).
     @ViewBuilder func bottomMarker() -> some View {
         if #available(macOS 15, *) {
             self
@@ -91,14 +79,12 @@ enum LegacyScrollEdge {
         static let defaultValue: CGFloat = 0
         static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
     }
-    /// -1 while the marker isn't drawn.
     struct Bottom: PreferenceKey {
         static let defaultValue: CGFloat = -1
         static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
     }
 }
 
-/// How far the content's bottom is below the visible area, the content's height and the view's.
 struct ScrollEdge: Equatable {
     var distance: CGFloat
     var height: CGFloat

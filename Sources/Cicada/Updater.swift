@@ -1,12 +1,6 @@
 import AppKit
 import CryptoKit
 
-/// Installs an update in place: downloads the release zip, checks it against checksums.txt,
-/// unpacks it, then hands off to a small shell script that swaps the app bundle once the app
-/// has quit and relaunches it. URLSession downloads carry no quarantine, so the new app (Developer
-/// ID signed and notarized since 1.11.0, ad-hoc before) opens without a Gatekeeper prompt; its
-/// designated requirement is the bundle id either way, so the system-audio and microphone
-/// permissions carry over, also from an ad-hoc build to a notarized one.
 @MainActor
 enum Updater {
     struct Failure: LocalizedError {
@@ -14,8 +8,6 @@ enum Updater {
         init(_ message: String) { errorDescription = message }
     }
 
-    /// Reports download progress (0...1) on the way; returns only if installing failed.
-    /// The caller has already ended the meeting: quitting must not stop to ask.
     static func install(_ update: UpdateChecker.Update, progress: @escaping (Double) -> Void) async throws {
         guard let zipURL = update.zip, let checksumsURL = update.checksums else {
             throw Failure(L("这个版本没有可安装的文件"))
@@ -46,7 +38,6 @@ enum Updater {
                   info?["CFBundleShortVersionString"] as? String == update.version else {
                 throw Failure(L("下载的不是预期的版本"))
             }
-            // A later version may need a newer macOS than this Mac has: swapped in, it wouldn't open.
             if let minimum = info?["LSMinimumSystemVersion"] as? String, !Self.runs(minimum) {
                 throw Failure(L("新版本需要 macOS \(minimum) 或更新版本"))
             }
@@ -65,8 +56,6 @@ enum Updater {
         NSApp.terminate(nil)
     }
 
-    /// Waits for the app to quit, moves the old bundle aside (restoring it if the new one can't be
-    /// moved in), relaunches, and cleans up. Arguments: pid, app path, new app path, work folder.
     private static let swapScript = """
         while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
         if mv "$2" "$4/old.app"; then
@@ -76,14 +65,12 @@ enum Updater {
         rm -rf "$4"
         """
 
-    /// Whether this Mac's macOS is at least `minimum` ("14.4").
     nonisolated static func runs(_ minimum: String,
                                  on os: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion) -> Bool {
         let p = minimum.split(separator: ".").map { Int($0) ?? 0 } + [0, 0, 0]
         return (os.majorVersion, os.minorVersion, os.patchVersion) >= (p[0], p[1], p[2])
     }
 
-    /// The hash listed for `name` in a `shasum -a 256` file.
     nonisolated static func expectedHash(of name: String, in checksums: Data) -> String? {
         String(decoding: checksums, as: UTF8.self)
             .split(separator: "\n")
@@ -101,7 +88,6 @@ enum Updater {
                     return done.resume(throwing: Failure(L("下载失败（HTTP \(status)）")))
                 }
                 guard let file else { return done.resume(throwing: error ?? Failure(L("下载失败"))) }
-                // The temporary file is deleted when this handler returns, so move it now.
                 do { try FileManager.default.moveItem(at: file, to: destination); done.resume() }
                 catch { done.resume(throwing: error) }
             }

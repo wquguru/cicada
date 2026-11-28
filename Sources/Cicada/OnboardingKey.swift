@@ -1,22 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// Onboarding step 3: connect a Ling key. Notes, Ling translation and Ming voices all need it, but it
-/// comes after the sample video, once people have seen what the app does. Skipping is allowed: "先不接"
-/// first shows what still works and what waits for a key (the notes window asks again later).
-/// Ling is the whole path; "用不了 Ling？" opens another service as a way out, saying what it lacks.
 struct OnboardingKeyStep: View {
     @ObservedObject var model: AppModel
     @ObservedObject var ling: LingClient
     @ObservedObject var settings: AppSettings
-    /// "先不接" was clicked: the card shows what skipping leaves out until 回去接上 or 好，先这样.
     @Binding var skipping: Bool
     @State private var draft = ""
     @State private var clipboardEmpty = false
-    /// A pasted key that belongs elsewhere: what it is, and (for another service's key) where it fits.
     @State private var keyHint: (text: String, service: AIProvider.Kind?, key: String)?
-    /// Showing another service instead of Ling: follows the setting, so a change made in Settings
-    /// while this step is open (or a reused window) never leaves the Ling title over another service.
     private var other: Bool { settings.provider.id != .ling }
 
     private static let others: [AIProvider] = [.openrouter, .zenmux, .openai]
@@ -173,7 +165,6 @@ struct OnboardingKeyStep: View {
                 }
             }
         } else if ling.hasKey, ling.aiCheck.running || ling.aiCheck.failure != nil {
-            // Where it broke and the one thing that fixes it, as in the settings.
             AICheckSteps(model: model, ling: ling) { draft = "" }
         } else {
             switch ling.keyState {
@@ -238,7 +229,6 @@ struct OnboardingKeyStep: View {
 
     // MARK: Skipping
 
-    /// Honest about both sides, so skipping is a choice rather than a dead end.
     private var withoutKey: some View {
         VStack(alignment: .leading, spacing: 16) {
             if Recognition.cloudOnly {
@@ -329,8 +319,6 @@ struct OnboardingKeyStep: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(Palette.ground))
     }
 
-    /// Reads the clipboard only when the button is clicked (a deliberate paste, so macOS's paste
-    /// privacy prompt, if any, makes sense to the user); a typed key is checked as typed.
     private func pasteAndCheck() {
         if !draft.isEmpty { save(draft); return }
         let text = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -343,7 +331,6 @@ struct OnboardingKeyStep: View {
         guard !k.isEmpty else { return }
         clipboardEmpty = false
         keyHint = nil
-        // The prefix says whose key it is (AISettingsView.save does the same).
         if let owner = AICheck.owner(ofKey: k) {
             if owner.management {
                 keyHint = (L("这是 ZenMux 的管理 key，不能用来调用模型。请粘贴 sk-payg 开头的 key。"), nil, "")
@@ -359,8 +346,6 @@ struct OnboardingKeyStep: View {
     }
 }
 
-/// Step 3's footer. 继续 waits for a working key; "先不接" turns the card into what skipping leaves out,
-/// and only "好，先这样" there moves on without one.
 struct OnboardingKeyFooter: View {
     @ObservedObject var ling: LingClient
     @Binding var skipping: Bool

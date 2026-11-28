@@ -7,7 +7,6 @@ import SwiftUI
 import Speech
 import UserNotifications
 
-/// Wires the engines, the meeting store, the subtitle bar and the UI together.
 @MainActor
 final class AppModel: ObservableObject {
     let settings = AppSettings()
@@ -17,99 +16,59 @@ final class AppModel: ObservableObject {
     let talkRight = RightOptionKey()
     let toggleKey = HotKey(id: 2, shortcut: .defaultToggle)
     lazy var listen = ListenEngine(settings: settings)
-    /// The one echo-cancelling mic unit, shared by the talk key and 电脑和会议室's room.
     let voiceMic = VoiceMic()
     lazy var speak = SpeakEngine(settings: settings, voiceMic: voiceMic)
-    /// 电脑和会议室: the microphone side, its own engine (language, pauses, model), as Feishu keeps the
-    /// online and the room streams apart instead of mixing them into one track.
     lazy var roomListen = ListenEngine(settings: settings, role: .room)
-    /// Debug (`roomEcho:on|off|bypass`, `roomGate:off`), next meeting. By default the room is heard
-    /// through the echo-cancelling unit with its processing off (`bypass`): the plain mic's sound and
-    /// the gate, as `RoomMic` (processing on let no echo through but lost most of what people at the
-    /// table said), while the talk key turns processing on for a press. With the plain mic the press
-    /// had no echo cancellation and was dropped whenever the other side was talking.
     var roomEchoCancel = true
     var roomEchoBypass = true
     var roomEchoGate = true
-    /// The Mac's lines of late (wall clock), and room lines waiting to be told apart from their echo.
     private var recentOnline: [EchoMatch.Heard] = []
-    /// The meeting's last 30 s, its lines and their translations, for 不用按键 to tell its echo.
     private var recentMeeting: [EchoMatch.Heard] = []
     private var recentMeetingSegs: [Int: (start: Double, end: Double)] = [:]
     private(set) var heldRoom: [(id: Int, seg: Segment, duration: Double, heard: EchoMatch.Heard)] = []
-    /// What each engine shows as the line in progress, and when it last changed.
     private var liveMain = (src: "", dst: "", at: Date.distantPast)
     private var liveRoom = (src: "", dst: "", at: Date.distantPast)
     lazy var speakTester = SpeakTester(speak: speak, ling: ling, settings: settings)
-    /// Key released → the room heard the first sound, from the latest real press or sound test.
     @Published var lastSpeakLatency: Double? = UserDefaults.standard.object(forKey: "lastSpeakLatency") as? Double {
         didSet { UserDefaults.standard.set(lastSpeakLatency, forKey: "lastSpeakLatency") }
     }
-    /// The 试一句 sheet in settings.
     @Published var speakTestShown = false
-    /// The piece of a finished meeting's notes open for editing on the main window's page.
     @Published var noteEdit: NoteEdit?
-    /// The panel is asking, the first time, what turning 同声传译 on changes.
     @Published var speakAsking = false
-    /// Meeting apps and the microphone each reads; refreshed every second once the virtual mic exists.
     @Published var micUsers: [MicUser] = []
     lazy var systemMic = SystemMic(settings: settings)
-    /// Whether the system default input is the virtual mic, and anything left to put back.
     @Published private(set) var systemMicState: SystemMic.State = .off
-    /// The app whose "怎么改" sheet is open in Settings.
     @Published var micGuide: MicUser?
-    /// Settings › 同声传译: the voice list under "对方听到" is open.
     @Published var voicePickerOpen = false
-    /// Settings › AI 服务's 自己选模型 is unfolded.
     @Published var aiModelsOpen = false
 
     @Published private(set) var running = false
-    /// The meeting is about to end by itself (a hang-up or a long silence) unless someone keeps it going.
     @Published private(set) var ending: MeetingEndWatch.Pending?
-    /// The last meeting ended by itself: the menu says so, and the next call in a meeting app starts a new one.
     @Published private(set) var autoEnded = false
-    /// The notes window is on screen: the menu bar panel's 显示 / 收起 follows it.
     @Published private(set) var notesShown = false
     private var endWatch: MeetingEndWatch?
     private var endTimer: Timer?
-    /// Debug: meeting apps in a call instead of what Core Audio says, and shorter waits.
     private var fakeCalls: [String: String]?
     private var endTimesOverride: (silence: Double, countdown: Double, grace: Double)?
     @Published var status = L("准备就绪")
     @Published private(set) var summary = ""
     @Published private(set) var installed: Set<String> = []
     @Published private(set) var candidates: [Lang] = []
-    /// 听不出: the languages offered while "auto" can't tell (empty when it can).
     @Published private(set) var languageAsk: [Lang] = []
-    /// The second speech model coming in the background: its name and how far along.
     @Published private(set) var modelFetch: ModelFetch?
-    /// 先用○○听: offered, listening, or just handed back to this Mac.
     @Published private(set) var cloud = CloudState()
-    /// 继续等 was chosen: the offer stays away until the next meeting.
     private var cloudDeclined = false
     @Published private(set) var identifyingLanguage = false
-    /// 电脑和会议室 with the microphone not allowed (since when): the Mac's side goes on, the room's can't start.
     @Published private(set) var micDeniedSince: Date?
     var hybridMicDenied: Bool { micDeniedSince != nil }
-    /// Debug (`micDeniedSim`): 电脑和会议室 acts as if the microphone were refused.
     private var fakeMicDenied = false
-    /// Something only you can fix, said beyond the panel (shut while you meet): the menu bar's dot
-    /// and its tooltip. The microphone also goes to the notes window, the subtitle bar and, once a
-    /// meeting, a notification.
     @Published private(set) var problem: String?
-    /// The notification went out: once a meeting, however often the microphone is refused again.
     private var micDeniedNotified = false
-    /// 麦克风没声音: the room mic stayed digital silence after being opened again.
     @Published private(set) var roomMicSilent = false
-    /// 外接麦克风断开了: what happened instead (RoomMicLoss), for a few seconds.
     @Published var roomMicLost: String?
-    /// The debug command's pretend unplug: these inputs count as gone.
     private var fakeGoneMics: Set<String> = []
-    /// Why the model 听不出 needed couldn't be had, when that is so.
     @Published private(set) var modelProblem: ModelProblem?
-    /// That model was the one to start with and there is none to fall back on: nothing is listening.
     @Published private(set) var modelBlocked = false
-    /// 听不出 because none of the installed models hear their language: it offers ones not installed.
     @Published private(set) var languageNotInstalled = false
     @Published var outputs: [OutputDevice] = []
     @Published var speakPhase: SpeakEngine.Phase = .idle
@@ -117,46 +76,32 @@ final class AppModel: ObservableObject {
         SettingsSection(rawValue: UserDefaults.standard.string(forKey: "settingsSection") ?? "") ?? .speak {
         didSet {
             UserDefaults.standard.set(settingsSection.rawValue, forKey: "settingsSection")
-            // People pick a voice and move on: don't greet them with the list still open next time.
             if settingsSection != oldValue { voicePickerOpen = false }
         }
     }
     @Published private(set) var systemAudio = SystemAudioAccess.unknown
     var systemAudioOK: Bool { systemAudio == .granted }
     var systemAudioRefused: Bool { systemAudio == .refused }
-    /// Quitting to reopen (`relaunch`): closing the guide now isn't finishing it.
     var relaunching = false
-    /// Speech recognition can run: always on macOS 26; below it, Dictation on and 语音识别 allowed.
     @Published var speechOK = Recognition.ready
-    /// Step 1 of the guide is done.
     var listenReady: Bool { systemAudioOK && speechOK }
     @Published var micStatus: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .audio)
     @Published var liveSource = ""
-    /// Lines whose words the record's own recognizer hasn't settled yet (the notes window says 校准中).
     @Published private(set) var settling: Set<String> = []
-    /// Lines whose voiceprint is still being worked out: no voice yet is not "like no voice".
     @Published private(set) var voicePending: Set<String> = []
     @Published var liveTranslation = ""
     @Published var onboardingStep = 1
-    /// Step 3 is showing what skipping the key leaves out (debug: `onboarding:3,skip`).
     @Published var onboardingKeySkip = false
-    /// What step 4 shows (debug: `onboarding:4,ask` / `onboarding:4,setup`).
     enum SpeakStep { case followSetting, ask, checklist }
-    /// Step 4's yes/no or checklist; until one is chosen, the checklist if speaking is already on.
     @Published var onboardingSpeakSetup = SpeakStep.followSetting
-    /// Debug: which meeting and tab the main window shows ("<id>" or "<id>,transcript").
     @Published var mainShow: String?
-    /// Hold right ⌥ is chosen but "输入监控" isn't allowed yet.
     @Published var talkNeedsPermission = false
-    /// Google translation unreachable, and whether sentences go untranslated (`TranslationService.health`).
     @Published var translationHealth = TranslationHealth()
     @Published var toggleKeyTaken = false
     private var permissionPoll: Timer?
     private var shortcutsSuspended = false
     let installer = VirtualMicInstaller()
     let ling = LingClient()
-    /// Network changes (a proxy app turned on, Wi-Fi back): the AI service is looked at again
-    /// when it was unreachable. No timer: nothing is checked while the network stays the same.
     private let networkMonitor = NWPathMonitor()
     private var networkDebounce: DispatchWorkItem?
     lazy var translator = TranslationService(ling: ling)
@@ -164,7 +109,6 @@ final class AppModel: ObservableObject {
     let updates = Updates()
     let loginItem = LoginItem()
     lazy var notes = NotesEngine(ling: ling, store: store)
-    /// 存到文件夹 (settings › 通用).
     lazy var folderExport = FolderExporter(store: store, settings: settings)
     lazy var notesWindow = NotesWindowController(model: self)
     lazy var importer = FileImporter(store: store, settings: settings, translator: translator, profiles: profiles)
@@ -172,49 +116,35 @@ final class AppModel: ObservableObject {
     lazy var fixes = LiveFixes(store: store, vocabulary: vocabulary, settings: settings)
     let sample = SamplePlayer()
     let speakers = SpeakerTagger()
-    /// The local voiceprint library; never sent anywhere. See SpeakerProfiles.swift.
     let profiles = SpeakerProfileStore()
-    /// A UI copy of `profiles`, refreshed by its onChange callback.
     @Published private(set) var speakerProfiles: [SpeakerProfile] = []
     @Published var speakerLibraryShown = false
     @Published private(set) var speakerMemoryBusy = false
     lazy var speakerNamer = SpeakerNamer(ling: ling, store: store)
-    /// The last speaker edit, offered as 撤销 at the bottom of both windows for a few seconds.
     @Published var speakerUndo: SpeakerUndo?
     private var speakerSetting: AnyCancellable?
     private var speakerMemorySetting: AnyCancellable?
     private var handsFreeSetting: AnyCancellable?
-    /// 开始听时打开麦克风 already opened it for this meeting's call.
     private var micAutoOpened = false
     var openOnboarding: (() -> Void)?
 
     var openMainWindow: (() -> Void)?
     var openSettingsWindow: (() -> Void)?
     var showPanel: (() -> Void)?
-    /// Opens the menu bar panel, leaving it open if it already is.
     var openPanel: (() -> Void)?
 
     private var lineForSegment: [Int: String] = [:]
     private var lineCounter = 0
-    /// The other side's last recorded line, which the next one may carry on (`HeardText.continues`).
     private var lastHeard: (seg: Segment, line: String)?
-    /// A line that may carry on `lastHeard`, waiting to hear whose voice it is; its translation if
-    /// that comes first.
     private var heldJoin: (seg: Segment, t: Double, translation: String?)?
-    /// Lines the record's own recognizer is still settling (`ListenEngine.onRefined`): each line's
-    /// meeting and its segments in order (several after a join), each with the live recognizer's text.
     private var refining: [String: (session: String, segs: [(id: Int, text: String, settled: String?)])] = [:]
     private var refiningOrder: [String] = []
     private var lineOfSegment: [Int: String] = [:]
-    /// Settled before its line was recorded (a line waiting for its voice, the language or an echo check).
     private var settledEarly: [Int: String] = [:]
-    /// Lines with their record text: the live recognizer's translations no longer replace theirs.
     private var refinedLines: Set<String> = []
 
     init() {
-        // A meeting or speaking holds the update notification until it ends (see stop()).
         updates.busy = { [weak self] in guard let self else { return false }; return self.running || self.speak.phase != .idle }
-        // Words in the Mac's audio: speech, which the room mic is silenced for (music isn't, `EchoGate`).
         listen.onWords = { [gate = roomListen.echoGate] in gate.heardWords() }
         speak.micTaken = { [weak self] in
             guard let self else { return false }
@@ -226,7 +156,6 @@ final class AppModel: ObservableObject {
         roomListen.onStateChange = { [weak self] in self?.refresh() }
         listen.onSubtitle = { [weak self] src, dst in
             guard let self else { return }
-            // Someone is speaking either way; only the wrong model's words aren't shown.
             self.liveMain = (self.listen.hidesSource ? "" : src, dst, Date())
             self.showLive(spoke: src)
         }
@@ -265,10 +194,6 @@ final class AppModel: ObservableObject {
             self.store.setVoice(lineID: line, voice)
             self.store.setVoiceSuggestion(id, voice: voice, match.ref)
         }
-        // 不用按键 runs only while a meeting is being listened to: its lines are what tells the meeting's
-        // echo (`meetingSaid`), and the running unit mutes the built-in mic for other apps (#24), which
-        // then hear the virtual mic anyway. It pauses while 打开麦克风 is on: the room shares the unit and
-        // is heard unprocessed, and everyone at the table would be interpreted as me.
         handsFreeSetting = Publishers.CombineLatest4(settings.$speakHandsFree, settings.$listenSource, settings.$speakEnabled, $running)
             .sink { [weak self] on, _, _, _ in
                 DispatchQueue.main.async {
@@ -319,10 +244,7 @@ final class AppModel: ObservableObject {
         listen.translator = translator
         roomListen.translator = translator
         roomListen.voiceMic = voiceMic
-        listen.voiceMic = voiceMic   // 会议室 alone: lets go of a leftover unit before the plain mic
-        // Making or letting go of the echo-cancelling unit silences, for good, audio already flowing in
-        // this process: the voice output (the room would hear nothing) and the Mac's audio tap (the
-        // meeting would go unheard; measured: no line after it). Each is started anew.
+        listen.voiceMic = voiceMic
         voiceMic.onUnitChanged = { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -336,7 +258,6 @@ final class AppModel: ObservableObject {
         translator.onFixes = { [weak self] text, edits in self?.fixes.received(text, edits) }
         fixes.onLineFixed = { [weak self] id, line in self?.lineFixed(id, line) }
         fixes.onChange = { [weak self] in self?.objectWillChange.send() }
-        // An Intel Mac's imports: heard at a lower priority than the live meeting.
         Recognition.cloudHear = { [weak self] wav, seconds, locale in
             guard let self else { return nil }
             let hint = sourceLanguages.first { $0.locale == locale }?.code
@@ -344,14 +265,12 @@ final class AppModel: ObservableObject {
                 return try await self.translator.hear(wav: wav, seconds: seconds, target: self.settings.resolvedTarget(source: hint),
                                                       hint: hint, priority: .notes)
             } catch {
-                // A stretch not heard is not silence: the import stays unfinished and offers 重新转写.
                 debugLog("import: hear failed: \(error)")
                 self.importer.hearFailures += 1
                 return nil
             }
         }
         importer.onFinished = { [weak self] id in self?.importFinished(id) }
-        // 存到文件夹: written once a record is settled, rewritten when it changes.
         folderExport.settling = { [weak self] id in self?.notes.settling(id) ?? false }
         store.onSave = { [weak self] id in self?.folderExport.saved(id) }
         notes.finalDone = { [weak self] id in self?.folderExport.settled(id) }
@@ -388,11 +307,9 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.muteRoomWhileSpeaking(phase)
             self.speakPhase = phase
-            // A 试一句 rehearsal shows in its own sheet: no notes window, caption or subtitle bar.
             if self.speakTester.busy { return }
             if phase == .listening && !src.isEmpty { self.heardSpeech(); self.heardWords() }
             guard self.settings.displayMode == "bar" else {
-                // The notes window's caption line shows what you are saying.
                 if phase != .idle || !src.isEmpty {
                     self.liveSource = src.isEmpty ? L("你正在说…") : L("你：\(src)")
                     self.liveTranslation = dst
@@ -410,7 +327,6 @@ final class AppModel: ObservableObject {
             let heard = EchoMatch.Heard(text: text, start: from.timeIntervalSinceReferenceDate, end: to.timeIntervalSinceReferenceDate)
             guard let self else { return false }
             if EchoMatch.isEcho(heard, online: self.recentMeeting) { return true }
-            // The meeting was playing: its line (and translation) may land a moment after Ming's answer.
             guard self.listen.router.stats().silenceRun < EchoMatch.window else { return false }
             try? await Task.sleep(nanoseconds: UInt64(EchoMatch.hold * 1_000_000_000))
             return EchoMatch.isEcho(heard, online: self.recentMeeting)
@@ -455,8 +371,6 @@ final class AppModel: ObservableObject {
         RunLoop.main.add(watch, forMode: .common)
     }
 
-    /// The room's microphone unplugged: Core Audio moves the engine to the system default without a
-    /// word, which may be a headset or the virtual mic. Pick again the way the meeting started, and say so.
     private func watchRoomMic() {
         let both = settings.hearsBoth && roomListen.isRunning
         guard let engine = both ? roomListen : settings.listensToRoom && listen.isRunning ? listen : nil,
@@ -499,8 +413,6 @@ final class AppModel: ObservableObject {
     func launch() async {
         await listen.refreshInstalledLocales()
         refresh()
-        // Listening starts by itself at launch: never with the microphone open. 会议室 is chosen
-        // for the meeting at hand, not kept for the next login.
         if settings.hearsRoom { settings.listenSource = "system" }
         start()
         if settings.speakEnabled { enableSpeaking(true) }
@@ -508,7 +420,6 @@ final class AppModel: ObservableObject {
 
     func refresh() {
         running = listen.isRunning
-        // Once the tap has run, the permission is there: pausing doesn't take it away.
         if listen.isRunning && !settings.listensToRoom && systemAudio != .granted { systemAudio = .granted }
         summary = settings.listensToRoom ? L("麦克风 · \(listen.languageSummary())")
             : settings.hearsBoth ? L("电脑和麦克风 · \(listen.languageSummary())") : listen.languageSummary()
@@ -548,7 +459,6 @@ final class AppModel: ObservableObject {
         checkProblem()
         let devices = AudioDevices.outputs()
         if devices.map(\.uid) != outputs.map(\.uid) { outputs = devices }
-        // Refused (in the prompt, or turned off in System Settings later): the tap would only hear silence.
         let access = systemAudio.next(status: SystemAudioPermission.status(),
                                       tapRan: listen.isRunning && !settings.listensToRoom)
         if access != systemAudio { systemAudio = access }
@@ -560,9 +470,7 @@ final class AppModel: ObservableObject {
 
     // MARK: System microphone
 
-    /// Switching the system mic only helps when there is a call to speak into.
     var wantsSystemMic: Bool {
-        // 只听会议室: no call, and the talk key only says it's for online meetings.
         settings.speakEnabled && settings.autoSystemMic && !settings.listensToRoom && virtualMic != nil
     }
 
@@ -571,20 +479,16 @@ final class AppModel: ObservableObject {
         if state != systemMicState { systemMicState = state }
     }
 
-    /// Switches or lets go to match the settings (同声传译, 自动切换, 声音输出到).
     func applySystemMic() {
-        // Speaking off: turning it off already put the mic back; a crash leftover waits for 还原.
         if wantsSystemMic { systemMic.engage(wanted: true) } else if settings.speakEnabled { systemMic.release() }
         refreshSystemMic()
     }
 
-    /// 还原: the real mic back now. While speaking it stays back until 换回 or the next time speaking starts.
     func restoreSystemMic() {
         systemMic.release()
         refreshSystemMic()
     }
 
-    /// 换回 / 切换: the virtual mic as the system default again.
     func switchSystemMic() {
         systemMic.engage(wanted: true)
         refreshSystemMic()
@@ -596,25 +500,21 @@ final class AppModel: ObservableObject {
     }
 
     func refreshMicUsers() {
-        // Compare against where our voice actually goes: 高级 › 声音输出到 can point elsewhere.
         let target = outputs.first { !settings.speakOutput.isEmpty && $0.uid == settings.speakOutput } ?? virtualMic
         let users = virtualMic != nil ? target.map { MicUsers.current(virtualMic: $0.id) } ?? [] : []
         if users != micUsers { micUsers = users }
     }
 
-    /// Opens the "怎么改" sheet for an app, from the panel or Settings.
     func showMicGuide(_ user: MicUser) {
         micGuide = user
         openSettings(.speak)
     }
 
-    /// Brings a meeting app forward so the user can change its microphone.
     func openApp(_ bundleID: String) {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 
-    /// Starting the tap triggers the system prompt; if it still fails, open the pane.
     func requestSystemAudio() {
         if !listen.isRunning { start() }
         if !listen.isRunning {
@@ -630,16 +530,12 @@ final class AppModel: ObservableObject {
     }
 
     func openMicrophoneSettings() { openSettingsPane("Privacy_Microphone") }
-    /// 换麦克风: the room is heard by the system's input (`RoomMicPlan`), picked in Sound.
     func openSoundInputSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension?input") {
             NSWorkspace.shared.open(url)
         }
     }
 
-    /// On each change and every second: the menu bar's dot, the subtitle bar's notice and the
-    /// notification. Never a dialog: it would take the focus from the meeting app, and show in a
-    /// shared screen.
     func checkProblem() {
         let both = listen.isRunning && settings.hearsBoth && !Recognition.legacy
         let denied = both && (fakeMicDenied || [.denied, .restricted].contains(AVCaptureDevice.authorizationStatus(for: .audio)))
@@ -649,8 +545,6 @@ final class AppModel: ObservableObject {
         }
         let p = denied ? L("听会议室要先允许麦克风") : AIServiceStrip.blocking(ling, textModel: settings.textModel)
         if p != problem { problem = p }
-        // With the notes window up its banner says so; put away, a notification after 10 s
-        // (long enough for a quick fix in the panel), once a meeting.
         if denied, !micDeniedNotified, !notesShown, let since = micDeniedSince, Date().timeIntervalSince(since) >= 10 {
             micDeniedNotified = true
             notifyMicDenied()
@@ -672,9 +566,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Quits and opens Cicada again: a permission turned on after it was refused takes only then.
     func relaunch() {
-        // Quitting closes the guide, which would count as finishing it: it carries on after the reopen.
         relaunching = true
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -683,7 +575,6 @@ final class AppModel: ObservableObject {
         NSApp.terminate(nil)
     }
 
-    /// macOS 14/15: asks for 语音识别, then opens Keyboard settings if Dictation is still off.
     func requestSpeech() {
         Task {
             if await Recognition.authorize() {
@@ -708,7 +599,6 @@ final class AppModel: ObservableObject {
 
     func openSettings(_ section: SettingsSection? = nil) {
         if let section { settingsSection = section }
-        // The 诊断 tab only exists while its switch is on.
         if settingsSection == .diagnostics && !settings.diagnostics { settingsSection = .overlay }
         openSettingsWindow?()
     }
@@ -719,8 +609,6 @@ final class AppModel: ObservableObject {
 
     func virtualMicInstalled() {
         refreshOutputs()
-        // Core Audio restarted to load the driver: device IDs changed, reattach the
-        // system-audio tap and rebuild the voice output.
         speak.resetOutput()
         listen.reconnectAudio()
         if settings.speakEnabled { applySystemMic() }
@@ -729,12 +617,8 @@ final class AppModel: ObservableObject {
 
     // MARK: Start / stop
 
-    /// `byUser`: started by a click or ⌘R, so the notes window shows at once as the sign that
-    /// listening began. Starting by itself (launch, a meeting app's call) waits for the first words.
     func start(byUser: Bool = false) {
         guard !listen.isRunning else { return }
-        // Starting by hand means the meeting is here now: open the room microphone too, when the
-        // user turned on 开始听时打开麦克风 (设置 › 通用). Launch still stays silent.
         micAutoOpened = false
         if byUser, settings.autoMicOnStart, settings.listenSource == "system" {
             settings.listenSource = Recognition.legacy ? "room" : "both"
@@ -759,7 +643,6 @@ final class AppModel: ObservableObject {
         heldRoom = []
         liveMain = ("", "", .distantPast)
         liveRoom = ("", "", .distantPast)
-        // The caption under the notes would otherwise show the last meeting's line until someone speaks.
         liveSource = ""
         liveTranslation = ""
         speechHeard = false
@@ -772,8 +655,6 @@ final class AppModel: ObservableObject {
         if settings.recordAudio {
             listen.router.setRecording(store.systemAudioURL(session.id))
             speak.setRecording(store.micAudioURL(session.id))
-            // Here, not when the mic opens: one clock with the Mac's audio, and opening the mic
-            // again mid-meeting must not start the file over.
             roomListen.router.setRecording(store.roomAudioURL(session.id))
         }
         listen.start()
@@ -788,7 +669,6 @@ final class AppModel: ObservableObject {
         refresh()
     }
 
-    /// `endedAt`: when a meeting that ends by itself really ended (see `autoEnd`).
     func stop(endedAt: Date? = nil) {
         autoEnded = false
         endWatch = nil
@@ -803,7 +683,6 @@ final class AppModel: ObservableObject {
             heldJoin = nil
             appendHeard(held.seg, t: held.t, translation: held.translation)
         }
-        // Read the whole meeting for names once more (the id outlives store.end).
         let ended = store.liveID
         store.end(at: endedAt, heardSpeech: listen.heardSpeech)
         if settings.speakerVoices, let ended { speakerNamer.guess(ended, force: true) }
@@ -811,13 +690,11 @@ final class AppModel: ObservableObject {
         if let ended { folderExport.ended(ended) }
         overlay.hide()
         refresh()
-        updates.notifyIfDue()  // held while the meeting was on
+        updates.notifyIfDue()
     }
 
     func setRunning(_ on: Bool) { on ? start(byUser: true) : requestStop() }
 
-    /// The menu (⌘R) and the panel switch: a meeting with lines is ended only after asking, with
-    /// "继续记录" as the default so a stray Return keeps it going. An empty one just stops.
     func requestStop() {
         guard listen.isRunning, let id = store.liveID, let s = store.session(id), !s.lines.isEmpty else { stop(); return }
         NSApp.activate()
@@ -832,7 +709,6 @@ final class AppModel: ObservableObject {
         if alert.runModal() == .alertFirstButtonReturn { stop() }
     }
 
-    /// The bottom-left 诊断 switch in settings: shows or hides the 诊断 tab.
     func setDiagnostics(_ on: Bool) {
         settings.diagnostics = on
         if !on && settingsSection == .diagnostics { settingsSection = .overlay }
@@ -841,16 +717,13 @@ final class AppModel: ObservableObject {
 
     // MARK: Languages
 
-    /// This meeting's 字幕 choice from the notes window's language chip (nil: the settings').
     @Published var meetingSubtitles: String?
-    /// Notes language chosen for one meeting (the chip during it, 重新整理 after it).
     @Published private(set) var notesLanguageFor: [String: String] = [:]
 
     var subtitles: String { meetingSubtitles ?? settings.subtitles }
 
     func notesChoice(_ id: String) -> String { notesLanguageFor[id] ?? settings.notesLanguage }
 
-    /// The language the other side spoke most in a meeting (the detected one while nothing is recorded yet).
     func meetingLanguage(_ id: String?) -> String? {
         let heard = id.flatMap { store.session($0) }?.lines.filter { $0.speaker != "me" }.map(\.srcLang) ?? []
         let counts = Dictionary(heard.map { ($0, 1) }, uniquingKeysWith: +)
@@ -861,8 +734,6 @@ final class AppModel: ObservableObject {
         notesChoice(id) == "source" ? (meetingLanguage(id) ?? settings.myLanguage) : settings.myLanguage
     }
 
-    /// The subtitle as the 字幕 choice shows it: both lines, the translation alone, or the
-    /// original alone as the main line.
     func displayed(_ src: String, _ dst: String) -> (source: String, translation: String) {
         switch subtitles {
         case "original": return ("", src)
@@ -879,7 +750,6 @@ final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
-    /// A different notes language during a meeting rewrites the notes in it right away.
     func setNotesLanguage(_ choice: String, meetingOnly: Bool = false) {
         let live = store.liveID
         let before = live.map(notesLanguageCode)
@@ -889,13 +759,11 @@ final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
-    /// After a meeting: write its notes again in the other language.
     func regenerateNotes(_ id: String, choice: String) {
         notesLanguageFor[id] = choice
         notes.generate(for: id)
     }
 
-    /// A hand edit of summary/topics/names: stored with the meeting and shown at once.
     func saveEditedNotes(_ edited: MeetingNotes, session id: String) {
         var next = edited
         next.updatedAt = Date()
@@ -905,8 +773,6 @@ final class AppModel: ObservableObject {
 
     // MARK: Display (live notes / subtitle bar / nothing)
 
-    /// 录屏时可见: every place that shows it (settings, menu bar panel, 显示 menu, the notes
-    /// window's badge) flips this one setting.
     func setNotesCapturable(_ on: Bool) {
         settings.notesCapturable = on
         notesWindow.setCapturable(on)
@@ -919,14 +785,12 @@ final class AppModel: ObservableObject {
         showDisplay(force: true)
     }
 
-    /// ⌃⌥S: notes → subtitle bar → nothing → notes.
     func cycleDisplay() {
         let order = ["notes", "bar", "none"]
         let i = order.firstIndex(of: settings.displayMode) ?? 0
         setDisplayMode(order[(i + 1) % order.count])
     }
 
-    /// Set at the first words of a meeting: until then listening stays out of sight.
     private var speechHeard = false
 
     private func heardSpeech() {
@@ -935,7 +799,6 @@ final class AppModel: ObservableObject {
         if settings.displayMode == "notes" { notesWindow.show() }
     }
 
-    /// `force`: the user asked for this mode or started listening, show it even before anyone speaks.
     private func showDisplay(force: Bool = false) {
         switch settings.displayMode {
         case "bar":
@@ -946,13 +809,10 @@ final class AppModel: ObservableObject {
             overlay.hide()
         default:
             overlay.hide()
-            // The notes window waits for someone to speak, so launching or a silent tab
-            // doesn't put an empty window on screen.
             if listen.isRunning && (speechHeard || force) { notesWindow.show() }
         }
     }
 
-    /// The user closed the notes window: show the same meeting in the records window.
     func notesWindowClosed() {
         let id = store.liveID ?? notes.shownID
         openMainWindow?()
@@ -962,18 +822,12 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Asked for by name (菜单栏面板 打开, 窗口 › 实时纪要): shown even before anyone speaks, and
-    /// without touching 显示方式, so 不显示 or 字幕条 is back at the next meeting.
     func openNotesWindow() { notesWindow.show(asked: true) }
 
-    /// The listening pill: bring back what shows this meeting, the subtitle bar in 字幕条 mode,
-    /// else the notes window (in 不显示 just this once).
     func showLiveDisplay() {
         if settings.displayMode == "bar" { overlay.reveal() } else { openNotesWindow() }
     }
 
-    /// 收起 in the menu bar panel: out of the way for now, still in 实时纪要 mode
-    /// (unlike the close button, it doesn't open the records window).
     func hideNotesWindow() { notesWindow.hide() }
 
     func notesVisibilityChanged(_ shown: Bool) {
@@ -982,15 +836,8 @@ final class AppModel: ObservableObject {
 
     // MARK: Settings actions
 
-    /// 打开麦克风 / 关闭麦克风, in the panel, the notes window and the subtitle bar. The Mac's audio is
-    /// always heard; the microphone adds the people in the room to the same meeting (macOS 14/15,
-    /// where two recognizers interrupt each other: the microphone in place of the Mac's audio).
-    /// Not kept for the next launch: listening starts by itself, never with the microphone open.
     var micOn: Bool { settings.hearsRoom }
 
-    /// The menu beside 打开麦克风: which microphone hears the room ("" = 自动, as `RoomMicPlan` picks).
-    /// Picking one while the microphone is off is asking to hear the room with it; while it is on,
-    /// only the room side reconnects, and the meeting goes on.
     func setRoomMic(_ uid: String) {
         settings.roomMicUID = uid
         debugLog("room mic chosen: \(uid.isEmpty ? "auto" : uid)")
@@ -1004,7 +851,6 @@ final class AppModel: ObservableObject {
 
     func setMic(_ on: Bool) {
         let value = !on ? "system" : Recognition.legacy ? "room" : "both"
-        // Asking for the room is asking to listen, even with the switch already on.
         if value == settings.listenSource {
             if on, !listen.isRunning { start(byUser: true) }
             return
@@ -1013,12 +859,10 @@ final class AppModel: ObservableObject {
         let wasRoomOnly = settings.listensToRoom
         settings.listenSource = value
         if listen.isRunning && settings.hearsRoom { store.markLiveInRoom() }
-        // The main engine changes only between the Mac and the room alone; "both" adds the room side.
         if wasRoomOnly != settings.listensToRoom { listen.listenSourceChanged() }
         if listen.isRunning {
             if settings.hearsBoth { startRoomSide() } else { stopRoomSide() }
         } else if on {
-            // Asking for the room is asking to listen.
             start(byUser: true)
         }
         applySystemMic()
@@ -1027,8 +871,6 @@ final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
-    /// Why a press of the talk key went nowhere (no virtual mic, 只听会议室): shown where the eyes
-    /// are while it is held, the subtitle bar or the notes window's caption, since nothing shows `status`.
     private func speakNotice(_ text: String) {
         status = text
         debugLog("speak: notice \(text)")
@@ -1042,9 +884,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// The room mic hears silence while the talk key is down, and a moment after, so your voice
-    /// doesn't come back as the room. The translation goes into the virtual mic, never the speakers,
-    /// so the room is heard again while it is translated and read out.
     private func muteRoomWhileSpeaking(_ phase: SpeakEngine.Phase) {
         if phase == .listening {
             listen.setRoomMuted(true)
@@ -1108,8 +947,6 @@ final class AppModel: ObservableObject {
 
     enum ShortcutRole { case talk, toggle }
 
-    /// Arms the talk key for the current setting. Right ⌥ waits for "输入监控" and
-    /// arms itself as soon as it's allowed (no relaunch).
     func applyTalkKey() {
         talkCombo.unregister()
         talkRight.stop()
@@ -1148,24 +985,20 @@ final class AppModel: ObservableObject {
         RightOptionKey.openSystemSettings()
     }
 
-    /// While a shortcut field is recording, our own shortcuts must not swallow the keys.
     func suspendShortcuts(_ on: Bool) {
         shortcutsSuspended = on
         applyTalkKey()
         applyToggleKey()
     }
 
-    /// Validates and saves a new shortcut. Returns why it was refused, or nil.
     func setShortcut(_ s: Shortcut, for role: ShortcutRole) -> String? {
         if role == .toggle && s.isRightOption { return L("右 ⌥ 只能用于“按住说话”") }
         if let p = s.typingProblem { return p }
         let other = role == .talk ? settings.toggleKey : settings.talkKey
         if s == other { return L("与另一个快捷键冲突") }
         if s.isSystemShortcut { return L("\(s.display) 是系统快捷键，换一个吧") }
-        // The one already in use is registered by us: probing it would always fail.
         let current = role == .talk ? settings.talkKey : settings.toggleKey
         if !s.isRightOption && s != current {
-            // Probe: Carbon refuses a combo another app already registered.
             let probe = HotKey(id: 9, shortcut: s)
             let free = probe.register()
             probe.unregister()
@@ -1184,7 +1017,6 @@ final class AppModel: ObservableObject {
         return nil
     }
 
-    /// The room hears the voice chosen for its language (looked up each time it speaks).
     func applyVoice() {
         speak.route = { [weak self] language in
             guard let self else { return .system(nil) }
@@ -1192,9 +1024,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// The chosen voice for a language, or its default (the service's first with a key, else the
-    /// Mac's). A choice the service in use cannot speak (Ming after switching to OpenRouter, the
-    /// user's own voice without Ling) falls back to the default, and comes back with that service.
     func voiceID(for language: String) -> String? {
         let fallback = VoiceCatalog.defaultID(for: language, hasKey: ling.speaks)
         guard let id = settings.speakVoices[VoiceCatalog.key(for: language)] else { return fallback }
@@ -1203,8 +1032,6 @@ final class AppModel: ObservableObject {
         return VoiceCatalog.remote(for: language).contains { $0.id == id } ? id : fallback
     }
 
-    /// Any change of route (an interface, a VPN or TUN from a proxy app) waits 3 s for the network
-    /// to settle, then the AI client looks again if the service was unreachable.
     private func watchNetwork() {
         networkMonitor.pathUpdateHandler = { [weak self] path in
             guard path.status == .satisfied else { return }
@@ -1219,31 +1046,26 @@ final class AppModel: ObservableObject {
             }
         }
         networkMonitor.start(queue: DispatchQueue(label: "cicada.ai-network"))
-        // Turning the local network permission on doesn't change the path: look again on coming back.
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.ling.recheckLocalNetwork()
-                self?.folderExport.retry()  // a folder permission fixed in System Settings
+                self?.folderExport.retry()
             }
         }
     }
 
-    /// One click on "换成推荐的": the service's first recommended text model, then a fresh check.
     func useRecommendedTextModel() {
         guard let first = settings.provider.textModels.first?.id else { return }
         if settings.provider.id == .ling { settings.aiModel = first } else { settings.aiModels[settings.aiProvider] = first }
         applyAIService()
     }
 
-    /// A key pasted for one service that belongs to another ("改用 OpenRouter"): switch, save it there, check.
     func switchService(_ kind: AIProvider.Kind, key: String) {
         settings.aiProvider = kind.rawValue
         applyAIService()
         Task { await ling.setKey(key) }
     }
 
-    /// "改用 Ling" where another service is out of reach: only when a Ling key is already saved,
-    /// so the one click works without a trip to the settings.
     var canSwitchToLing: Bool { settings.provider.id != .ling && AIKey.read("ling") != nil }
 
     func switchToLing() {
@@ -1252,7 +1074,6 @@ final class AppModel: ObservableObject {
         applyAIService()
     }
 
-    /// Settings changed the AI service, its address or a model: voices follow, the key is checked again.
     func applyAIService() {
         let c = settings.aiConfig
         switch c.provider.id {
@@ -1265,8 +1086,6 @@ final class AppModel: ObservableObject {
             guard let id = self?.settings.provider.id, id != .ling else { return "ming" }
             return id.rawValue
         }
-        // Takes effect from the next meeting: one already running keeps how it listens, except that
-        // its audio never goes on to a service other than the one hearing it (`aiServiceChanged`).
         Recognition.serverPreferred = c.transcribes
         translator.googleOff = c.provider.id == .custom && settings.aiCustomOnly
         ling.reconfigure()
@@ -1279,7 +1098,6 @@ final class AppModel: ObservableObject {
         settings.speakVoices[VoiceCatalog.key(for: language)] = id
     }
 
-    /// Ming's voices need a working key; without one the Mac's voice speaks.
     func voiceRoute(id: String?, language: String) -> SpeakEngine.VoiceRoute {
         guard let id else { return .system(nil) }
         if id.hasPrefix("system:") { return .system(String(id.dropFirst("system:".count))) }
@@ -1307,7 +1125,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Plays a voice on the speakers (not into the room) with a line in that language.
     @Published var previewing: String?
 
     func previewVoice(_ id: String, language: String, text: String? = nil) {
@@ -1343,17 +1160,11 @@ final class AppModel: ObservableObject {
         setEnding(endWatch?.pending)
     }
 
-    /// Every 2 s: while listening, whether the meeting is over; after one ended by itself, whether
-    /// a meeting app started the next call.
     private func watchEnd() {
         if listen.isRunning, var w = endWatch {
             w.config = endConfig
             let said = store.liveID.flatMap { store.session($0) }.map { !$0.lines.isEmpty } ?? false
             let calls = w.config.followApps ? (fakeCalls ?? MicUsers.currentCalls()) : [:]
-            // A meeting app call started while we were already listening to the Mac only: add the
-            // room microphone, or the user's own voice is missing from the record (Tencent Meeting,
-            // Zoom, …). 启动时 launch() still starts without the microphone; this is the call signal.
-            // Once a meeting: closing the microphone by hand during the call must stay closed.
             if settings.autoMicOnStart, !micAutoOpened, settings.listenSource == "system", !calls.isEmpty {
                 micAutoOpened = true
                 debugLog("mic auto-on: a meeting app started a call")
@@ -1365,7 +1176,6 @@ final class AppModel: ObservableObject {
             if let reason { autoEnd(reason, watch: w) }
         } else if !listen.isRunning, autoEnded, settings.endWithApp, !(fakeCalls ?? MicUsers.currentCalls()).isEmpty {
             debugLog("meeting end: a meeting app started a call, starting a new meeting")
-            // A call is on the Mac, not in the room.
             if settings.listensToRoom { settings.listenSource = "system"; applySystemMic() }
             start()
         }
@@ -1382,7 +1192,6 @@ final class AppModel: ObservableObject {
         showEndingOnBar()
     }
 
-    /// The subtitle bar has no buttons: it says what will happen, and speaking keeps a silent meeting going.
     private func showEndingOnBar() {
         guard settings.displayMode == "bar", let p = ending else { return }
         let left = max(0, Int(p.deadline.timeIntervalSinceNow.rounded()))
@@ -1400,18 +1209,14 @@ final class AppModel: ObservableObject {
         L("\(max(0, Int(p.deadline.timeIntervalSince(now).rounded()))) 秒后结束会议并整理纪要")
     }
 
-    /// "继续记录" on the ending prompt.
     func keepRecording() {
         endWatch?.keepGoing(at: Date())
         setEnding(nil)
         debugLog("meeting end: kept going")
     }
 
-    /// Ends where the meeting really ended: a little after the last words, or at the hang-up if
-    /// that was later. Never before a line that was kept, or its audio would be cut.
     private func autoEnd(_ reason: MeetingEndWatch.Reason, watch w: MeetingEndWatch) {
         if reason == .nobodySpoke {
-            // Nothing to keep or summarise: back to "开始听", not "会议已自动结束".
             debugLog("meeting end: nobody spoke for \(Int(w.config.silenceAfter)) s, stopped")
             stop()
             return
@@ -1427,7 +1232,6 @@ final class AppModel: ObservableObject {
 
     // MARK: Speakers
 
-    /// Name a voice ("" keeps 说话人 N, nil goes back to Ling's guess).
     func renameSpeaker(session id: String, voice: Int, _ name: String?) {
         guard let s = store.session(id) else { return }
         let n = SpeakerLabels.voiceNumbers(s)[voice] ?? 0
@@ -1437,9 +1241,6 @@ final class AppModel: ObservableObject {
         if after != before { speakerUndo?.text = L("\(before) 已改成 \(after)") } else { speakerUndo = nil }
     }
 
-    /// A click on 对方 / 说话人 in the transcript: ask for a name without making the user find
-    /// the speaker strip first. It only names this meeting's voice; remembering the voiceprint is
-    /// still an explicit 记住这个声音 step with its own consent alert.
     func promptSpeakerName(session id: String, voice: Int) {
         guard let s = store.session(id) else { return }
         let n = SpeakerLabels.voiceNumbers(s)[voice] ?? 0
@@ -1459,7 +1260,6 @@ final class AppModel: ObservableObject {
         if !name.isEmpty { renameSpeaker(session: id, voice: voice, name) }
     }
 
-    /// Two voices are one person. While listening the voiceprints merge too, which 撤销 can't take back.
     func mergeSpeaker(session id: String, _ from: Int, into: Int) {
         guard let s = store.session(id) else { return }
         let numbers = SpeakerLabels.voiceNumbers(s), names = SpeakerLabels.names(s)
@@ -1469,7 +1269,6 @@ final class AppModel: ObservableObject {
         speakerUndo?.text = L("\(a) 已并入 \(b)")
     }
 
-    /// These lines were someone else's.
     func assignLines(session id: String, _ lines: Set<String>, to voice: Int) {
         guard let s = store.session(id) else { return }
         let first = s.lines.first { lines.contains($0.id) }
@@ -1499,8 +1298,6 @@ final class AppModel: ObservableObject {
 
     // MARK: Voiceprint library
 
-    /// The user accepted a close match: name this meeting's voice from the library and let the
-    /// live clusterer use the profile for later lines.
     func acceptSpeakerSuggestion(session id: String, voice: Int) {
         guard let s = store.session(id), let ref = s.voiceSuggestions?[String(voice)],
               let profile = profiles.snapshot().first(where: { $0.id == ref.id }) else { return }
@@ -1514,15 +1311,12 @@ final class AppModel: ObservableObject {
         store.setVoiceSuggestion(id, voice: voice, nil)
     }
 
-    /// "不是 TA": drop this meeting's binding; never touch the global profile.
     func forgetSpeaker(session id: String, voice: Int) {
         guard store.session(id)?.voiceProfiles?[String(voice)] != nil else { return }
         speakerEdit(id) { store.setVoiceProfile(id, voice: voice, ref: nil) }
         speakerUndo?.text = L("这次不再按声纹认人")
     }
 
-    /// Explicit enrolment: the caller has already named the voice. The alert is the consent step;
-    /// voiceprints are biometric data and are never saved from a background match alone.
     func rememberSpeaker(session id: String, voice: Int, name: String? = nil) {
         guard let s = store.session(id) else { return }
         let n = SpeakerLabels.voiceNumbers(s)[voice] ?? 0
@@ -1615,14 +1409,11 @@ final class AppModel: ObservableObject {
     // MARK: 电脑和会议室
 
     private func startRoomSide() {
-        // macOS 14/15: two live recognizers interrupt each other (docs/macos-legacy-plan.md 2, 10).
         guard !roomListen.isRunning, !Recognition.legacy else { return }
         roomListen.echoCancelled = roomEchoCancel
         roomListen.echoBypassed = roomEchoBypass
         roomListen.shareModels(from: listen)
-        // Last meeting's measurement may be another room or another output: assume echo until measured.
         roomListen.echoGate.reset()
-        // A, the gate: only the plain room mic heeds it (echo cancellation keeps talk over a remote speaker).
         listen.router.setOnLoud(roomEchoGate ? { [gate = roomListen.echoGate] in gate.hold() } : nil)
         roomListen.start()
         debugLog("hybrid: room side started (echo cancellation \(roomEchoBypass ? "bypassed" : roomEchoCancel ? "on" : "off"), gate \(roomEchoGate ? "on" : "off"))")
@@ -1632,7 +1423,6 @@ final class AppModel: ObservableObject {
         listen.router.setOnLoud(nil)
         guard roomListen.isRunning else { return }
         roomListen.stop()
-        // Room lines still waiting for their echo check are what was said: kept.
         let held = heldRoom
         heldRoom = []
         for h in held { recordRoom(h) }
@@ -1640,7 +1430,6 @@ final class AppModel: ObservableObject {
         debugLog("hybrid: room side stopped")
     }
 
-    /// A sentence from the Mac's audio: recorded, and remembered to tell the room's copy of it.
     private func heardOnline(_ seg: Segment, duration: Double) {
         let at = CFAbsoluteTimeGetCurrent()
         recentMeeting.append(.init(text: seg.text, start: at - duration, end: at))
@@ -1660,8 +1449,6 @@ final class AppModel: ObservableObject {
         recordHeard(seg, duration: duration)
     }
 
-    /// A sentence from the room mic: an echo of the Mac's audio is dropped; the rest waits a moment
-    /// for the Mac's line it may echo (`EchoMatch.hold`), then is recorded where it was said.
     private func heardInRoom(_ seg: Segment, duration: Double) {
         let now = CFAbsoluteTimeGetCurrent()
         let heard = EchoMatch.Heard(text: seg.text, start: now - duration, end: now)
@@ -1669,7 +1456,6 @@ final class AppModel: ObservableObject {
             debugLog("hybrid: room line dropped as an echo (\(seg.text.count) chars)")
             return
         }
-        // The Mac has played nothing for a while: there is nothing for this to echo, no need to wait.
         if listen.router.stats().silenceRun >= EchoMatch.window {
             recordRoom((seg.id, seg, duration, heard))
             return
@@ -1690,7 +1476,6 @@ final class AppModel: ObservableObject {
         recordHeard(h.seg, duration: h.duration + waited)
     }
 
-    /// A live line's words were fixed (or a fix undone): the subtitle bar follows if it still shows it.
     private func lineFixed(_ session: String, _ line: TranscriptLine) {
         guard session == store.liveID, let seg = lineForSegment.first(where: { $0.value == line.id })?.key else { return }
         let engine = line.via == "room" && roomListen.isRunning ? roomListen : listen
@@ -1705,13 +1490,11 @@ final class AppModel: ObservableObject {
         store.setTranslation(lineID: line, text)
     }
 
-    /// A line starts settling with its first segment; a joined one adds its own.
     private func trackRefining(_ seg: Segment, line: String) {
         guard seg.refining, let session = store.liveID else { return }
         lineOfSegment[seg.id] = line
         if refining[line] == nil {
             refiningOrder.append(line)
-            // Old lines no longer join or settle: keep the last few hundred.
             if refiningOrder.count > 300 {
                 let old = refiningOrder.removeFirst()
                 refining[old] = nil
@@ -1723,8 +1506,6 @@ final class AppModel: ObservableObject {
         if let early = settledEarly.removeValue(forKey: seg.id) { refined(seg.id, early) }
     }
 
-    /// The record's recognizer settled segment `segID`. Once every segment of its line has, the line
-    /// takes the record's words and is translated again; a segment it heard nothing in keeps its own.
     private func refined(_ segID: Int, _ text: String) {
         guard let line = lineOfSegment[segID], var entry = refining[line],
               let k = entry.segs.firstIndex(where: { $0.id == segID }) else {
@@ -1747,14 +1528,11 @@ final class AppModel: ObservableObject {
         guard rec.dst != nil else { return }
         Task { [weak self] in
             guard let self, let out = await self.listen.translate(whole, source: rec.srcLang, target: rec.dstLang) else { return }
-            // Joined again meanwhile: that line's own settling translates it.
             guard self.store.session(entry.session)?.lines.first(where: { $0.id == line })?.src == whole else { return }
             self.store.setTranslation(in: entry.session, lineID: line, out)
         }
     }
 
-    /// The line in progress: the engine that changed it last and still has words, so the room and the
-    /// Mac take turns on the one caption.
     private func showLive(spoke src: String) {
         let room = !liveRoom.src.isEmpty && (liveMain.src.isEmpty || liveRoom.at > liveMain.at)
         let (visible, dst) = room ? (liveRoom.src, liveRoom.dst) : (liveMain.src, liveMain.dst)
@@ -1770,7 +1548,6 @@ final class AppModel: ObservableObject {
     private func recordHeard(_ seg: Segment, duration: Double) {
         guard let start = store.liveStart else { return }
         let t = max(0, Date().timeIntervalSince(start) - duration)
-        // A line still waiting for its voice is overtaken: it stands on its own.
         if let held = heldJoin {
             heldJoin = nil
             appendHeard(held.seg, t: held.t, translation: held.translation)
@@ -1778,14 +1555,11 @@ final class AppModel: ObservableObject {
         }
         guard let prev = lastHeard, store.session(store.liveID ?? "")?.lines.last?.id == prev.line,
               prev.seg.clock == seg.clock, prev.seg.sourceCode == seg.sourceCode,
-              // macOS 14/15: the older recognizer ends a line only at a real pause and often drops
-              // the full stop, so a missing one says nothing; only a line Cicada cut is a half sentence.
               !Recognition.legacy || prev.seg.cut, !prev.seg.split,
               HeardText.continues(prev.seg.text, seg.text, gap: seg.start - prev.seg.end, cut: prev.seg.cut) else {
             appendHeard(seg, t: t, tag: true)
             return
         }
-        // Two voices never share a line: hear whose this is first (a few hundredths of a second).
         if settings.speakerVoices, let samples = seg.voiceSamples, seg.text.filter(\.isLetter).count >= 2 {
             heldJoin = (seg, t, nil)
             speakers.voice(of: samples) { [weak self] assignment in self?.heardVoice(seg, assignment) }
@@ -1797,7 +1571,6 @@ final class AppModel: ObservableObject {
     private func heardVoice(_ seg: Segment, _ assignment: SpeakerAssignment) {
         let voice = assignment.voice
         guard let held = heldJoin, held.seg.id == seg.id else {
-            // Already recorded on its own (another line came first).
             if let line = lineForSegment[seg.id] {
                 apply(assignment, to: line)
                 voicePending.remove(line)
@@ -1808,15 +1581,13 @@ final class AppModel: ObservableObject {
         let lines = store.session(store.liveID ?? "")?.lines ?? []
         if let prev = lastHeard, let last = lines.last, last.id == prev.line,
            voice == nil || last.voice == nil || voice == last.voice {
-            join(seg, onto: prev)   // the earlier line's voice stays
+            join(seg, onto: prev)
         } else {
             appendHeard(seg, t: held.t, translation: held.translation)
             if let line = lineForSegment[seg.id] { apply(assignment, to: line) }
         }
     }
 
-    /// Put a voice (and a library match, if any) on a recorded line. Used when a line was held
-    /// back for its voice instead of going through `SpeakerTagger.tag`.
     private func apply(_ assignment: SpeakerAssignment, to line: String) {
         guard let voice = assignment.voice else { return }
         speakers.onVoice?(line, voice)
@@ -1830,7 +1601,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// One sentence a pause cut in two: the earlier line takes the rest and is translated again whole.
     private func join(_ seg: Segment, onto prev: (seg: Segment, line: String)) {
         let text = HeardText.join(prev.seg.text, seg.text)
         var joined = prev.seg
@@ -1853,15 +1623,12 @@ final class AppModel: ObservableObject {
         lineForSegment[seg.id] = id
         store.append(TranscriptLine(id: id, t: t, speaker: "them", src: seg.text, dst: translation ?? seg.translation,
                                     srcLang: seg.sourceCode, dstLang: listen.resolvedTarget,
-                                    // 会议室 alone too: a meeting switched to it from 电脑和会议室
-                                    // would otherwise mark its later room lines 线上.
                                     via: seg.id >= ListenEngine.roomIDs || settings.listensToRoom ? "room" : nil))
         if let live = store.liveID { fixes.applyKnown(lineID: id, in: live) }
         trackRefining(seg, line: id)
         var kept = seg
         kept.voiceSamples = nil
         lastHeard = (kept, id)
-        // A line with hardly a letter ("." from a breath or a click) gets no voiceprint.
         if tag, settings.speakerVoices, let samples = seg.voiceSamples, seg.text.filter(\.isLetter).count >= 2 {
             voicePending.insert(id)
             speakers.tag(lineID: id, samples: samples) { [weak self] in self?.voicePending.remove(id) }
@@ -1880,7 +1647,6 @@ final class AppModel: ObservableObject {
 
     // MARK: Imported files
 
-    /// 导入录音或视频…: the open panel, then the files go into the queue.
     func chooseImportFiles() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.audio, .movie, .audiovisualContent]
@@ -1892,8 +1658,6 @@ final class AppModel: ObservableObject {
         importFiles(panel.urls)
     }
 
-    /// Dropped on the window or the Dock icon, opened with Cicada, or chosen: each file becomes a
-    /// record, shown in the main window.
     func importFiles(_ urls: [URL]) {
         let files = urls.filter(FileImporter.importable)
         guard !files.isEmpty else { return }
@@ -1905,7 +1669,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Deleting a record also stops transcribing it; the original file stays where it was.
     func deleteSession(_ id: String) {
         importer.cancel(id)
         store.delete(id)
@@ -1914,7 +1677,6 @@ final class AppModel: ObservableObject {
 
     private func importFinished(_ id: String) {
         guard let s = store.session(id) else { return }
-        // The voices are known now: Ling's guess at who 说话人 1, 2… are, as at the end of a meeting.
         if settings.speakerVoices { speakerNamer.guess(id, force: true) }
         let notesToo = settings.importNotes && ling.hasKey && !s.lines.isEmpty
         if notesToo { notes.generate(for: id) }
@@ -1991,15 +1753,10 @@ final class AppModel: ObservableObject {
             let snapshot = debugSnapshot(["build"])
             DebugRun.reply?.data = snapshot
         case "state":
-            // Built first: a bad section fails the reply while the snapshot is made.
             let snapshot = debugSnapshot(arg.split(separator: ",").map(String.init))
             DebugRun.reply?.data = snapshot
-        // start:user is a click on 开始听; plain start is listening starting by itself.
         case "start": start(byUser: arg == "user")
         case "models":
-            // models:<installed,…>/<system languages,…> pretends the Mac has only these speech models
-            // and languages, to test the fetch of a second model and 听不出; models:off ends it.
-            // models:none/zh-Hans-CN is a Mac with no model at all.
             let parts = arg.split(separator: "@", maxSplits: 1).map(String.init)
             listen.simulatedFetchDelay = parts.count > 1 ? Double(parts[1]) ?? 0 : 0
             let p = parts[0].split(separator: "/", omittingEmptySubsequences: false)
@@ -2008,12 +1765,9 @@ final class AppModel: ObservableObject {
             listen.simulatedSystemLanguages = arg == "off" || p.count < 2 ? nil : p[1]
             Task { await listen.refreshInstalledLocales() }
         case "recordTrack":
-            // recordTrack:off compares the meeting record without its own recognizer (next start).
             Recognition.recordTrackOff = arg == "off"
             debugLog("record track: \(Recognition.recordTrack ? "on" : "off")")
         case "share":
-            // share:<record id>[,full][,pw] shares a meeting as the sheet would (point a dev build at a
-            // local Worker with the shareServer default); unshare:<record id> turns it off.
             let p = arg.split(separator: ",").map(String.init)
             guard let s = p.first.flatMap({ store.session($0) }) else { debugFail("share: no such record"); break }
             var o = ShareClient.Options()
@@ -2036,14 +1790,11 @@ final class AppModel: ObservableObject {
             Task { debugLog("share: revoked \(await ShareClient.shared.revoke(r, sessionID: arg))") }
         case "recordState": debugLog("record track: \(Recognition.recordTrack ? "on" : "off") settling=\(settling.count) tracked=\(refining.count)")
         case "recognizer":
-            // recognizer:legacy runs the macOS 14/15 recognizer (SFSpeechRecognizer) on 26; recognizer:cloud
-            // hears as an Intel Mac does; recognizer:auto ends either. Takes effect from the next start.
             Recognition.forceLegacy = arg == "legacy"
             Recognition.forceCloud = arg == "cloud"
             debugLog("recognizer: \(Recognition.name)")
             Task { await listen.refreshInstalledLocales() }
         case "releaseModel":
-            // releaseModel:<locale> gives back a speech model this app reserved (macOS keeps five per app).
             guard #available(macOS 26, *) else { break }
             guard #available(macOS 26, *) else { break }
             Task {
@@ -2052,14 +1803,11 @@ final class AppModel: ObservableObject {
                 await listen.refreshInstalledLocales()
             }
         case "modelFail":
-            // modelFail:<offline|disk|limit|other> makes every model download fail that way; modelFail:off ends it.
             listen.simulatedModelFailure = arg == "off" || arg.isEmpty ? nil : arg
         case "network":
-            // network:<on|off> pretends the network came or went; network:real follows the real one.
             listen.simulatedOnline = arg == "on" ? true : arg == "off" ? false : nil
         case "modelRetry": listen.retryModel()
         case "cloud":
-            // cloud:on is a click on 先用○○听, cloud:off on 换回等待, cloud:decline on 继续等.
             switch arg {
             case "off": stopCloud()
             case "decline": declineCloud()
@@ -2073,26 +1821,20 @@ final class AppModel: ObservableObject {
         case "stop": stop()
         case "source": sourceSelection = arg
         case "listenSource", "mic":
-            // mic:<on|off> is the button; listenSource:<system|room|both> the old names for it.
             setMic(arg == "on" || arg == "room" || arg == "both")
         case "roomEchoSim":
-            // roomEchoSim:<on|off|real>: pretend the speakers do (or don't) reach the room mic.
             roomListen.echoGate.forced = arg == "real" ? nil : arg != "off"
         case "roomMicSilent":
-            // roomMicSilent:<on|off>: the room mic delivers nothing but zeros (from its next start).
             RoomMic.simulateSilence = arg != "off"
         case "roomMic":
-            // roomMic:<uid|auto>: the menu beside 打开麦克风.
             setRoomMic(arg == "auto" ? "" : arg)
         case "roomMicGone":
-            // roomMicGone[:none]: pretend the room's microphone (or every one) was unplugged.
             let uid = (settings.hearsBoth ? roomListen : listen).roomMicUID
             fakeGoneMics = arg == "none" ? Set(AudioDevices.inputs().map(\.uid)) : Set([uid].compactMap { $0 })
             watchRoomMic()
         case "open": openMainWindow?()
         case "panel": showPanel?()
         case "onboarding":
-            // onboarding:<step>[,skip|setup]: the step, optionally in its second state.
             let p = arg.split(separator: ",").map(String.init)
             onboardingStep = min(max(Int(p.first ?? "") ?? 1, 1), OnboardingView.done)
             onboardingKeySkip = p.contains("skip")
@@ -2101,13 +1843,11 @@ final class AppModel: ObservableObject {
         case "step": onboardingStep = Int(arg) ?? 1
         case "samplePlay": ensureListening(); sample.play()
         case "speakers": settings.speakerVoices = arg == "on"
-        // 改正听错的词: switches, the word list, and the fixes of a meeting (live, or `<id>`).
         case "fixes": settings.fixMisheard = arg != "off"
-        // A meeting without audio (no tap, no recognizer), fed lines by `heard:`.
         case "silentListen": ListenEngine.silentLocale = arg.isEmpty || arg == "off" ? nil : arg
         case "heard": listen.debugHeard(arg)
         case "askNames": settings.askNames = arg != "off"
-        case "vocabAdd":   // vocabAdd:Morpho=莫拉、莫法 (several lines with "|")
+        case "vocabAdd":
             let r = vocabulary.importText(arg.replacingOccurrences(of: "|", with: "\n"))
             debugLog("vocab: added=\(r.added) updated=\(r.updated) skipped=\(r.skipped)")
         case "vocabRemove": vocabulary.remove(arg)
@@ -2124,15 +1864,13 @@ final class AppModel: ObservableObject {
             for l in lines where l.fixes != nil {
                 contentLog("FIXED \(l.id) \(l.fixes!.map { "\($0.from)→\($0.to)\($0.ask == true ? "?" : $0.off == true ? "✗" : "")" }) | \(l.shown)")
             }
-        case "fixAnswer":  // fixAnswer:yes|no[,<id>]
+        case "fixAnswer":
             let parts = arg.split(separator: ",", maxSplits: 1).map(String.init)
             let id = parts.count > 1 ? parts[1] : store.liveID ?? store.sessions.first?.id ?? ""
             if let first = fixes.asking(in: id) ?? fixes.pending(in: id).first.map({ ($0.line, $0.fix, 1, 1) }) {
                 fixes.answer(first.fix, yes: parts.first == "yes", in: id)
             }
-        // The recheck without audio: line `<id>` settles as `<text>` and is translated (and fixed) again,
-        // with the lines after it in view, as the record's own recognizer would have it.
-        case "resettle":   // resettle:<line id>=<text>
+        case "resettle":
             let p = arg.split(separator: "=", maxSplits: 1).map(String.init)
             guard p.count == 2, let id = store.liveID, let rec = store.session(id)?.lines.first(where: { $0.id == p[0] }) else { break }
             store.setSource(in: id, lineID: rec.id, p[1])
@@ -2145,7 +1883,7 @@ final class AppModel: ObservableObject {
             let id = arg.isEmpty ? store.liveID ?? "" : arg
             if let a = fixes.asking(in: id) { fixes.later(a.fix, in: id) }
         case "fixUndo": fixes.undo()
-        case "fixEdit":   // fixEdit:<line id>=<new text>[|one|keep0][,<session id>]
+        case "fixEdit":
             let (head, sid) = { () -> (String, String) in
                 if let c = arg.lastIndex(of: ","), !arg[arg.index(after: c)...].contains("=") { return (String(arg[..<c]), String(arg[arg.index(after: c)...])) }
                 return (arg, store.liveID ?? store.sessions.first?.id ?? "")
@@ -2155,7 +1893,7 @@ final class AppModel: ObservableObject {
             let opts = p[1].split(separator: "|").map(String.init)
             let n = fixes.edit(lineID: p[0], in: sid, to: opts[0], everywhere: !opts.contains("one"), remember: !opts.contains("keep0"))
             debugLog("fix edit changed \(n) lines")
-        case "fixRevert":  // fixRevert:<line id>[,<session id>]: the line's first applied fix
+        case "fixRevert":
             let parts = arg.split(separator: ",", maxSplits: 1).map(String.init)
             let id = parts.count > 1 ? parts[1] : store.liveID ?? store.sessions.first?.id ?? ""
             if let l = store.session(id)?.lines.first(where: { $0.id == parts.first }), let f = l.fixes?.first(where: \.applied) {
@@ -2163,7 +1901,6 @@ final class AppModel: ObservableObject {
             }
         case "speakerGuess": speakerNamer.guess(arg, force: true)
         case "speakersRender":
-            // speakersRender:<session id>=<png>[@width]: the people strip and the first lines with their labels.
             let p = arg.split(separator: "=", maxSplits: 1).map(String.init)
             guard p.count == 2, let s = store.session(p[0]) else { break }
             let out = p[1].split(separator: "@").map(String.init)
@@ -2175,7 +1912,6 @@ final class AppModel: ObservableObject {
                 try? png.write(to: URL(fileURLWithPath: out[0]))
             }
         case "voiceprintFile":
-            // voiceprintFile:<audio>=<json>: the app's voiceprint of a whole file, to compare with the reference model.
             let p = arg.split(separator: "=", maxSplits: 1).map(String.init)
             guard p.count == 2 else { break }
             DispatchQueue.global().async {
@@ -2200,7 +1936,6 @@ final class AppModel: ObservableObject {
             refreshSystemMic()
             debugLog("system mic state=\(systemMicState) default=\(AudioDevices.defaultInput?.name ?? "-") saved=\(AudioDevices.inputs().first { $0.uid == settings.savedSystemInput }?.name ?? "-") recording=\(systemMic.recordingDevice?.name ?? "-") engine=\(speak.micDeviceName) auto=\(settings.autoSystemMic) wanted=\(wantsSystemMic)")
         case "sysMicSet":
-            // Simulates another app or the user moving the system mic (part of a device name).
             if let d = AudioDevices.inputs().first(where: { $0.name.localizedCaseInsensitiveContains(arg) }) { AudioDevices.setDefaultInput(d) }
             refreshSystemMic()
         case "sysMicRestore": restoreSystemMic()
@@ -2221,16 +1956,13 @@ final class AppModel: ObservableObject {
         case "shortcuts":
             debugLog("shortcuts talk=\(settings.talkKey.display) armed=\(talkRight.isRunning || talkCombo.isRegistered) needsPermission=\(talkNeedsPermission) inputMonitoring=\(RightOptionKey.allowed) toggle=\(settings.toggleKey.display) taken=\(toggleKeyTaken)")
         case "aiKeyFile":
-            // Dev testing: the key comes from a file so it never passes through the log.
             if let k = try? String(contentsOfFile: arg, encoding: .utf8) { Task { await ling.setKey(k) } }
         case "aiCheck": Task { await ling.check() }
         case "voice":
-            // voice:<lang>=<id> chooses ("voice:en=ming:UK_George", "voice:zh=clone"); voice:<lang> logs the choice.
             let kv = arg.split(separator: "=", maxSplits: 1).map(String.init)
             if kv.count == 2 { setVoice(kv[1], for: kv[0]) }
             debugLog("voice \(kv[0]) → \(voiceID(for: kv[0]) ?? "none") options=\(VoiceCatalog.options(for: kv[0]).map(\.id)) clone=\(VoiceReference.exists)")
         case "voiceCloneFile":
-            // voiceCloneFile:<wav> uses a recording as "my voice", transcribing it like the sheet does.
             Task {
                 let url = URL(fileURLWithPath: arg)
                 guard let f = try? AVAudioFile(forReading: url),
@@ -2242,28 +1974,23 @@ final class AppModel: ObservableObject {
                 debugLog("voiceCloneFile: saved, transcript \(text.count) chars, pace \(pace.map { String(format: "%.1f", $0) } ?? "-")/s slow=\(pace.map { VoiceReference.isSlow(text: text, pace: $0) } ?? false)")
             }
         case "voicePreview":
-            // voicePreview:<lang>=<id>
             let kv = arg.split(separator: "=", maxSplits: 1).map(String.init)
             if kv.count == 2 { previewVoice(kv[1], language: kv[0]) }
         case "notesNow": notes.updateNow()
         case "micDeniedSim":
-            // micDeniedSim:on|off: 电脑和会议室 as if the microphone were refused (the dot, banner, notification).
             fakeMicDenied = arg != "off"
             checkProblem()
             debugLog("problem: mic denied sim \(fakeMicDenied) denied=\(hybridMicDenied) problem=\(problem ?? "-") notesShown=\(notesShown)")
         case "endSim":
-            // endSim:<app name>[,<app name>] pretends those meeting apps are in a call; endSim: none; endSim:off real.
             fakeCalls = arg == "off" ? nil : Dictionary(arg.split(separator: ",").map { ("sim.\($0)", String($0)) }) { a, _ in a }
             debugLog("meeting end: simulated calls \(fakeCalls.map { $0.values.sorted().description } ?? "off")")
         case "endTimes":
-            // endTimes:<silence>,<countdown>,<grace> in seconds; endTimes: back to the settings.
             let v = arg.split(separator: ",").compactMap { Double($0) }
             endTimesOverride = v.count == 3 ? (v[0], v[1], v[2]) : nil
         case "endKeep": keepRecording()
         case "endState":
             debugLog("meeting end: running=\(listen.isRunning) autoEnded=\(autoEnded) pending=\(ending.map { "\($0.reason) in \(Int($0.deadline.timeIntervalSinceNow)) s" } ?? "none") inCall=\(endWatch?.inCall.values.sorted() ?? []) silent=\(endWatch.map { Int(Date().timeIntervalSince($0.lastSpeech)) } ?? -1) s config=\(endConfig)")
         case "updateFeed":
-            // updateFeed:<release json url>: check a fake release (file:// works), even in a dev build.
             if let url = URL(string: arg) { updates.checker.feed = url }
             updates.checkNow()
         case "updateCheck": updates.checkNow()
@@ -2280,21 +2007,20 @@ final class AppModel: ObservableObject {
             openNotesWindow()
             if v.count == 4 { notesWindow.place(NSRect(x: v[0], y: v[1], width: v[2], height: v[3])) }
         case "notesFrame": debugLog("notes window frame=\(String(describing: notesWindow.frame)) visible=\(notesWindow.isVisible) policy=\(NSApp.activationPolicy() == .regular ? "regular" : "accessory")")
-        case "notesReplay":  // <id>[,<lines per update>]
+        case "notesReplay":
             let parts = arg.split(separator: ",").map(String.init)
             Task { await notes.replay(parts[0], step: parts.count > 1 ? Int(parts[1]) ?? 4 : 4) }
         case "notesShow": notes.show(arg)
-        case "dock": settings.showInDock = arg != "off"  // 在 Dock 中显示
-        case "dockRender":  // dockRender:<png>: the Dock tile as drawn now
+        case "dock": settings.showInDock = arg != "off"
+        case "dockRender":
             guard let v = NSApp.dockTile.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) else { debugFail("dock: no tile"); break }
             v.cacheDisplay(in: v.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: arg))
         case "notesCapturable": notesWindow.setCapturable(arg != "off")
-        case "notesShare": setNotesCapturable(arg != "off")  // the setting itself, as its badge or switch does
+        case "notesShare": setNotesCapturable(arg != "off")
         case "notesClose": notesWindow.performClose()
         case "notesMinimize": notesWindow.performMiniaturize()
         case "closeWindow":
-            // closeWindow:<main|settings|onboarding>: what the window's close button does.
             let w = NSApp.windows.first { w in
                 switch arg {
                 case "main": w.contentView is NSHostingView<MainWindowView>
@@ -2303,12 +2029,11 @@ final class AppModel: ObservableObject {
                 }
             }
             w?.performClose(nil)
-        case "transcriptRender":   // transcriptRender:<png>,<session id>,<first line>,<count>: the notes window's 原话
+        case "transcriptRender":
             let p = arg.split(separator: ",").map(String.init)
             guard p.count == 4, let s = store.session(p[1]), let first = Int(p[2]), let count = Int(p[3]) else { break }
             let ls = Array(s.lines.dropFirst(max(0, first - 1)).prefix(count))
             let waiting = fixes.pending(in: s.id)
-            // The row's own parts (the list itself is lazy and draws nothing off screen).
             let view = VStack(alignment: .leading, spacing: 14) {
                 ForEach(ls) { l in
                     VStack(alignment: .leading, spacing: 4) {
@@ -2329,7 +2054,6 @@ final class AppModel: ObservableObject {
                 try? png.write(to: URL(fileURLWithPath: p[0]))
             }
         case "notesRender":
-            // The whole notes column as a PNG, for checking what is below the fold.
             let shownID = notes.shownID ?? store.liveID
             let fixTerms = shownID.flatMap { store.session($0) }.map { AnyView(FixTermsView(fixes: fixes, session: $0) { _ in }) }
             let view = NotesContentView(notes: notes.notes, fresh: notes.fresh, live: store.liveID != nil,
@@ -2343,27 +2067,22 @@ final class AppModel: ObservableObject {
             }
         case "mainShow": mainShow = arg
         case "mainSearch":
-            // Types into the records window's search (⌘F); mainSearchStep:<1|-1> is Return / the arrows.
             NotificationCenter.default.post(name: .debugMainSearch, object: arg)
         case "mainSearchStep":
             NotificationCenter.default.post(name: .debugMainSearch, object: Int(arg) ?? 1)
         case "play":
-            // The shown record plays from <seconds>, as a click on a line's time does.
             if let t = Double(arg) { NotificationCenter.default.post(name: .debugPlay, object: t) }
         case "mainWindow":
-            // Place the records window, floating above other apps' panels while testing clicks (no arg: back to normal).
             guard let w = NSApp.windows.first(where: { $0.contentView is NSHostingView<MainWindowView> }) else { break }
             let v = arg.split(separator: ",").compactMap { Double($0) }
             if v.count == 4 { w.setFrame(NSRect(x: v[0], y: v[1], width: v[2], height: v[3]), display: true) }
             w.level = v.count == 4 ? .floating : .normal
             w.orderFrontRegardless()
         case "mainRender":
-            // The main window as drawn, for checking it without Screen Recording permission.
             guard let view = NSApp.windows.first(where: { $0.contentView is NSHostingView<MainWindowView> })?.contentView,
                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { break }
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: arg))
-            // And the shown meeting's whole notes page beside it, for what is below the fold.
             if let id = mainShow?.split(separator: ",").first.map(String.init), let n = store.session(id)?.notes {
                 let r = ImageRenderer(content: NotesContentView(notes: n, document: true).padding(32).frame(width: 744).background(Color.white))
                 r.scale = 2
@@ -2372,8 +2091,6 @@ final class AppModel: ObservableObject {
                 }
             }
         case "panelRender":
-            // The menu bar panel drawn offscreen with real AppKit controls: the popover closes
-            // as soon as another app is active, so it can't be caught by windowsRender.
             let host = NSHostingView(rootView: MenuPanelView(model: self, settings: settings))
             let size = host.fittingSize
             let w = NSWindow(contentRect: NSRect(x: -10000, y: -10000, width: size.width, height: size.height),
@@ -2390,7 +2107,6 @@ final class AppModel: ObservableObject {
                 w.orderOut(nil)
             }
         case "settingsRender":
-            // settingsRender:<section>=<png>: one settings page in full, scroll view or not.
             let p = arg.split(separator: "=", maxSplits: 1).map(String.init)
             guard p.count == 2, let section = SettingsSection(rawValue: p[0]) else { break }
             settingsSection = section
@@ -2401,17 +2117,12 @@ final class AppModel: ObservableObject {
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: p[1]))
             }
         case "peopleShow":
-            // 设置 › 通用 › 人员库 in a window of its own, for `screencapture -l` (winall): a sheet a
-            // synthetic click can't reach.
             let w = NSWindow(contentViewController: NSHostingController(rootView: SpeakerLibraryView(model: self)))
             w.title = "peopleShow"
             w.isReleasedWhenClosed = false
             w.center()
             w.makeKeyAndOrderFront(nil)
         case "noteEdit", "noteSave":
-            // noteEdit:<会议 id>=<summary|N> opens that piece on the page like a click (N counts the
-            // conclusions then the to-dos from 1); noteEdit: closes it.
-            // noteSave:<会议 id>=<summary|N>|<text>[|<owner>] saves like ⏎; an empty text deletes the row.
             let p = arg.split(separator: "=", maxSplits: 1).map(String.init)
             guard p.count == 2 else { noteEdit = nil; break }
             let rest = p[1].components(separatedBy: "|")
@@ -2422,7 +2133,6 @@ final class AppModel: ObservableObject {
                 saveNote(p[0], target, text: rest.count > 1 ? rest[1] : "", owner: rest.count > 2 ? .some(rest[2]) : nil)
             }
         case "windowsRender":
-            // Every visible window as drawn (<dir>/<n>-<class>.png), without Screen Recording permission.
             for (i, w) in NSApp.windows.enumerated() where w.isVisible {
                 guard let view = w.contentView, view.bounds.width > 40,
                       let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
@@ -2435,16 +2145,13 @@ final class AppModel: ObservableObject {
             ling.simulate = ["429": .rateLimited, "hijack": .hijacked, "timeout": .timeout][arg]
             debugLog("ling simulate=\(String(describing: ling.simulate))")
         case "translateFail":
-            // translateFail:<n>: the next n sentences fail on every provider (tests the retry).
             translator.failNext = Int(arg) ?? 0
             debugLog("translate fail next=\(translator.failNext)")
         case "googleDown":
-            // googleDown:<on|off>: Google translation fails as if this Mac had no proxy.
             translator.simulateGoogleDown = arg != "off"
             debugLog("google down simulate=\(translator.simulateGoogleDown)")
         case "aiRemove": ling.removeKey()
         case "aiHide":
-            // aiHide:<on|off>: the key file stays; the app behaves as if there were none (for screenshots).
             ling.hideKey = arg != "off"
             Task { await ling.check() }
         case "aiState":
@@ -2453,20 +2160,13 @@ final class AppModel: ObservableObject {
                      + "voice=\(c.voiceModel ?? "-") speaks=\(ling.speaks) clones=\(ling.clones) catalog=\(ling.catalog.count)"
                      + " check=[\(ling.aiCheck.summary)]")
         case "aiCheckSim":
-            // aiCheckSim:<reason|lowBalance|off>: every check ends this way (screenshots of each state).
-            // localNetwork: can't reach it, and the local network permission is off.
             ling.simulateCheck = arg == "localNetwork" ? .unreachable : AICheck.Reason(rawValue: arg)
             ling.simulateBalance = arg == "lowBalance" ? 0.4 : nil
             ling.simulateLocalNetwork = arg == "localNetwork"
             Task { await ling.check() }
         case "localNetworkProbe":
-            // localNetworkProbe:<url>: whether the local network permission holds back a connection to it (log).
             if let url = URL(string: arg) { Task { _ = await LocalNetworkProbe.denied(url) } }
-        // AI service: aiProvider:<ling|openrouter|zenmux|openai|custom>, aiTextModel:<id>, aiVoiceModel:<id|"">,
-        // aiCustomBase:<url>, aiCustomVoiceBase:<url|"">, aiCustomVoice:<name>, aiCustomHearModel:<name>,
-        // aiCustomHearBase:<url|"">, aiCustomRecognize:on|off.
         case "aiProvider": settings.aiProvider = AIProvider.named(arg).id.rawValue; applyAIService()
-        // switchToLing: the 改用 Ling on a status line (logs why when it isn't offered).
         case "switchToLing": debugLog("switchToLing offered=\(canSwitchToLing)"); switchToLing()
         case "aiTextModel":
             if settings.provider.id == .ling { settings.aiModel = arg } else { settings.aiModels[settings.aiProvider] = arg }
@@ -2487,31 +2187,25 @@ final class AppModel: ObservableObject {
             let p = arg.split(separator: "=").map(String.init)
             if p.count == 2 { regenerateNotes(p[0], choice: p[1]) }
         case "speakAsk":
-            // speakAsk[:off]: the panel's one-time question, as if the switch was flipped for the first time.
             speakAsking = arg != "off"
         case "speakConfirmed": settings.speakConfirmed = arg != "off"
         case "speakOn": enableSpeaking(true)
         case "speakOff": enableSpeaking(false)
         case "speakOut": speak.debugOutputURL = arg.isEmpty ? nil : URL(fileURLWithPath: arg)
         case "speakFile": speak.speakFile(URL(fileURLWithPath: arg))
-        // talkDown / talkUp: the talk key held and let go, with the real microphone (audio tests).
-        // handsFree:on|off: 不用按键, as the setting.
         case "handsFree": settings.speakHandsFree = arg != "off"
         case "handsFreeDump": speak.setHandsFreeDump(arg.isEmpty ? nil : arg)
         case "talkDown": speak.pressBegan()
         case "talkUp": speak.pressEnded()
-        // stall:<seconds> blocks the main thread, to check the watchdog samples it.
         case "stall": Thread.sleep(forTimeInterval: Double(arg) ?? 3)
         case "speakVP": speak.echoCancel = arg != "off"
         case "voiceMicRun":
-            // voiceMicRun:<on|off> runs the echo-cancelling unit with nobody listening (what it does to the rest).
             if arg == "off" { voiceMic.detach("debug") } else if let d = AudioDevices.roomMic {
                 voiceMic.prepare(input: d.id) { [voiceMic] ok in
                     debugLog("voiceMicRun: \(ok && voiceMic.attach("debug", input: d.id) { _ in } ? "running" : "failed")")
                 }
             }
         case "roomEcho":
-            // roomEcho:<on|off|bypass>: bypass = through the unit with processing off, on only for a press.
             roomEchoCancel = arg != "off"
             roomEchoBypass = arg == "bypass"
         case "roomGate": roomEchoGate = arg != "off"
@@ -2522,13 +2216,11 @@ final class AppModel: ObservableObject {
                      + "echo=\(roomListen.echoGate.echo) [\(roomListen.echoGate.summary)] music=\(roomListen.echoGate.playingMusic()) micSilent=\(roomMicSilent) "
                      + String(format: "roomVoiced=%.1fs mainVoiced=%.1fs", roomListen.router.stats().voicedTotal, listen.router.stats().voicedTotal))
         case "speakTest":
-            // speakTest:<sample|voice>: open settings › 同声传译 with the 试一句 sheet and run it.
             settingsSection = .speak
             openSettingsWindow?()
             speakTestShown = true
             speakTester.start(arg == "voice" ? .voice : .sample)
         case "speakOutput":
-            // speakOutput:<part of a device name>, or empty for the virtual mic (automatic).
             settings.speakOutput = arg.isEmpty ? "" : AudioDevices.outputs().first { $0.name.localizedCaseInsensitiveContains(arg) }?.uid ?? ""
             applySystemMic()
             speak.resetOutput()
@@ -2541,7 +2233,6 @@ final class AppModel: ObservableObject {
         case "speakTestState":
             debugLog("speak test phase=\(speakTester.phase) reached=\(String(describing: speakTester.reached)) result=\(speakTester.result?.report.replacingOccurrences(of: "\n", with: " | ") ?? "-")")
         case "micGuideRender":
-            // micGuideRender:<bundle id>=<png>: the 怎么改 sheet for an app in the list.
             let p = arg.split(separator: "=", maxSplits: 1).map(String.init)
             guard p.count == 2, let user = micUsers.first(where: { $0.bundleID == p[0] }) else { break }
             let r = ImageRenderer(content: MicGuideView(model: self, bundleID: user.bundleID, name: user.name, close: {}).background(Color.white))
@@ -2566,13 +2257,10 @@ final class AppModel: ObservableObject {
         case "frame":
             debugLog("overlay frame=\(overlay.barFrame) font=\(overlay.currentFontSize)")
         case "import": importFiles(arg.split(separator: ",").map { URL(fileURLWithPath: String($0)) })
-        // 存到文件夹: exportFolder:<path> picks a folder (as 存到这里 does), exportFolder:off turns it
-        // off; exportAll is 也存一份; exportState replies with the index and the problem.
         case "exportFolder":
             if arg == "off" { folderExport.turnOff() } else { folderExport.choose(URL(fileURLWithPath: arg, isDirectory: true)) }
         case "exportAll": folderExport.writeAll()
         case "rename":
-            // rename:<id>=<title> as if typed into the record's title (empty: the automatic one).
             let p = arg.split(separator: "=", maxSplits: 1).map(String.init)
             store.rename(p[0], to: p.count > 1 ? p[1] : "")
         case "exportState":
@@ -2584,7 +2272,6 @@ final class AppModel: ObservableObject {
             ] as [String: Any]
         case "importCancel": importer.cancelAll()
         case "importRetry":
-            // `<id>=<locale>`: as if that language was picked in 这场会议只留下了录音.
             let parts = arg.split(separator: "=", maxSplits: 1).map(String.init)
             importer.retry(parts[0], lang: parts.count > 1 ? sourceLanguages.first { $0.locale == parts[1] } : nil)
         case "importNotify":
@@ -2599,7 +2286,6 @@ final class AppModel: ObservableObject {
                 debugLog("export \(ext) ok=\(ok)")
             }
         case "copy", "copyNotes":
-            // `copy[:<id>]` is 导出… › 复制全文, `copyNotes[:<id>]` the menu's 复制纪要; then the types on the pasteboard.
             let id = arg.isEmpty ? (store.sessions.first(where: { $0.id != store.liveID }) ?? store.sessions.first)?.id : arg
             guard let id, let s = store.session(id) else { return debugFail("copy: no record", code: "not_found") }
             if parts[0] == "copy" { export(s, kind: "copy") } else { RichCopy.notes(s.notes, title: s.notes?.title) }
@@ -2607,7 +2293,6 @@ final class AppModel: ObservableObject {
             let sizes = (pb.types ?? []).map { "\($0.rawValue)=\(pb.data(forType: $0)?.count ?? 0)" }
             debugLog("copy: \(sizes.joined(separator: " ")) fishbones=\(s.notes?.topics.filter { $0.fishbone != nil }.count ?? 0)")
         case "fishboneRender":
-            // `fishboneRender:<id>=<png>`: the first fishbone of that record as 复制为图片 draws it.
             let kv = arg.split(separator: "=", maxSplits: 1).map(String.init)
             guard kv.count == 2, let s = store.session(kv[0]), let f = s.notes?.topics.lazy.compactMap(\.fishbone).first,
                   let p = RichCopy.picture(f, caption: s.displayTitle) else { return debugFail("fishboneRender: no fishbone", code: "not_found") }
@@ -2635,11 +2320,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
     private var dockObserver: Any?
     private var popoverClickMonitor: Any?
     private lazy var menu = AppMenu(model: model)
-    /// Held here: a toolbar keeps only a weak reference to its delegate.
     private lazy var mainToolbar = MainToolbar(model: model)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // The palette is light only: in Dark Mode unstyled text and checkboxes turn white on white cards.
         NSApp.appearance = NSAppearance(named: .aqua)
         NSApp.setActivationPolicy(model.settings.showInDock ? .regular : .accessory)
         menu.showMainWindow = { [weak self] in self?.showMainWindow() }
@@ -2659,7 +2342,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             DockIcon.show(live: live)
         }
         dockObserver = model.settings.$showInDock.dropFirst().sink { [weak self] _ in
-            // After the change lands: the observer fires before the property is set.
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.updateActivationPolicy() } }
         }
         let poll = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -2672,7 +2354,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
                 MainActor.assumeIsolated { self?.showOnboarding() }
             }
         } else if !Self.launchedAsLoginItem {
-            // Opened by hand (Finder, Launchpad, Spotlight): show something, like the Dock icon does.
             showMainWindow()
         }
         model.installDebugControl()
@@ -2682,12 +2363,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         model.updates.start()
     }
 
-    /// Files dropped on the Dock icon or opened with Cicada: imported as records.
     func application(_ application: NSApplication, open urls: [URL]) {
         model.importFiles(urls)
     }
 
-    /// "转好了": shown even while Cicada is in front; a click opens that record.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner]
     }
@@ -2698,17 +2377,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         let update = info["update"] as? String
         let problem = info["problem"] as? String
         await MainActor.run {
-            // "听不到会议室": straight to System Settings, without bringing Cicada forward.
             if problem == "mic" {
                 model.openMicrophoneSettings()
                 return
             }
-            // "纪要没存到文件夹": settings › 通用, where the row says what to do.
             if problem == "folder" {
                 model.openSettings(.records)
                 return
             }
-            // "有新版本": the panel shows the download, and install asks first if a meeting is on.
             if update != nil {
                 if !popover.isShown { togglePopover() }
                 model.updates.install(model: model)
@@ -2719,7 +2395,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         }
     }
 
-    /// Started by the system at login: stay in the menu bar.
     private static var launchedAsLoginItem: Bool {
         guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
         return event.eventID == kAEOpenApplication
@@ -2728,11 +2403,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
 
     func applicationWillTerminate(_ notification: Notification) {
         model.stop()
-        // Other apps would be left on the virtual mic, hearing nothing.
         model.systemMic.release()
     }
 
-    /// Dock icon or Finder: bring back what is open; the main window only when nothing is.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         let open = [mainWindow, settingsWindow, onboardingWindow].compactMap { $0 }.filter { $0.isVisible || $0.isMiniaturized }
         if open.isEmpty { showMainWindow() } else { open.forEach { $0.deminiaturize(nil) }; NSApp.activate() }
@@ -2741,7 +2414,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? { menu.dockMenu() }
 
-    /// Quitting ends the meeting being recorded: ask first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !model.updates.installing, model.running, let id = model.store.liveID, !(model.store.session(id)?.lines.isEmpty ?? true) else { return .terminateNow }
         NSApp.activate()
@@ -2773,13 +2445,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         popover.behavior = .transient
         popover.animates = false
         let panel = NSHostingController(rootView: MenuPanelView(model: model, settings: model.settings))
-        // The popover follows the panel's height as it changes (a status line, the virtual-mic
-        // warning). Without this the hosting view resized the popover window from its bottom
-        // edge, pushing the top of the panel above the screen.
         panel.sizingOptions = .preferredContentSize
         popover.contentViewController = panel
-        // .transient closes on focus changes, but the notes panel and the subtitle bar never take
-        // focus: a click on them would leave the popover open on top. Close it ourselves.
         popoverClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] e in
             if let self, self.popover.isShown, let w = e.window, w !== self.popover.contentViewController?.view.window,
                w !== self.statusItem.button?.window {
@@ -2874,7 +2541,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         }
         NSApp.setActivationPolicy(.regular)
         onboardingWindow?.makeKeyAndOrderFront(nil)
-        // After it's on screen: a notes window already showing has to make way.
         model.notesWindow.avoid(onboardingWindow)
         NSApp.activate()
     }
@@ -2886,24 +2552,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
         if w == onboardingWindow, !model.relaunching {
             model.sample.stop()
             UserDefaults.standard.set(true, forKey: "onboarded")
-            // Done (or 稍后): land on the records window rather than nothing but the menu bar icon.
             if mainWindow?.isVisible != true {
                 DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.showMainWindow() } }
             }
         }
     }
 
-    /// A regular app (name and menus top left, Dock icon, ⌘Tab) while 在 Dock 中显示 is on, or
-    /// else while the main, settings or onboarding window is open; only the menu bar item otherwise.
-    /// The notes window doesn't count: it floats beside the meeting app and never takes focus from
-    /// it (a regular app doesn't change that: the panel is non-activating either way).
     func updateActivationPolicy(closing: NSWindow? = nil) {
         let open = [mainWindow, onboardingWindow, settingsWindow].contains { $0 != nil && $0 != closing && $0!.isVisible }
         let policy: NSApplication.ActivationPolicy = open || model.settings.showInDock ? .regular : .accessory
         guard NSApp.activationPolicy() != policy else { return }
         NSApp.setActivationPolicy(policy)
         debugLog("activation policy → \(policy == .regular ? "regular" : "accessory")")
-        // Back from .accessory the Dock can show a blank icon until the tile is drawn again.
         DockIcon.show(live: model.running)
     }
 
@@ -2928,7 +2588,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, UNUs
             MainActor.assumeIsolated {
                 debugLog("default output device changed → reconnecting tap")
                 self?.model.listen.reconnectAudio()
-                // Headphones in or out: whether the speakers reach the room mic is measured again.
                 self?.model.roomListen.echoGate.reset()
                 self?.model.refreshOutputs()
             }
@@ -2952,8 +2611,6 @@ struct CicadaMain {
                 exit(1)
             }
         }
-        // AppKit adds "进入全屏幕" to a menu titled 显示 (View) unless told before launch;
-        // no Live Subs window goes full screen.
         UserDefaults.standard.register(defaults: ["NSFullScreenMenuItemEverywhere": false])
         MainActor.assumeIsolated {
             let app = NSApplication.shared
@@ -2967,15 +2624,12 @@ struct CicadaMain {
 struct ModelFetch: Equatable {
     let name: String
     let since: Date
-    /// Fetched so "auto" has a second language to compare (else listening waits for it).
     let background: Bool
 }
 
 struct CloudState: Equatable {
-    /// The service that can hear the meeting (only Ling today), nil when there is none.
     var service: String?
     var offered = false
     var listening = false
-    /// The service's name, for a few seconds after listening came back to this Mac.
     var back: String?
 }

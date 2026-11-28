@@ -1,34 +1,24 @@
 import AVFoundation
 import SwiftUI
 
-/// Plays a record's audio, for the player bar and a click on a line's time: an imported record's
-/// original file, or a meeting's own system.m4a.
 @MainActor
 final class RecordingPlayer: ObservableObject {
     @Published private(set) var sessionID: String?
     @Published private(set) var playing = false
     @Published private(set) var time = 0.0
     @Published private(set) var length = 0.0
-    /// The file was moved or deleted since it was imported (or since the meeting was recorded).
     @Published private(set) var missing = false
-    /// The meeting's own recording rather than an imported file: 找不到录音, not 找不到原文件.
     @Published private(set) var own = false
     @Published private(set) var rate: Float = 1
-    /// The transcript keeps the playing line in view. Scrolling it by hand stops that until a line is
-    /// picked, the bar is dragged or 回到正在播放 is pressed: following would yank the page away.
     @Published private(set) var following = true
-    /// When the transcript last scrolled itself to follow, so that scroll isn't taken for the user's.
     var ownScroll = Date.distantPast
     private var player: AVPlayer?
     private var observer: Any?
-    /// The end of the recording: the time observer stops firing there, so it would still say playing.
     private var ended: NSObjectProtocol?
 
     var ready: Bool { player != nil }
 
-    /// `recording`: the meeting's system.m4a, for a record that has no original file.
     func load(_ s: Session?, recording: URL? = nil) {
-        // The same record again only while its recording was still being rewrapped.
         if let s, s.id == sessionID, player != nil || missing { return }
         unload()
         guard let s, let url = s.sourcePath.map({ URL(fileURLWithPath: $0) }) ?? recording else { return }
@@ -36,7 +26,6 @@ final class RecordingPlayer: ObservableObject {
         own = s.sourcePath == nil
         length = s.duration
         guard FileManager.default.fileExists(atPath: url.path) else {
-            // Right after a meeting only the partial file is there until the rewrap ends: not missing yet.
             missing = !(own && FileManager.default.fileExists(atPath: AudioFileWriter.partial(url).path))
             return
         }
@@ -55,7 +44,6 @@ final class RecordingPlayer: ObservableObject {
         }
     }
 
-    /// The line the playhead is in, once playing has begun.
     func lineID(in s: Session) -> String? {
         guard s.id == sessionID, ready, playing || time > 0 else { return nil }
         return s.lines.last(where: { $0.t <= time + 0.2 })?.id
@@ -76,7 +64,6 @@ final class RecordingPlayer: ObservableObject {
         time = 0
     }
 
-    /// The transcript was scrolled by hand while it plays.
     func userScrolled() {
         if following, playing { following = false }
     }
@@ -103,14 +90,12 @@ final class RecordingPlayer: ObservableObject {
         player?.seek(to: CMTime(seconds: t, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
-    /// 1× → 1.5× → 2×.
     func nextRate() {
         rate = rate >= 2 ? 1 : rate + 0.5
         if playing { player?.rate = rate }
     }
 }
 
-/// Under an imported record's title: how far transcribing got, or that it stopped.
 struct ImportStatusStrip: View {
     @ObservedObject var model: AppModel
     @ObservedObject var importer: FileImporter
@@ -181,14 +166,11 @@ struct ImportStatusStrip: View {
     }
 }
 
-/// A meeting kept for its recording alone (the language was never settled while it ran): the
-/// user says which language was spoken, and it is transcribed like an imported file.
 struct RecordingLanguageStrip: View {
     @ObservedObject var importer: FileImporter
     let session: Session
     @State private var picked: Lang?
 
-    /// The Mac's languages first, as chips; the rest under 其他语言.
     private var likely: [Lang] {
         var out = likelySourceLanguages(last: nil, systemLanguages: Locale.preferredLanguages)
         for l in sourceLanguages where !out.contains(l) { out.append(l) }
@@ -248,7 +230,6 @@ struct RecordingLanguageStrip: View {
     }
 }
 
-/// Play / pause, where in the file, and the speed, for an imported record.
 struct RecordingPlayerBar: View {
     @ObservedObject var player: RecordingPlayer
 
@@ -285,7 +266,6 @@ struct RecordingPlayerBar: View {
     }
 }
 
-/// Over the whole main window while files are dragged onto it.
 struct ImportDropOverlay: View {
     var body: some View {
         VStack(spacing: 8) {
@@ -300,7 +280,6 @@ struct ImportDropOverlay: View {
     }
 }
 
-/// Three bars that bounce beside the line the recording is playing; nothing while paused.
 struct PlayingBars: View {
     var on: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

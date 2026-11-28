@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// The main window's toolbar: the listening pill centred, settings on the right. A real toolbar,
-/// so macOS centres the window buttons on the same line instead of leaving them above it.
 @MainActor final class MainToolbar: NSObject, NSToolbarDelegate {
     static let pill = NSToolbarItem.Identifier("cicada.pill")
     static let settings = NSToolbarItem.Identifier("cicada.settings")
@@ -52,8 +50,6 @@ import SwiftUI
     }
 }
 
-/// The listening switch, led by the logo: still in a white pill while idle, breathing in an ink pill while
-/// listening, ringed by a countdown when the meeting is about to end. The brand is the switch.
 struct ListenPill: View {
     @ObservedObject var model: AppModel
     @ObservedObject var store: SessionStore
@@ -75,15 +71,12 @@ struct ListenPill: View {
             if let p { endingTotal = max(1, p.deadline.timeIntervalSinceNow) }
         }
         .padding(.vertical, 2)
-        // A toolbar item keeps the width it was first laid out at: a fixed slot, wide enough for
-        // the longest state (the English countdown), with the pill centred in it.
         .frame(width: 420)
     }
 
     private var idle: some View {
         Button { model.setRunning(true) } label: {
             HStack(spacing: 9) {
-                // In colour while idle too: the white pill against the ink one already tells off from on.
                 BrandMark(size: 22)
                 Text(L("知了")).font(.system(size: 13, weight: .heavy)).foregroundStyle(Palette.ink)
                 Rectangle().fill(Palette.line).frame(width: 1, height: 14)
@@ -102,8 +95,6 @@ struct ListenPill: View {
 
     private var listening: some View {
         HStack(spacing: 10) {
-            // Everything but 结束 brings back the notes (or the bar): closing them mid-meeting is
-            // common, and this is the switch in front of you. Only 结束 ends the meeting.
             showButton {
                 HStack(spacing: 10) {
                     BreathingMark(size: 22)
@@ -131,8 +122,6 @@ struct ListenPill: View {
         .background(Capsule().fill(Palette.ink))
     }
 
-    /// The pill's left part: shows what this meeting is on screen as. The languages stay one hover
-    /// away, under what a click does; the pill itself keeps to state, level and time.
     private func showButton<Label: View>(@ViewBuilder _ label: () -> Label) -> some View {
         let action = model.settings.displayMode == "bar" ? L("显示字幕条") : L("显示实时纪要")
         return Button { model.showLiveDisplay() } label: {
@@ -179,7 +168,6 @@ struct ListenPill: View {
     }
 }
 
-/// The logo with accent rings swelling out of it while Cicada listens.
 struct BreathingMark: View {
     var size: CGFloat = 22
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -211,7 +199,6 @@ struct BreathingMark: View {
     }
 }
 
-/// An accent dot with a ring that keeps swelling out of it: "live", without blinking.
 struct BreathingDot: View {
     var size: CGFloat = 8
     @State private var out = false
@@ -233,7 +220,6 @@ struct BreathingDot: View {
     }
 }
 
-/// Bars that follow the loudness of what Cicada hears, newest on the right.
 struct LevelMeter: View {
     @ObservedObject var model: AppModel
     var bars = 9
@@ -253,7 +239,6 @@ struct LevelMeter: View {
         .animation(.easeOut(duration: 0.08), value: levels)
         .onReceive(tick) { _ in
             guard model.running else { return }
-            // Map −40…0 dBFS onto the bar height: quiet speech sits low, a loud voice near the top.
             let rms = model.listen.router.takeLevel()
             let db = 20 * log10(max(Double(rms), 1e-6))
             let v = CGFloat(min(1, max(0, (db + 40) / 40)))

@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// The record's recognizer laid over the live lines (issue #14: a Chinese product meeting).
 @Suite struct RecordRefinerTests {
     private func run(_ text: String, _ start: Double, _ end: Double) -> Recognition.Run { .init(text: text, start: start, end: end) }
 
@@ -15,7 +14,6 @@ import Testing
         #expect(out.first?.text == "今天就要过一下后台角色和权限。")
     }
 
-    /// Word times that run late still split where the text does: the sentence end stays with its line.
     @Test func textDecidesTheEnd() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 4, text: "每天凌晨跑一次回收完给管理员发一个通。")
@@ -25,7 +23,6 @@ import Testing
         #expect(r.finish().map(\.text) == ["好那今天就先这样下周二我们再约一下进度。"])
     }
 
-    /// A word the live recognizer split at a cut goes whole to one side.
     @Test func splitWordGoesWhole() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 2, text: "每天跑一次回")
@@ -36,7 +33,6 @@ import Testing
         #expect(out.map(\.text).joined() == "每天跑一次回收完发通知。")
     }
 
-    /// A line ends before a connective, not inside one the tokenizer splits ("所 / 以", issue #20).
     @Test func connectiveStaysWhole() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 4, text: "实际面积会比这个还要大一些所")
@@ -46,7 +42,6 @@ import Testing
         #expect(out.map(\.text) == ["实际面积会比这个还要大一些", "所以很多人设想的这个概率不是很大"])
     }
 
-    /// Words the live recognizer lost at a cut still reach the record.
     @Test func lostWordsAreKept() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 2, text: "那我说一下吧，")
@@ -57,7 +52,6 @@ import Testing
         #expect(out.last?.text.hasSuffix("才说的意思") == true)
     }
 
-    /// The last line waits: what follows could start the next line.
     @Test func lastLineWaits() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 2, text: "好的。")
@@ -65,7 +59,6 @@ import Testing
         #expect(r.heard([run("下周二", 4.5, 5.5)]).map(\.text) == ["好的。"])
     }
 
-    /// A record sentence running into a line not given yet keeps that part for it.
     @Test func recordRunsAhead() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 2, text: "先接企业微信吧。")
@@ -75,7 +68,6 @@ import Testing
         #expect(r.finish().map(\.text) == ["飞书下个迭代再说。"])
     }
 
-    /// A line the subtitles cut mid-sentence ends at the record's nearby comma instead.
     @Test func lineEndsAtNearbyPunctuation() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 3, text: "我理解刚才说的意思就是给用户赋予某个角色，然后这个")
@@ -85,7 +77,6 @@ import Testing
         #expect(out.map(\.text) == ["我理解刚才说的意思就是给用户赋予某个角色，", "然后这个角色带着一组权限。"])
     }
 
-    /// No punctuation near the cut: the line still ends between words.
     @Test func lineEndsBetweenWords() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 3, text: "他这个管理员可能就是因为他权限比较大了审")
@@ -96,8 +87,6 @@ import Testing
         #expect(out.map(\.text).joined() == "他这个管理员可能就是因为他权限比较大了审计日志一定要记下来")
     }
 
-    /// Two voices 0.2 s apart (the sample meeting): no word crosses the end of a line that closed a
-    /// sentence, though the record heard "Great." where the live line had "Great,".
     @Test func wordsStayWithTheirSpeaker() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 4, text: "Uh, I think we can ship March 3rd if design signs off by Friday.")
@@ -113,7 +102,6 @@ import Testing
             "Great. let's lock that in",
             "Okay, so where are we on the launch?",
         ])
-        // The record heard the two sentences as one.
         var one = RecordRefiner()
         _ = one.emitted(id: 1, start: 0, end: 4, text: "Uh, I think we can ship March 3rd if design signs off by Friday.")
         _ = one.emitted(id: 2, start: 4.2, end: 5.5, text: "Great, let's lock that in.")
@@ -124,15 +112,12 @@ import Testing
         ])
     }
 
-    /// The next line comes late (the live recognizer dropped "Great."): the record's words past a
-    /// line that closed a sentence wait for it.
     @Test func closedLineLeavesTheRestForTheNext() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 4, text: "Uh, I think we can ship March 3rd if design signs off by Friday.")
         var out = r.heard([run(" Uh, I think we can ship March 3rd if design signs off by Friday.", 0.1, 3.9)], through: 4.1)
         out += r.heard([run(" Great.", 4.2, 4.6)])
         out += r.heard([run(" let's lock that in", 4.7, 5.4)], through: 5.6)
-        // The line it was said in comes now: the first one settles with it as context.
         out += r.emitted(id: 2, start: 4.7, end: 5.4, text: "Let's lock that in")
         out += r.finish()
         #expect(out.map { $0.text.trimmingCharacters(in: .whitespaces) } == [
@@ -140,7 +125,6 @@ import Testing
         ])
     }
 
-    /// A closed line whose end the alignment puts inside its last word still keeps its ".".
     @Test func closedLineKeepsItsMark() {
         var r = RecordRefiner()
         _ = r.emitted(id: 1, start: 0, end: 0.5, text: "Great.")

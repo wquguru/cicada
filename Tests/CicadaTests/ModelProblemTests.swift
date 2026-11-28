@@ -9,7 +9,6 @@ import Testing
 
     @Test func fiveModelLimit() {
         #expect(cause(NSError(domain: "SFSpeechErrorDomain", code: 11)) == .limit)
-        // The limit wins even offline: giving a model back needs no network.
         #expect(cause(ModelProblem.simulated("limit"), online: false) == .limit)
     }
 
@@ -29,7 +28,6 @@ import Testing
 
     @Test func dictationOnOlderMacs() {
         let own = NSError(domain: "LiveSubsSpeech", code: 4, userInfo: [NSLocalizedDescriptionKey: "add it in Dictation"])
-        // Offline or short of space doesn't matter: only Dictation settings help.
         #expect(cause(own, online: false) == .dictation("add it in Dictation"))
     }
 

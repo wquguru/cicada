@@ -1,8 +1,3 @@
-// The share document (v1): what an app uploads and the share page shows. The apps build it from a
-// meeting record (Sources/Cicada/ShareProjection.swift is the reference; Tests/fixtures/share holds
-// the contract). The server never trusts its shape: it copies the known fields, checks their types
-// and sizes, and drops everything else.
-
 const MAX = { title: 200, text: 4000, lines: 20000, items: 200, points: 50, lang: 12, who: 40 };
 
 class Invalid extends Error {}
@@ -25,7 +20,6 @@ function list(v, max, each) {
   return v.map(each);
 }
 
-/** The cleaned document, or null when it isn't a valid v1 share document. */
 export function clean(input) {
   try {
     if (!input || input.v !== 1) throw new Invalid();
@@ -64,7 +58,6 @@ export function clean(input) {
   }
 }
 
-/** The notes as plain text, for the review and the preview card. */
 export function notesText(notes) {
   if (!notes) return "";
   const out = [notes.summary];
@@ -76,10 +69,8 @@ export function notesText(notes) {
 }
 
 const LINES_PER_CHUNK = 40;
-// Clef on Workers AI reads only about the first 2K tokens of its input; 1,500 characters stays
-// under that even for Chinese (about a token per character), so nothing goes unread.
 export const PIECE_CHARS = 1500;
-const OVERLAP = 200; // a long line cut in two repeats this much, so a key on the cut is read whole
+const OVERLAP = 200;
 
 function cut(text, size = PIECE_CHARS) {
   if (text.length <= size) return [text];
@@ -91,11 +82,6 @@ function cut(text, size = PIECE_CHARS) {
   return out;
 }
 
-/**
- * What the review reads: the notes and the lines in pieces of at most PIECE_CHARS (and 40 lines),
- * so the reviewer reads all of each, and a hit tells the app which lines to look at. Lines stay
- * whole where they fit; a longer one is cut with an overlap.
- */
 export function chunks(doc) {
   const out = [];
   const notes = notesText(doc.notes);

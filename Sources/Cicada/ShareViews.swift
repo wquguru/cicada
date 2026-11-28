@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// 分享…: a meeting as a link on cicada.indaloop.app. Settings, then the server's review, then the
-/// link (and its password) or what the review stopped. A meeting already shared opens on its link.
 struct ShareSheet: View {
     let session: Session
     let onClose: () -> Void
@@ -59,7 +57,6 @@ struct ShareSheet: View {
                 .pickerStyle(.radioGroup).labelsHidden()
             }
             if showOptions { options } else {
-                // The choices already made, in one line; 更改 opens them.
                 HStack(spacing: 8) {
                     Text(summary).font(.system(size: 13)).foregroundStyle(Palette.secondary).lineLimit(1)
                     Spacer()
@@ -151,7 +148,6 @@ struct ShareSheet: View {
                 Text("检测到潜在敏感内容").font(.system(size: 15, weight: .semibold))
             }
             Text("链接尚未生成。请先核对以下内容：").font(.system(size: 12)).foregroundStyle(Palette.secondary)
-            // A plain stack, not a ScrollView: in a sheet that sizes itself, a ScrollView gets no height.
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(hits.prefix(5).enumerated()), id: \.offset) { _, h in hitRow(h, kept: kept) }
                 if hits.count > 5 {
@@ -176,8 +172,6 @@ struct ShareSheet: View {
         }
     }
 
-    /// Would anything be left to share once the flagged parts are out? (A notes-only share whose
-    /// notes were flagged has nothing; the server would refuse an empty document.)
     private func leftAfterRemoving(_ hits: [ShareHit], kept: [Int]) -> Bool {
         let notesLeft = hasNotes && !dropNotes && !hits.contains { $0.part == "notes" }
         guard scope == .full else { return notesLeft }
@@ -187,7 +181,6 @@ struct ShareSheet: View {
     }
 
     private func hitRow(_ h: ShareHit, kept: [Int]) -> some View {
-        // A list in the reader's language: 、 in Chinese, ", " in English.
         let what = ListFormatter.localizedString(byJoining: h.questions.map(Self.category))
         let quote: String
         let place: String
@@ -265,8 +258,6 @@ struct ShareSheet: View {
         }
     }
 
-    /// 复制 puts the link and the password on the clipboard as one message; its arrow copies either alone,
-    /// for whoever sends them apart.
     @ViewBuilder private func copyButton(_ r: ShareRecord) -> some View {
         let title = copied == nil ? L("复制") : L("已复制")
         if let pw = r.password {
@@ -279,14 +270,10 @@ struct ShareSheet: View {
         }
     }
 
-    /// Days until the link closes. The server sets the expiry by its own clock, so a Mac a second
-    /// behind it would round a fresh 7-day link up to 8: an hour's slack.
     static func daysLeft(_ r: ShareRecord) -> Int {
         max(1, Int(ceil((r.expiresAt.timeIntervalSinceNow - 3600) / 86400)))
     }
 
-    /// What 复制链接和密码 puts on the clipboard, in the UI's language: the title, the link on a line
-    /// of its own (chat apps then make it a link), the password and how long it stays open.
     static func clipboardText(_ r: ShareRecord, title: String) -> String {
         let left = Self.daysLeft(r)
         let valid = left >= 365 ? L("1 年内有效") : L("\(left) 天内有效")

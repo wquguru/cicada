@@ -44,10 +44,6 @@ struct GoogleTranslator {
 }
 
 
-/// Whether Google is worth asking. Two network errors or timeouts in a row (in China, usually no
-/// proxy) mark it down for a minute: partial text, refreshed every second, would otherwise wait out
-/// the 8 s timeout each time. After the minute one call goes through again; a success or a change
-/// of network brings it straight back. A 429 only pauses it 10 s and never counts as down.
 struct GoogleHealth {
     static let downAfter = 2
     static let pause: TimeInterval = 60
@@ -66,15 +62,11 @@ struct GoogleHealth {
 
     mutating func rateLimited(_ now: Date = Date()) { until = now.addingTimeInterval(10) }
 
-    /// A proxy turned on, Wi-Fi back: try again now, still down until it answers.
     mutating func networkChanged() { until = .distantPast }
 }
 
-/// What the user is told about translation, without naming providers: Google down, and whether
-/// finished sentences are going untranslated too (no key, and no on-device model to stand in).
 struct TranslationHealth: Equatable {
     var googleDown = false
-    /// 语音和文字只发给你的服务: Google is left out on purpose, so nothing says it can't be reached.
     var googleOff = false
     var sentencesUntranslated = false
     var proxy: AICheck.ProxyHint?
@@ -82,49 +74,30 @@ struct TranslationHealth: Equatable {
 
 // MARK: - Translation chain
 
-/// Ling (with a key) → Google → Apple's on-device translation.
-/// Finished sentences and speak-back go to Ling, which keeps names consistent through a glossary
-/// taken from the meeting notes. Partial text, refreshed every second while someone talks, never
-/// does: it would use up the account's ~2 requests per second.
 @MainActor
 final class TranslationService {
-    /// `file`: a line of an imported recording, sent to Ling behind everything live.
     enum Kind { case draft, sentence, speak, file }
 
     let ling: LingClient
-    /// Names and terms the notes have settled on, e.g. "江充 (Jiang Chong)".
     var glossary: () -> [String] = { [] }
 
-    /// What a finished sentence's request carries so the service can also point out misheard words
-    /// (改正听错的词). nil: fixing is off, and the request is the plain translation it always was.
     struct FixContext {
-        /// The meeting's title once it has one: the field tells "质押" from "制约".
         var topic: String?
-        /// The user's word list (`Vocabulary.promptLines`).
         var words: [String]
-        /// The lines just before, as shown.
         var recent: [String]
-        /// On a second pass: the lines after it, which often tell what a word was.
         var following: [String] = []
-        /// The notes' summary so far, once there is one.
         var summary: String? = nil
     }
     var fixContext: ((_ text: String) -> FixContext?)?
-    /// The fixes the service proposed for a sentence it translated (by its text as heard).
     var onFixes: ((_ text: String, _ edits: [Correction.Edit]) -> Void)?
     private var google = GoogleHealth()
     private(set) var health = TranslationHealth() {
         didSet { if health != oldValue { onHealth?(health) } }
     }
-    /// Set by the app: the banner and settings show `health`.
     var onHealth: ((TranslationHealth) -> Void)?
-    /// Set by the app: reads the proxy settings once Google goes down, to word the hint.
     var proxyHint: (() async -> AICheck.ProxyHint)?
     private var lastUnreachableTry = Date.distantPast
 
-    /// A service that answers nothing (a home server switched off) costs every line its timeout
-    /// before Google gets it, so subtitles run seconds late. While the check says unreachable, one
-    /// line in 15 s still goes to it, so a server that is back is noticed without waiting for a check.
     private func lingWorthTrying() -> Bool {
         guard ling.aiCheck.failure?.reason == .unreachable else { return true }
         guard Date().timeIntervalSince(lastUnreachableTry) >= 15 else { return false }
@@ -134,11 +107,8 @@ final class TranslationService {
 
     init(ling: LingClient) { self.ling = ling }
 
-    /// Debug (`googleDown:on`): Google fails as if there were no proxy, without touching the network.
     var simulateGoogleDown = false
 
-    /// Set by the app (语音和文字只发给你的服务, custom service only): Google is never asked, so the
-    /// text stays with the user's service and this Mac. A stale "can't reach Google" goes with it.
     var googleOff = false {
         didSet {
             guard googleOff != oldValue else { return }
@@ -166,18 +136,12 @@ final class TranslationService {
         }
     }
 
-    /// `trace`, when given, collects which providers were tried, how long each took and why it
-    /// fell through (diagnostics; never the text).
-    /// Debug (`translateFail:<n>`): the next n sentences fail on every provider, to test the retry.
     var failNext = 0
 
-    /// Partial text (`.draft`) has no trace: each one reports here instead (seconds, answered), so
-    /// diagnostics can count them without a line per refresh.
     var onDraft: ((Double, Bool) -> Void)?
 
     func translate(_ text: String, source: String, target: String, kind: Kind, trace: TranslateTrace? = nil) async -> String? {
         if source == target { return text }
-        // Partial text only ever goes to Google: left out, it shows the original until the sentence ends.
         if kind == .draft, googleOff { return nil }
         if kind == .draft, let onDraft {
             let started = Date()
@@ -207,7 +171,6 @@ final class TranslationService {
             }
         }
         if googleOff {
-            // Left out on purpose: no attempt in the trace, so diagnostics don't show Google failing.
         } else if google.open() {
             let started = Date()
             do {
@@ -229,8 +192,6 @@ final class TranslationService {
         } else {
             trace?.attempts.append(.init(provider: "google", seconds: 0, failure: google.down ? "down" : "rateLimited"))
         }
-        // Partial text without Google shows the original only: it is replaced by the sentence's
-        // translation a moment later, and on-device translation would be slower and rougher.
         if kind == .draft { return nil }
         let started = Date()
         if let out = await viaApple(text, source: source, target: target) {
@@ -273,12 +234,6 @@ final class TranslationService {
         }
     }
 
-    /// The translation and the misheard words in one request: no extra call, so no extra wait on the
-    /// rate gate (on OpenRouter's Ling 3.1 Flash, 2.0 s against 1.8 s at the median). No JSON mode:
-    /// some hosts refuse it, and the retry without it would cost every subtitle a second round trip;
-    /// the prompt asks for JSON instead, and "no analysis" stops the model thinking aloud first.
-    /// Proposals only: `Correction.decide` picks which to take. A reply that isn't the JSON asked
-    /// for is dropped like a failed one, and the next provider translates the line.
     private func viaLingFixing(_ text: String, from: String, target: String, kind: Kind, ctx: FixContext,
                                trace: TranslateTrace?) async -> (String?, String) {
         var prompt = """
@@ -302,8 +257,6 @@ final class TranslationService {
                                           role: kind == .file ? "file" : "translate",
                                           onQueued: { [weak trace] in trace?.lingQueue += $0 })
             if out.isEmpty { return (nil, "empty") }
-            // Not the JSON asked for: often the model thinking aloud ("Let me analyze…"), never a
-            // subtitle. Falls through to the next provider like any failed translation.
             guard let parsed = Correction.parse(out, subtitle: text) else {
                 debugLog("translate ling: fixes reply not JSON, dropped")
                 return (nil, "unparsed")
@@ -311,7 +264,6 @@ final class TranslationService {
             guard !parsed.translation.isEmpty, let clean = Self.cleanTranslation(parsed.translation, target: target) else {
                 return (nil, "remark")
             }
-            // None proposed is an answer too: a second pass takes back what it no longer proposes.
             onFixes?(text, parsed.edits)
             return (clean, "")
         } catch {
@@ -320,10 +272,6 @@ final class TranslationService {
         }
     }
 
-    /// Speak-back in one call: Ming's audio model hears the press and returns what was said and its
-    /// translation. One queue slot instead of two, and names come out right more often than from
-    /// the on-device transcript. Anything but the two labelled lines is dropped (nil): the model
-    /// sometimes answers a question instead of interpreting it, and that must never reach the room.
     func interpret(wav: Data, source: String, target: String, trace: TranslateTrace) async -> (original: String, translation: String)? {
         guard ling.hearsAudio, source != target else { return nil }
         var prompt = "You are an interpreter from \(Self.englishName(source)) into \(Self.englishName(target)). "
@@ -338,7 +286,6 @@ final class TranslationService {
         let started = Date()
         var failure = "unparsed"
         do {
-            // A 30 s press is ~1 MB of audio: a little more time than a text translation (10 s).
             let reply = try await ling.chat(content: prompt, instruction: instruction, priority: .speak, maxTokens: 800,
                                             timeout: 12, model: "Ming-3.0-audio-flash", audio: wav, role: "heard-me",
                                             onQueued: { [weak trace] in trace?.lingQueue += $0 })
@@ -355,15 +302,9 @@ final class TranslationService {
         return nil
     }
 
-    /// 先用○○听: one stretch of the meeting heard by the service's audio model (Ming), its language,
-    /// what was said and its translation in one call. nil for no speech or noise; throws when the
-    /// call failed, so listening can tell a service that is down from a quiet meeting.
     func hear(wav: Data, seconds: Double, target: String, hint: String?,
               priority: LingClient.Priority = .translate) async throws -> CloudHeard? {
-        // A custom service's speech model only transcribes: the text is translated as the Mac's own is.
         if ling.transcribes {
-            // No language sent: a speech model takes it as an order, and an English line in a
-            // Chinese meeting would come back as Chinese. The server tells the language itself.
             let heard = try await ling.transcribe(wav, language: nil)
             return CloudHearing.transcript(heard.text, reported: heard.language, hint: hint, target: target, seconds: seconds)
         }
@@ -375,8 +316,6 @@ final class TranslationService {
         return CloudHearing.parse(reply, target: target, hint: hint, seconds: seconds)
     }
 
-    /// `ORIGINAL: …` then `TRANSLATION: …`, both non-empty, and the translation in the target's
-    /// script (Chinese/Japanese targets need CJK, others must not be mostly CJK).
     static func parseInterpretation(_ reply: String, target: String) -> (original: String, translation: String)? {
         var original: String?, translation: String?
         for raw in reply.components(separatedBy: .newlines) {
@@ -395,25 +334,16 @@ final class TranslationService {
         return (o, t)
     }
 
-    /// "Translate." in each target language, letters only and lowercased.
     nonisolated static let instructionEchoes: Set<String> = [
         "翻译", "翻譯", "translate", "翻訳", "翻訳して", "翻訳する", "翻訳してください", "번역", "번역해", "번역하세요", "번역해주세요",
         "traducir", "traduce", "traduzca", "traduire", "traduisez", "traduis", "übersetzen", "übersetze", "traduzir", "traduza",
     ]
 
-    /// Ling sometimes comments on a garbled subtitle ("The subtitle appears to be… Here is the
-    /// best-effort translation:") instead of translating it, and that would land in the subtitles and
-    /// the record. Remark lines are dropped, a "Translation:" label is stripped, and what is left must
-    /// be in the target's script; nil means the next provider translates it.
     nonisolated static func cleanTranslation(_ reply: String, target: String) -> String? {
-        // A line is a remark only when it opens or ends like one and talks about the job itself,
-        // so a subtitle that happens to start with "The text…" is kept.
         let opener = ["here is", "here's", "the subtitle", "this subtitle", "the text", "this text", "the original",
                       "the user", "note", "(note", "i'm sorry", "i am sorry", "sorry", "it seems", "it appears", "this appears"]
         let about = ["translat", "subtitle", "garbled", "transcri", "asr", "speech recognition", "best-effort"]
-        // The same in Chinese: "请提供需要翻译的字幕内容", "您似乎忘记提供……".
         let zhAbout = ["字幕", "翻译"], zhRemark = ["请提供", "似乎", "看起来", "无法", "乱码", "没有附上", "您只发送"]
-        // Reasoning that leaked into the reply ("…</think>") goes; the answer follows it.
         let answer = reply.components(separatedBy: "</think>").last ?? reply
         var kept: [String] = []
         for raw in answer.components(separatedBy: .newlines) {
@@ -426,23 +356,18 @@ final class TranslationService {
             if lower.hasPrefix("translation:") {
                 line = String(line.dropFirst("translation:".count)).trimmingCharacters(in: .whitespaces)
             } else if remark {
-                // A note after the translation ("(Note: …" and its list of other wordings) ends it.
                 if !kept.isEmpty { break }
                 continue
             }
             if !line.isEmpty { kept.append(line) }
         }
         var out = kept.joined(separator: " ")
-        // Quotes come off only when they wrap the whole reply; a closing ” inside it belongs to the text.
         for (open, close) in [("\"", "\""), ("“", "”"), ("「", "」")]
         where out.count >= 2 && out.hasPrefix(open) && out.hasSuffix(close) && out.dropFirst().dropLast().contains(open) == false {
             out = String(out.dropFirst().dropLast())
         }
         out = out.trimmingCharacters(in: .whitespaces)
         guard !out.isEmpty else { return nil }
-        // Ling translated the fixed "Translate." instruction instead of the subtitle ("翻译。" for an
-        // empty subtitle, or for "Translate this into Chinese please."). A subtitle that really is
-        // just "翻译一下" loses Ling's answer too, and the next provider translates it.
         if Self.instructionEchoes.contains(String(out.lowercased().unicodeScalars.filter { $0.properties.isAlphabetic })) { return nil }
         let letters = out.unicodeScalars.filter { $0.properties.isAlphabetic }
         let cjk = letters.filter { (0x3040...0x9FFF).contains($0.value) || (0xAC00...0xD7AF).contains($0.value) }.count
@@ -451,7 +376,6 @@ final class TranslationService {
         return out
     }
 
-    /// Apple's on-device translation, made outside a SwiftUI view: only on macOS 26.
     private func viaApple(_ text: String, source: String, target: String) async -> String? {
         guard #available(macOS 26, *) else { return nil }
         guard source != "auto" else { return nil }
@@ -475,9 +399,6 @@ final class TranslationService {
         }
     }
 
-    /// The notes' names for a request. Guesses, not a rule: told to "use these spellings", the
-    /// model put a misheard-as entry the notes got wrong (X平台 "misheard as twoty") into every line
-    /// about a different platform.
     nonisolated static func namesLine(_ names: [String]) -> String {
         "\nNames the notes guessed (spellings to use; a misheard form only where it plainly means that name): " + names.joined(separator: "; ")
     }

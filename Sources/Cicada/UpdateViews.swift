@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// The panel's update strip, under the header while there is a newer release: install it, watch
-/// it download, or read why installing in place failed (the release page was opened instead).
-/// While a meeting is on it shrinks to one line, so it doesn't push the meeting's controls down.
 struct UpdateBanner: View {
     @ObservedObject var updates: Updates
     @ObservedObject var model: AppModel
@@ -58,7 +55,6 @@ struct UpdateBanner: View {
     }
 }
 
-/// Settings › 会议记录, the app-wide rows: open at login and the version with a check button.
 struct AppRows: View {
     @ObservedObject var updates: Updates
     @ObservedObject var loginItem: LoginItem

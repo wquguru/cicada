@@ -2,17 +2,13 @@ import Foundation
 
 // MARK: - Model
 
-/// Meeting notes kept with the session (`session.json` › `notes`). Written by Ling while the
-/// meeting runs ("速记版") and rewritten once over the whole transcript when it ends ("完整版").
 struct MeetingNotes: Codable, Equatable {
-    /// A short name for the meeting in the notes' language (absent in older notes).
     var title: String?
     var summary = ""
     var topics: [NoteTopic] = []
     var conclusions: [NoteItem] = []
     var todos: [NoteItem] = []
     var terms: [NoteTerm] = []
-    /// How many transcript lines these notes cover.
     var covered = 0
     var updatedAt: Date?
     var final = false
@@ -26,14 +22,12 @@ struct NoteTopic: Codable, Equatable, Identifiable {
     var summary: String
     var points: [String]
     var fishbone: Fishbone?
-    /// When each point was said (its first evidence line), parallel to `points`; older notes have none.
     var pointTimes: [Double?]?
     var id: String { "\(Int(start))-\(title)" }
 
     func pointTime(_ i: Int) -> Double? { pointTimes.flatMap { i < $0.count ? $0[i] : nil } }
 }
 
-/// A cause-and-effect diagram for a topic that discusses why something happened.
 struct Fishbone: Codable, Equatable {
     var question: String
     var branches: [FishboneBranch]
@@ -43,7 +37,6 @@ struct FishboneBranch: Codable, Equatable, Identifiable {
     var label: String
     var detail: String
     var t: Double?
-    /// How many transcript lines back this branch; 0 is shown as weak.
     var support: Int
     var id: String { label + detail }
 }
@@ -52,11 +45,9 @@ struct NoteItem: Codable, Equatable, Identifiable {
     var text: String
     var owner: String?
     var support: Int
-    /// When it was said (first evidence line).
     var t: Double?
     var id: String { text }
 
-    /// The owner as stored ("你", "对方", "说话人2" or a name) in the UI language.
     var ownerShown: String? {
         guard let owner else { return nil }
         switch owner {
@@ -69,24 +60,19 @@ struct NoteItem: Codable, Equatable, Identifiable {
         return owner
     }
 
-    /// The to-do with its owner after it: "（对方）" in Chinese, " (Them)" in English.
     var withOwner: String { text + (ownerShown.map { L("待办的负责人 \($0)") } ?? "") }
 }
 
-/// A name or term as the notes settled on it, and how speech recognition heard it.
 struct NoteTerm: Codable, Equatable, Identifiable {
     var name: String
     var note: String
     var heard: [String]
     var id: String { name }
 
-    /// Corrected spellings first: what a reader can't work out alone.
     static func ordered(_ terms: [NoteTerm]) -> [NoteTerm] {
         terms.filter { !$0.heard.isEmpty } + terms.filter { $0.heard.isEmpty }
     }
 
-    /// The reply's terms in the order they were shown before, new ones after: the model often
-    /// returns the same names reshuffled, which would make the chips jump on every update.
     static func keepingOrder(_ old: [NoteTerm], _ new: [NoteTerm]) -> [NoteTerm] {
         let rank = Dictionary(old.enumerated().map { ($1.name, $0) }, uniquingKeysWith: { a, _ in a })
         return new.enumerated().sorted { a, b in
@@ -94,12 +80,10 @@ struct NoteTerm: Codable, Equatable, Identifiable {
         }.map(\.element)
     }
 
-    /// Roles that say a term is a person, for offering it as a speaker's name.
     private static let roles = ["首席", "执行官", "主席", "总裁", "董事", "经理", "创始人", "记者", "主持", "研究员",
                                 "分析师", "教授", "老师", "教师", "官员", "部长", "议员", "候选人", "嘉宾", "发言人",
                                 "CEO", "CFO", "CTO", "host", "analyst", "reporter", "founder"]
 
-    /// Names of people the notes mention, by their note ("BGN 集团首席运营官").
     static func people(_ terms: [NoteTerm]) -> [String] {
         terms.filter { t in roles.contains { t.note.localizedCaseInsensitiveContains($0) } }.map(\.name)
     }
@@ -107,9 +91,6 @@ struct NoteTerm: Codable, Equatable, Identifiable {
 
 // MARK: - Engine
 
-/// Keeps the live session's notes up to date: every ~45 s with new speech, one Ling call sends
-/// the current notes plus the new lines and gets the whole updated notes back as JSON. A failed or
-/// odd reply never replaces good notes. UI-free; the notes window observes it.
 @MainActor
 final class NotesEngine: ObservableObject {
     enum State: Equatable {
@@ -118,52 +99,34 @@ final class NotesEngine: ObservableObject {
         case noKey
         case invalidKey
         case rateLimited
-        /// The notes' own request couldn't reach the service (network, proxy, timeout). Another
-        /// request failing, such as naming speakers, never sets this.
         case unreachable
         case failed
     }
 
     @Published private(set) var notes = MeetingNotes()
     @Published private(set) var state: State = .idle
-    /// Points and topics that appeared in the last update ("新").
     @Published private(set) var fresh: Set<String> = []
     @Published private(set) var summaryChangedAt: Date?
-    /// A finished meeting whose full notes are being written (main window "生成纪要").
     @Published private(set) var generatingID: String?
 
     let ling: LingClient
     let store: SessionStore
-    /// The language a meeting's notes are written in (English name), set by the app from the
-    /// 纪要语言 choice.
     var language: (_ sessionID: String) -> String = { _ in "Simplified Chinese" }
 
     private var sessionID: String?
-    /// The session whose notes `notes` shows (stays set after the meeting ends).
     private(set) var shownID: String?
     private var timer: Timer?
     private var inFlight = false
-    /// Final passes asked for while another call was running, in order; each runs after it.
-    /// Several can wait: an imported file can finish while the meeting's own pass is queued.
     private var pendingFinals: [String] = []
-    /// A final pass is over, whether it wrote notes or not (存到文件夹 waits for it).
     var finalDone: ((String) -> Void)?
-    /// The final pass for this meeting is running or waiting its turn.
     func settling(_ id: String) -> Bool { generatingID == id || pendingFinals.contains(id) }
-    /// A language change that arrived while another update was running: rewrite after it.
     private var pendingRewrite: String?
     private var lastAttempt = Date.distantPast
     private var freshGeneration = 0
     static let interval: TimeInterval = 45
-    /// The most topics the final notes have (the prompt says so too; the model doesn't always listen).
     static let maxTopics = 8
-    /// The most topics live notes have. Live notes used to stop at `maxTopics` and pour everything
-    /// after into the last topic, whose summary then grew into a wall of "最新…又…补充…"; past this,
-    /// the two shortest neighbouring settled topics are joined instead, so the newest can start.
     static let liveMaxTopics = 12
-    /// A topic summary longer than this is a log the model kept appending to, not one sentence.
     static let topicSummaryLimit = 160
-    /// How many of the last topics a live update may rewrite; earlier ones stay as they are.
     static let editableTopics = 2
 
     init(ling: LingClient, store: SessionStore) {
@@ -171,7 +134,6 @@ final class NotesEngine: ObservableObject {
         self.store = store
     }
 
-    /// Names for the translation glossary: "江充 (heard as 江松, 江冲)".
     var glossary: [String] {
         notes.terms.prefix(30).map { t in
             t.heard.isEmpty ? "\(t.name) (\(t.note))" : "\(t.name) (\(t.note); misheard as \(t.heard.joined(separator: ", ")))"
@@ -193,7 +155,6 @@ final class NotesEngine: ObservableObject {
         RunLoop.main.add(t, forMode: .common)
     }
 
-    /// The meeting ended: one last pass over the whole transcript.
     func finish() {
         timer?.invalidate()
         timer = nil
@@ -202,7 +163,6 @@ final class NotesEngine: ObservableObject {
         Task { await update(id, final: true) }
     }
 
-    /// The notes language changed during the meeting: rewrite the whole notes in it now.
     func rewrite() {
         guard let id = sessionID else { return }
         Task { await update(id, final: false, fresh: true) }
@@ -213,29 +173,23 @@ final class NotesEngine: ObservableObject {
         Task { await update(id, final: false) }
     }
 
-    /// A hand edit in the notes window: keep the editor's text, not the next AI pass's copy.
     func applyEdited(_ edited: MeetingNotes, id: String) {
         guard shownID == id else { return }
         notes = edited
         objectWillChange.send()
     }
 
-    /// Show a stored meeting's notes (the window shows the live meeting when there is one).
     func show(_ id: String) {
         shownID = id
         notes = store.session(id)?.notes ?? MeetingNotes()
         fresh = []
-        // A round that failed belongs to the meeting it ran for, not to the record opened now.
         if sessionID == nil, [.failed, .unreachable, .rateLimited].contains(state) { state = .idle }
     }
 
-    /// Notes for a finished meeting that has none (e.g. recorded before a key was set).
     func generate(for id: String) {
         Task { await update(id, final: true) }
     }
 
-    /// Debug control: rebuild a stored meeting's notes the way a live meeting would, a few lines
-    /// at a time, then the final pass.
     func replay(_ id: String, step: Int = 4) async {
         guard let count = store.session(id)?.lines.count else { return }
         shownID = id
@@ -248,26 +202,19 @@ final class NotesEngine: ObservableObject {
     }
 
     private func tick() {
-        // A key was added or replaced since the last failure.
         if (state == .noKey || state == .invalidKey), ling.usable, ling.keyState != .checking { state = .idle }
         if state == .idle, !ling.hasKey { state = .noKey }
-        // A key that was just checked and refused says so, rather than asking for a key again.
         if state == .noKey || state == .idle, ling.hasKey, ling.keyState == .invalid { state = .invalidKey }
-        // The service answers again (the check after a network change, or any other request): the
-        // banner goes now, not after the next round, which runs on its usual 45 s.
         if state == .unreachable, ling.aiCheck.failure?.reason != .unreachable { state = .idle }
         guard let id = sessionID, !inFlight else { return }
         guard let s = store.session(id), s.lines.count > notes.covered else { return }
-        // First notes as soon as there is something to say, then every 45 s.
         let due = notes.isEmpty ? (s.lines.count >= 3 || Date().timeIntervalSince(lastAttempt) > 20)
                                 : Date().timeIntervalSince(lastAttempt) >= Self.interval
         if due { Task { await update(id, final: false) } }
     }
 
-    /// `fresh`: start from nothing (a new notes language); the final pass always does.
     private func update(_ id: String, final: Bool, upto: Int? = nil, fresh: Bool = false) async {
         if inFlight {
-            // Never drop the end-of-meeting pass or a "生成纪要" request: queue it.
             if final {
                 if !pendingFinals.contains(id) { pendingFinals.append(id) }
                 if generatingID == nil { generatingID = id }
@@ -287,7 +234,7 @@ final class NotesEngine: ObservableObject {
             if final { finalDone?(id) }
             if !pendingFinals.isEmpty {
                 let next = pendingFinals.removeFirst()
-                if pendingRewrite == next { pendingRewrite = nil } // the final pass starts from nothing anyway
+                if pendingRewrite == next { pendingRewrite = nil }
                 Task { await update(next, final: true) }
             } else if let next = pendingRewrite {
                 pendingRewrite = nil
@@ -301,16 +248,10 @@ final class NotesEngine: ObservableObject {
         let lang = language(id)
         let names = TranscriptExport.voices ? SpeakerLabels.names(session) : [:]
         let known = SpeakerLabels.knownVoices(session)
-        // A live update returns only the last topics: when it rewrote them all, its reply grew with
-        // the meeting until, about an hour in, it was cut off at max_tokens or fell into a loop and
-        // the notes stopped updating. The final pass still rewrites everything once.
         let frozen = final || fresh ? 0 : max(0, base.topics.count - Self.editableTopics)
         let prompt = Self.prompt(notes: base, lines: lines, from: from, language: lang, final: final, names: names, frozen: frozen, known: known)
         let started = Date()
         do {
-            // The final pass sends only the transcript, with no notes in the reader's language to
-            // follow: given a long English meeting the model drifts into English. Say the language
-            // again where it is read last, and try once more if the reply still isn't in it.
             var next = final ? await longFinal(lines, names: names, known: known, language: lang, startedAt: session.lines.first?.t ?? 0) : nil
             for attempt in 1...(final || fresh ? 2 : 1) where next == nil {
                 let raw = try await ling.chat(content: prompt, instruction: "Update the notes. Write them in \(lang).",
@@ -324,7 +265,6 @@ final class NotesEngine: ObservableObject {
                 state = .failed
                 return
             }
-            // The notes language changed while this was running: the queued rewrite replaces it.
             guard language(id) == lang else {
                 debugLog("notes: language changed during the update, reply dropped")
                 state = .idle
@@ -334,7 +274,6 @@ final class NotesEngine: ObservableObject {
             if !fresh { next.terms = NoteTerm.keepingOrder((id == shownID ? notes : session.notes)?.terms ?? [], next.terms) }
             next.terms = Self.heardAsSaid(next.terms, lines: lines)
             Self.carryTimes(from: base, into: &next)
-            // A reply without a name keeps the last one (not after a language change).
             if next.title == nil, !fresh { next.title = (id == shownID ? notes : session.notes)?.title }
             next.covered = lines.count
             next.updatedAt = Date()
@@ -362,8 +301,6 @@ final class NotesEngine: ObservableObject {
         }
     }
 
-    /// A long meeting's final pass: each part noted on its own, all at once, then merged into one.
-    /// nil when a step fails: the caller then makes one pass over the whole transcript, as before.
     private func longFinal(_ lines: [TranscriptLine], names: [Int: String], known: Set<Int>, language lang: String,
                            startedAt: Double) async -> MeetingNotes? {
         let parts = Self.parts(lines)
@@ -390,7 +327,6 @@ final class NotesEngine: ObservableObject {
                 debugLog("notes: final part \(i + 1)/\(parts.count) failed, one pass instead")
                 return nil
             }
-            // Without its topics: given them, the merge wrote them all back out and was cut off.
             guard var part = try? JSONSerialization.jsonObject(with: Data(raw[a...b].utf8)) as? [String: Any] else { return nil }
             part["topics"] = nil
             guard let data = try? JSONSerialization.data(withJSONObject: part), let text = String(data: data, encoding: .utf8) else { return nil }
@@ -414,8 +350,6 @@ final class NotesEngine: ObservableObject {
         return nil
     }
 
-    /// "新" marks what the last live update added, for a minute. The final pass rewrites
-    /// everything, so it marks nothing.
     private func markFresh(old: MeetingNotes, new: MeetingNotes, final: Bool) {
         freshGeneration += 1
         guard !old.isEmpty, !final else { fresh = []; return }
@@ -429,11 +363,6 @@ final class NotesEngine: ObservableObject {
         }
     }
 
-    /// A live reply's topics after the `frozen` ones it was told to leave alone: with some frozen, at
-    /// most the editable ones plus one new, from the end (the model sometimes echoes the whole list),
-    /// never a copy of a frozen one, each summary kept to one sentence; and no more than
-    /// `liveMaxTopics` in all (past that, settled neighbours are joined). A reply with no topics of
-    /// its own keeps the ones it had.
     static func merge(_ old: [NoteTopic], frozen: Int, returned: [NoteTopic]) -> [NoteTopic] {
         var kept = Array(old.prefix(frozen))
         let fixed = Set(kept.map(\.title))
@@ -443,7 +372,6 @@ final class NotesEngine: ObservableObject {
         for i in tail.indices { tail[i].summary = shortened(tail[i].summary) }
         tail = capped(tail, to: liveMaxTopics - min(kept.count, 1))
         while kept.count + tail.count > liveMaxTopics, kept.count >= 2 {
-            // The pair spanning the least time, its end being the next topic's start.
             let ends = kept.dropFirst().map(\.start) + [tail[0].start]
             let i = (0..<kept.count - 1).min { ends[$0 + 1] - kept[$0].start < ends[$1 + 1] - kept[$1].start }!
             kept[i] = joined(kept[i], kept[i + 1])
@@ -452,8 +380,6 @@ final class NotesEngine: ObservableObject {
         return capped(kept + tail, to: liveMaxTopics)
     }
 
-    /// Two neighbouring topics as one: both titles and summaries, and up to the 4 points the prompt
-    /// allows, taken evenly from each.
     static func joined(_ a: NoteTopic, _ b: NoteTopic) -> NoteTopic {
         let fromA = min(a.points.count, max(2, 4 - b.points.count))
         let fromB = min(b.points.count, 4 - fromA)
@@ -464,9 +390,6 @@ final class NotesEngine: ObservableObject {
                          pointTimes: times.contains { $0 != nil } ? times : nil)
     }
 
-    /// Terms keep only the heard forms the recognizer really wrote (`src`). The notes read lines
-    /// with fixes in, so a wrong fix came back as a heard form ("X平台 heard as platform"), went to
-    /// the translator and the next fix's request as a known mishearing, and was proposed again.
     static func heardAsSaid(_ terms: [NoteTerm], lines: [TranscriptLine]) -> [NoteTerm] {
         terms.map { t in
             var t = t
@@ -475,7 +398,6 @@ final class NotesEngine: ObservableObject {
         }
     }
 
-    /// A runaway topic summary cut back to its first sentence (or to the limit, with "…").
     static func shortened(_ summary: String) -> String {
         guard summary.count > topicSummaryLimit else { return summary }
         let head = summary.prefix(topicSummaryLimit)
@@ -483,7 +405,6 @@ final class NotesEngine: ObservableObject {
         return head.trimmingCharacters(in: .whitespaces) + "…"
     }
 
-    /// At most `count` topics (at least one): the points of any after that go into the last kept.
     static func capped(_ topics: [NoteTopic], to count: Int) -> [NoteTopic] {
         var topics = topics
         while topics.count > max(1, count) {
@@ -497,16 +418,12 @@ final class NotesEngine: ObservableObject {
         return topics
     }
 
-    /// The model echoes points it already had without evidence: keep the times they had.
     static func carryTimes(from old: MeetingNotes, into new: inout MeetingNotes) {
         var known: [String: Double] = [:]
         for t in old.topics { for (i, p) in t.points.enumerated() { if let x = t.pointTime(i) { known[p] = x } } }
         for (ti, t) in new.topics.enumerated() {
-            // A point keeps the time it was first heard: a later mention never moves it later.
             let times = t.points.enumerated().map { i, p in [t.pointTime(i), known[p]].compactMap { $0 }.min() }
             new.topics[ti].pointTimes = times.contains { $0 != nil } ? times : nil
-            // The reply dates a topic from the lines it cites now, often only the latest: it starts no
-            // later than its first point, or its range runs minutes past what was said in it.
             if let first = times.compactMap({ $0 }).min(), first < t.start { new.topics[ti].start = first }
         }
         let items = Dictionary((old.conclusions + old.todos).compactMap { i in i.t.map { (i.text, $0) } }, uniquingKeysWith: { a, _ in a })
@@ -519,14 +436,12 @@ final class NotesEngine: ObservableObject {
 
     static func clock(_ t: Double) -> String { TranscriptExport.clock(t) }
 
-    /// `part`: in a long meeting's final pass, which part `from..<lines.count` is (1-based, of `of`).
     static func prompt(notes: MeetingNotes, lines: [TranscriptLine], from: Int, language: String, final: Bool,
                        names: [Int: String] = [:], frozen: Int = 0, part: (index: Int, of: Int)? = nil,
                        known: Set<Int> = []) -> String {
         let numbers = TranscriptExport.voices ? SpeakerLabels.numbers(lines, known: known) : [:]
         func line(_ i: Int) -> String {
             let l = lines[i]
-            // A named voice goes as its name: notes then say "George" rather than "说话人2".
             let who = l.speaker == "me" ? "你" : numbers[l.id].map { names[$0] ?? "说话人\($0)" } ?? (numbers.isEmpty ? "对方" : "未识别")
             return "[L\(i + 1) \(clock(l.t)) \(who)] \(l.shown)"
         }
@@ -554,8 +469,6 @@ final class NotesEngine: ObservableObject {
         }
         p += "\(final ? "Transcript" : "New lines") (id, mm:ss, speaker 对方=the other side / 你=me / a name or 说话人N=one person on the other side, told apart by voice and possibly wrong / 未识别=someone on the other side not identified, text). Speech recognition makes mistakes, often in names: correct them from context, and write a public figure's name as the news spells it.\n"
         p += (from..<lines.count).map(line).joined(separator: "\n")
-        // The model splits too eagerly when only told how long a topic should be: say plainly
-        // whether this update may start one.
         if final, from < lines.count, let last = lines.last?.t {
             let first = lines[from].t
             let most = max(1, min(part.map { partTopics($0.of) } ?? maxTopics, Int((last - first) / 180) + 1))
@@ -569,7 +482,6 @@ final class NotesEngine: ObservableObject {
         return p
     }
 
-    /// The reply's JSON shape and the rules for its contents.
     private static func format(language: String, voices: Bool, final: Bool, frozen: Int) -> String {
         """
         Return the full notes as one JSON object with exactly these keys:
@@ -598,8 +510,6 @@ final class NotesEngine: ObservableObject {
 
     // MARK: Long meetings
 
-    /// How a long meeting's final pass is split: over `splitMinutes`, into equal parts by time of at
-    /// most `partMinutes`. One pass covered a 91-minute meeting but only the first hour of a 4-hour one.
     static let splitMinutes = 100.0
     static let partMinutes = 60.0
     static func parts(_ lines: [TranscriptLine]) -> [Range<Int>] {
@@ -617,14 +527,8 @@ final class NotesEngine: ObservableObject {
         return zip(bounds, bounds.dropFirst()).map { $0..<$1 }
     }
 
-    /// Each part's share of the topics: the merge keeps them as they are, so every part has some.
     static func partTopics(_ parts: Int) -> Int { max(2, maxTopics / max(1, parts)) }
 
-    /// At most `count` of a part's `topics`, neighbours joined: a part's reply often has more topics
-    /// than asked. Keeping the first ones lost the end of the part, and keeping some spread from first
-    /// to last kept a topic's "（续）" stub at the part's end and dropped the topic itself. The same
-    /// subject twice is joined first, under the first one's title; then the pair spanning the least
-    /// time (to the next topic's start, or `end` for the last), as live notes do.
     static func thinned(_ topics: [NoteTopic], to count: Int, end: Double) -> [NoteTopic] {
         var topics = topics
         while topics.count > max(1, count) {
@@ -640,7 +544,6 @@ final class NotesEngine: ObservableObject {
         return topics
     }
 
-    /// A topic title without a trailing bracket ("预算评审（续）", "Budget (cont.)"): what it is about.
     static func subject(_ title: String) -> String {
         let t = title.trimmingCharacters(in: .whitespaces)
         guard let close = t.last, "）)".contains(close), let open = t.lastIndex(where: { "（(".contains($0) }),
@@ -648,9 +551,6 @@ final class NotesEngine: ObservableObject {
         return t[..<open].trimmingCharacters(in: .whitespaces)
     }
 
-    /// The whole meeting's title, summary, conclusions, to-dos and terms from its parts' notes (the
-    /// replies as they came, with their evidence line ids). Asked to merge topics too, the model
-    /// kept the first parts' and dropped the rest, so topics are joined in code.
     static func mergePrompt(parts: [String], lines: [TranscriptLine], language: String, voices: Bool) -> String {
         var p = """
         You keep notes for a meeting that has just ended. It was long, so each part was noted on its own; below are those notes, in time order (JSON; evidence ids are transcript lines, L1 the first). Merge them into the notes for the whole meeting.
@@ -665,8 +565,6 @@ final class NotesEngine: ObservableObject {
         return p + format(language: language, voices: voices, final: true, frozen: 0)
     }
 
-    /// Whether the notes' own words (summary, titles) are in `language`: Chinese, Japanese and
-    /// Korean need a fair share of CJK (names and numbers stay Latin), other languages must not be mostly CJK.
     static func written(_ notes: MeetingNotes, in language: String) -> Bool {
         let text = ([notes.summary] + notes.topics.map(\.title)).joined()
         let letters = text.unicodeScalars.filter { $0.properties.isAlphabetic }
@@ -676,7 +574,6 @@ final class NotesEngine: ObservableObject {
         return wantsCJK ? cjk * 5 >= letters.count : cjk * 2 < letters.count
     }
 
-    /// The current notes as sent back to the model (no bookkeeping fields).
     private struct Compact: Encodable {
         let title: String?
         let summary: String
@@ -691,7 +588,6 @@ final class NotesEngine: ObservableObject {
             let points: [String]
             let fishbone: Fishbone?
         }
-        /// `from`: the first topic sent (earlier ones go as a list of titles).
         init(_ n: MeetingNotes, from: Int = 0) {
             title = n.title
             summary = n.summary
@@ -704,7 +600,6 @@ final class NotesEngine: ObservableObject {
 
     // MARK: Parse
 
-    /// Lenient: missing keys become empty, evidence ids are checked against the transcript.
     static func parse(_ raw: String, times: [Double], startedAt: Double) -> MeetingNotes? {
         let lineCount = times.count
         var text = raw
@@ -721,7 +616,6 @@ final class NotesEngine: ObservableObject {
             })
         }
         func support(_ v: Any?) -> Int { lineNumbers(v).count }
-        /// When it was first said: the earliest evidence line.
         func time(_ v: Any?) -> Double? { lineNumbers(v).min().map { times[$0 - 1] } }
         var n = MeetingNotes()
         n.summary = str(root["summary"])
@@ -734,13 +628,11 @@ final class NotesEngine: ObservableObject {
             if let f = t["fishbone"] as? [String: Any] {
                 let branches = (f["branches"] as? [[String: Any]] ?? []).compactMap { b -> FishboneBranch? in
                     let label = str(b["label"])
-                    // From its lines, as a point's: the model's own "t" came back past the meeting's end.
                     return label.isEmpty ? nil : FishboneBranch(label: label, detail: str(b["detail"]), t: time(b["evidence"]) ?? num(b["t"]),
                                                                 support: support(b["evidence"]))
                 }
                 if branches.count >= 2 { fish = Fishbone(question: str(f["question"]), branches: branches) }
             }
-            // Points come as {"text", "evidence"} (or plain strings from older replies).
             var points: [String] = [], pointTimes: [Double?] = []
             for p in t["points"] as? [Any] ?? [] {
                 let text = (p as? [String: Any]).map { str($0["text"]) } ?? str(p)
@@ -748,8 +640,6 @@ final class NotesEngine: ObservableObject {
                 points.append(text)
                 pointTimes.append((p as? [String: Any]).flatMap { time($0["evidence"]) })
             }
-            // When it was first said, from its lines: the model's own `start` drifts by tens of
-            // minutes in a long meeting (a topic said at 51-85 min came back as starting at 23).
             let said = ([time(t["evidence"])] + pointTimes).compactMap { $0 }.min()
             return NoteTopic(start: said ?? num(t["start"]) ?? startedAt, title: title, summary: str(t["summary"]),
                              points: points, fishbone: fish,
@@ -770,7 +660,6 @@ final class NotesEngine: ObservableObject {
             let heard = (t["heard"] as? [Any] ?? []).map(str).filter { !$0.isEmpty && $0 != name }
             return name.isEmpty ? nil : NoteTerm(name: name, note: str(t["note"]), heard: heard)
         }
-        // The model keeps every term it ever had: bound the glossary, keeping the misheard ones.
         if n.terms.count > 20 { n.terms = Array(NoteTerm.ordered(n.terms).prefix(20)) }
         return n.isEmpty ? nil : n
     }

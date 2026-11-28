@@ -2,22 +2,14 @@ import AVFoundation
 import CoreAudio
 import Foundation
 
-/// Input side of `AudioDevices`: the devices that can record, and the system default input.
 extension AudioDevices {
-    /// The microphones, without what macOS adds while an echo-cancelling unit runs here.
     static func inputs() -> [OutputDevice] {
         devices(scope: kAudioObjectPropertyScopeInput).filter {
             !$0.uid.hasPrefix("VPAUAggregateAudioDevice") && !isEchoReference($0.id)
         }
     }
 
-    /// While this process holds an echo-cancelling unit (同声传译, 记录我的发言), macOS gives the speakers
-    /// an input of their own (what they play, for the canceller to subtract) and lists a private
-    /// aggregate: neither hears the room, and the speakers would sit in the menu as a microphone.
-    /// That input is on the output the canceller plays to and has no terminal type; a real
-    /// microphone's says it is one.
     static func isEchoReference(_ device: AudioObjectID) -> Bool {
-        // A headset is one device for its mic and its earpiece: its mic stays, whatever it reports.
         let t = transport(device)
         guard device == SystemAudioTap.defaultOutputDevice(),
               t != kAudioDeviceTransportTypeBluetooth, t != kAudioDeviceTransportTypeBluetoothLE else { return false }
@@ -51,8 +43,6 @@ extension AudioDevices {
         return inputs().first { $0.id == id }
     }
 
-    /// Points an engine's input at a device. Call while the engine is stopped and before reading the
-    /// input format, which then follows the device. nil leaves it where it is.
     static func pinInput(_ engine: AVAudioEngine, to device: OutputDevice?) {
         guard let device, let unit = engine.inputNode.audioUnit else { return }
         var cur = AudioObjectID(0)
@@ -65,7 +55,6 @@ extension AudioDevices {
         debugLog("mic: recording from \(device.name) status=\(status)")
     }
 
-    /// The device an engine's input is reading now (for the debug log).
     static func inputDevice(of engine: AVAudioEngine) -> String {
         guard let unit = engine.inputNode.audioUnit else { return "-" }
         var cur = AudioObjectID(0)
@@ -86,18 +75,12 @@ extension AudioDevices {
     }
 }
 
-/// Which real microphone to come back to and which one Cicada records from. Pure, so it's tested.
-/// Devices are compared by UID: IDs change when Core Audio restarts (the BlackHole install does).
 enum SystemMicPlan {
     struct Device: Equatable {
         var uid: String
         var isVirtual: Bool
     }
 
-    /// The microphone to put back when we let go of the system default. The one saved when we
-    /// switched, while it's still plugged in; else the current default if it's real (the user
-    /// already chose it); else the first real one. Never a virtual mic: putting BlackHole "back"
-    /// would leave every other app deaf.
     static func original(saved: String, current: String?, inputs: [Device]) -> String? {
         let real = inputs.filter { !$0.isVirtual }
         if real.contains(where: { $0.uid == saved }) { return saved }
@@ -105,28 +88,18 @@ enum SystemMicPlan {
         return real.first?.uid
     }
 
-    /// What Cicada itself records from: the one picked in settings, else the original. Cicada must
-    /// never follow the system default onto the virtual mic, or it would hear its own voice.
     static func recording(chosen: String, saved: String, current: String?, inputs: [Device]) -> String? {
         if inputs.contains(where: { $0.uid == chosen && !$0.isVirtual }) { return chosen }
         return original(saved: saved, current: current, inputs: inputs)
     }
 }
 
-/// Points the system default input at the virtual mic while 同声传译 is on, so a meeting page in
-/// Chrome (and any app left on "default") hears the translation without being set up, and puts it
-/// back when speaking stops or Cicada quits. The device we switched from is saved in settings so
-/// a crash can be undone on the next launch.
 @MainActor
 final class SystemMic {
     enum State: Equatable {
-        /// Not switched, nothing to undo.
         case off
-        /// The system mic is the virtual mic; `original` comes back when speaking stops.
         case switched(original: String)
-        /// Speaking is off but the system mic is still the virtual mic (Cicada quit uncleanly).
         case notRestored(original: String)
-        /// Speaking is on but something else (AirPods, the user) moved the system mic away.
         case moved(to: String)
     }
 
@@ -144,22 +117,17 @@ final class SystemMic {
         return AudioDevices.inputs().first { $0.uid == uid }
     }
 
-    /// The device Cicada records my voice from; nil leaves the engine on the system default.
     var recordingDevice: OutputDevice? {
         device(SystemMicPlan.recording(chosen: settings.speakMic, saved: settings.savedSystemInput,
                                        current: AudioDevices.defaultInput?.uid, inputs: plan))
     }
 
-    /// Real microphones for the settings menu.
     var realInputs: [OutputDevice] { AudioDevices.inputs().filter { !$0.isVirtualMic } }
 
-    /// Makes the virtual mic the system default, remembering the real one it replaces.
-    /// `wanted` is false when switching makes no sense (feature off, voice sent elsewhere).
     func engage(wanted: Bool) {
         guard wanted else { release(); return }
         guard let virtual = AudioDevices.inputs().first(where: \.isVirtualMic) else { refresh(wanted: wanted); return }
         let current = AudioDevices.defaultInput
-        // Keep a save left over from a crash: by now the default is the virtual mic.
         if settings.savedSystemInput.isEmpty || device(settings.savedSystemInput) == nil,
            let original = SystemMicPlan.original(saved: settings.savedSystemInput, current: current?.uid, inputs: plan) {
             settings.savedSystemInput = original
@@ -171,7 +139,6 @@ final class SystemMic {
         refresh(wanted: wanted)
     }
 
-    /// Puts the saved real microphone back, if the system default is still the virtual mic.
     func release() {
         let current = AudioDevices.defaultInput
         if current?.isVirtualMic ?? false,
@@ -183,7 +150,6 @@ final class SystemMic {
         state = .off
     }
 
-    /// Re-reads the system default (polled): spots a crash left over or a device that took over.
     @discardableResult
     func refresh(wanted: Bool) -> State {
         let saved = settings.savedSystemInput
@@ -197,7 +163,6 @@ final class SystemMic {
         } else if wanted {
             next = .moved(to: current?.name ?? "")
         } else {
-            // Someone already put a real mic back: nothing left to undo.
             settings.savedSystemInput = ""
             next = .off
         }

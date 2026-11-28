@@ -2,13 +2,9 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// The live notes window: floats over the meeting app, can be dragged and resized anywhere,
-/// stays out of screen sharing (unless 录屏时可见 is on), and remembers its frame. Three layouts by width: a small card
-/// (< 360), a sidebar with 纪要 / 文字记录 tabs, and notes beside the transcript (≥ 760).
 @MainActor
 final class NotesWindowController: NSObject, NSWindowDelegate {
     enum Layout: CaseIterable { case card, sidebar, wide }
-    /// Menu commands that change the view's own state.
     enum Command { case catchUp, search, layout(Layout) }
 
     private var panel: NSPanel?
@@ -21,7 +17,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
     }
 
     var isVisible: Bool { panel?.isVisible ?? false }
-    /// Not read back from the panel: its hosting view lowers `minSize` to the content's.
     static let minWidth: CGFloat = 300
     private static let autosave = "LiveSubsNotes"
 
@@ -30,7 +25,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         return w < 360 ? .card : w >= 760 ? .wide : .sidebar
     }
 
-    /// "浮在最上层" (`notesOnTop`, on by default).
     var onTop: Bool {
         get { UserDefaults.standard.object(forKey: "notesOnTop") as? Bool ?? true }
         set {
@@ -45,7 +39,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         commands.send(command)
     }
 
-    /// `asked`: opened by name, so shown even where it can't keep clear of the onboarding window.
     func show(asked: Bool = false) {
         guard let model else { return }
         if panel == nil {
@@ -59,12 +52,9 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
             p.delegate = self
             p.onMiniaturize = { [weak self] in self?.hide() }
             p.standardWindowButton(.miniaturizeButton)?.isEnabled = true
-            // Clicking it leaves the meeting app active and our other windows where they are;
-            // it only takes the keyboard for its text fields.
             p.hidesOnDeactivate = false
             p.becomesKeyOnlyIfNeeded = true
             p.isReleasedWhenClosed = false
-            // Others never see it when you share your screen, unless the user lets recordings in.
             p.sharingType = model.settings.notesCapturable ? .readOnly : .none
             p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             p.minSize = NSSize(width: Self.minWidth, height: 180)
@@ -91,15 +81,10 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
 
     // MARK: Keeping clear of the onboarding window
 
-    /// The onboarding window while it's open. The panel floats above it and can't be clicked
-    /// through, so it must never sit on it: on a 1024×768 screen the sidebar covered 继续.
     private weak var avoiding: NSWindow?
-    /// Moved out of the way: the user's own frame, put back when the window closes, and where we put the panel instead.
     private var moved: (own: NSRect, placed: NSRect)?
-    /// Asked to show while there was no room beside the window: shown once it closes.
     private var waiting = false
 
-    /// `window`: the onboarding window as it opens; nil as it closes.
     func avoid(_ window: NSWindow?) {
         avoiding = window
         if window != nil {
@@ -110,7 +95,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
             return
         }
         if let moved, let p = panel {
-            // Unless the user has moved it since; either way it's remembered again from here.
             if p.frame == moved.placed { p.setFrame(moved.own, display: true) }
             p.setFrameAutosaveName(Self.autosave)
         }
@@ -121,7 +105,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Moves the panel beside the window it avoids, or returns false (and waits) when neither side has room.
     private func keepClear() -> Bool {
         guard let p = panel, let w = avoiding, w.isVisible,
               let screen = w.screen ?? NSScreen.main, p.frame.intersects(w.frame) else { return true }
@@ -131,15 +114,12 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
             return false
         }
         let own = moved?.own ?? p.frame
-        // Not remembered: quit during onboarding and the next meeting still opens where the user left it.
         if moved == nil { p.setFrameAutosaveName("") }
         p.setFrame(r, display: true)
         moved = (own, p.frame)
         return true
     }
 
-    /// The panel beside `window` within `visible`: right of it, else left, a gap away and as tall
-    /// as the screen allows, no wider than `width`; nil when neither side has `minWidth`.
     nonisolated static func beside(_ window: NSRect, in visible: NSRect, width: CGFloat, minWidth: CGFloat) -> NSRect? {
         let gap: CGFloat = 12
         let right = visible.maxX - window.maxX - 2 * gap, left = window.minX - visible.minX - 2 * gap
@@ -154,8 +134,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         return nil
     }
 
-    /// Closed with its close button (hide() doesn't come here): the meeting goes on in the
-    /// records window, so the notes stay one click away.
     func windowWillClose(_ notification: Notification) {
         model?.notesVisibilityChanged(false)
         model?.notesWindowClosed()
@@ -163,7 +141,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
 
     var frame: NSRect? { panel?.frame }
 
-    /// Card ⇄ sidebar ⇄ wide, keeping the window's top-right corner where it is.
     func resize(width: CGFloat, height: CGFloat? = nil) {
         guard let p = panel, let screen = p.screen ?? NSScreen.main else { return }
         var f = p.frame
@@ -175,7 +152,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         p.setFrame(f, display: true, animate: true)
     }
 
-    /// After a name is typed: the keyboard goes back to the meeting app, which never stopped being active.
     func returnKeyboard() {
         guard let panel, panel.isKeyWindow else { return }
         panel.makeFirstResponder(nil)
@@ -184,27 +160,19 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
 
     func place(_ r: NSRect) { panel?.setFrame(r, display: true) }
 
-    /// Debug control only: what the close button does.
     func performClose() { panel?.performClose(nil) }
-    /// Debug control only: what the minimize button does.
     func performMiniaturize() { panel?.performMiniaturize(nil) }
 
-    /// 录屏时可见, and the debug command that flips it for one screenshot without saving it.
     func setCapturable(_ on: Bool) { panel?.sharingType = on ? .readOnly : .none }
 
-    /// The sidebar: docked to the right edge, nearly full height.
     private func defaultFrame() -> NSRect {
         let v = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
         return NSRect(x: v.maxX - 460 - 16, y: v.minY + 16, width: 460, height: v.height - 32)
     }
 }
 
-/// The yellow button tucks the window away to the menu bar, like 收起: with only the menu bar
-/// item there is no Dock to minimize into, and the panel's 打开 brings it back either way.
 private final class NotesPanel: NSPanel {
     var onMiniaturize: (() -> Void)?
-    // AppKit greys the button out for a floating, all-Spaces panel, and re-greys it on every
-    // titlebar update; it hides instead of minimizing, so keep it lit.
     override func update() {
         super.update()
         if let b = standardWindowButton(.miniaturizeButton), !b.isEnabled { b.isEnabled = true }
@@ -227,8 +195,6 @@ struct NotesWindowView: View {
     @State private var query = ""
     @State private var jumpTo: Double?
     @State private var keyDraft = ""
-    /// Session time when the window was collapsed to the card, and the topics and points the
-    /// notes had then: the card offers what was added since.
     @State private var collapsedAt: Double = 0
     @State private var seenItems: Set<String> = []
     @State private var catchUp = false
@@ -237,13 +203,9 @@ struct NotesWindowView: View {
     @State private var badgeHover = false
     @State private var badgeHint = false
     @State private var width: CGFloat = 460
-    /// "结束" was clicked during a meeting with lines: the confirmation strip is showing.
     @State private var confirmEnd = false
     @State private var languageOpen = false
-    /// The voice whose editor is open under the people row.
     @State private var editingVoice: Int?
-    /// When the reader last scrolled the notes: a live update only brings the current topic into
-    /// view when they haven't just been reading something else.
     @State private var notesScrolledAt = Date.distantPast
     @FocusState private var searchFocused: Bool
 
@@ -263,11 +225,8 @@ struct NotesWindowView: View {
                         meetingBar.padding(.horizontal, 24).padding(.bottom, 4)
                         banner.padding(.horizontal, 24).padding(.bottom, 4)
                         if live { liveAsks.padding(.horizontal, 24).padding(.bottom, 4) }
-                        // 这样改对吗？ above both tabs: the window opens on 纪要, where a card in the
-                        // transcript would never be seen.
                         fixAsk.padding(.horizontal, 24).padding(.bottom, 4)
                         if live { LanguageNotice(model: model).padding(.horizontal, 24).padding(.bottom, 8) }
-                        // Where the scrolling starts: a hairline, and each column fades in under it (`topFade`).
                         Rectangle().fill(MainWindowView.hairline).frame(height: 1)
                         if geo.size.width >= 760 {
                             HStack(alignment: .top, spacing: 0) {
@@ -280,10 +239,8 @@ struct NotesWindowView: View {
                         } else {
                             transcript.padding(.horizontal, 24).padding(.top, 12)
                         }
-                        // The transcript shows what is being said in place; the caption is for the notes tab.
                         if geo.size.width < 760 && tab == "notes" { caption }
                     }
-                    // The title bar is transparent: start the header beside its buttons, not below a blank band.
                     .ignoresSafeArea(.container, edges: .top)
                     .overlay(alignment: .bottom) { SpeakerUndoToast(model: model, session: session?.id) }
                     .overlay(alignment: .bottom) { FixToast(fixes: model.fixes).padding(.bottom, 14) }
@@ -299,12 +256,10 @@ struct NotesWindowView: View {
         .onReceive(commands) { run($0) }
     }
 
-    /// Commands from the app menu (纪要 / 显示 / 编辑).
     private func run(_ command: NotesWindowController.Command) {
         let card = width < 360
         switch command {
         case .catchUp:
-            // From the full window: what was added in the last three minutes.
             if !card {
                 collapsedAt = max(0, elapsed - 180)
                 seenItems = items(before: collapsedAt)
@@ -332,7 +287,6 @@ struct NotesWindowView: View {
         setWidth(320, 230)
     }
 
-    /// Topic titles and points of the current notes said before a time (all of them for `.infinity`).
     private func items(before t: Double) -> Set<String> {
         var out: Set<String> = []
         for topic in engine.notes.topics {
@@ -346,8 +300,6 @@ struct NotesWindowView: View {
 
     private func header(wide: Bool) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            // The status line gets its own full-width row: beside the buttons it had a third of a
-            // narrow window, and "Listening · 00:09" or "Live notes" broke onto two lines in English.
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .center, spacing: 4) {
                     Text(live || session == nil ? L("实时纪要") : L("会议纪要")).font(.system(size: 24, weight: .bold))
@@ -368,9 +320,6 @@ struct NotesWindowView: View {
                     }
                     iconButton("minus", help: L("收成小卡")) { collapse() }
                 }
-                // State lives here, not in buttons beside 结束: the meeting's languages as a text link
-                // and a small spinner while the notes are being written. The sharing mark sits apart on
-                // the right, so turning it on or off doesn't move the text.
                 HStack(alignment: .top, spacing: 6) {
                     FlowLayout(spacing: 6) {
                         if live { LiveDot().frame(height: 22) }
@@ -407,11 +356,6 @@ struct NotesWindowView: View {
         .padding(.horizontal, 24).padding(.top, 34).padding(.bottom, 12)
     }
 
-    /// 共享屏幕时让对方看到, always here so it can be turned back on: an orange lamp while shared
-    /// screens and recordings see the window, a hollow grey one while only you do (the window
-    /// isn't captured then, so nobody else sees it). No words beside it except a hint while the
-    /// pointer rests on it: once on, words would show in the shared screen; the lamp's first wide
-    /// breath confirms the click instead.
     private var capturableBadge: some View {
         let on = settings.notesCapturable
         return Button { model.setNotesCapturable(!on) } label: {
@@ -421,8 +365,6 @@ struct NotesWindowView: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        // Drawn here rather than .help: the window never activates the app, and macOS doesn't
-        // show tooltips for an app in the background.
         .onHover { inside in
             badgeHover = inside
             if !inside { badgeHint = false; return }
@@ -509,9 +451,6 @@ struct NotesWindowView: View {
 
     // MARK: This meeting's languages
 
-    /// "EN → 中": what the meeting speaks → what the notes are written in. Opens this meeting's
-    /// choices below the header (not a popover: the panel never activates the app, and a popover in
-    /// an inactive app closes as soon as it opens); the defaults live in 设置 › 语言.
     private var languageLink: some View {
         let id = session?.id ?? ""
         let from = model.meetingLanguage(store.liveID).map(targetName) ?? L("自动")
@@ -569,13 +508,10 @@ struct NotesWindowView: View {
 
     // MARK: Ending a meeting
 
-    /// Nothing heard yet: there is nothing to lose, stop at once. Otherwise ask first, below the
-    /// header (away from the button, so a double click can't confirm it).
     private func askToEnd() {
         if heard == 0 { model.stop() } else { confirmEnd = true }
     }
 
-    /// While live: the confirmation, when asked. After the meeting: what happens to it and what next.
     @ViewBuilder
     private var meetingBar: some View {
         if live {
@@ -598,7 +534,6 @@ struct NotesWindowView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Palette.accentPale))
-                // No timeout: a strip that vanished under the pointer would let the click land on the notes.
             }
         } else {
             VStack(alignment: .leading, spacing: 10) {
@@ -612,8 +547,6 @@ struct NotesWindowView: View {
                 }
                 HStack(spacing: 8) {
                     if let id = session?.id, let other = otherNotesLanguage(id) {
-                        // A Latin name gets spaces in Chinese ("改用 English 重新整理"), a Chinese one
-                        // doesn't ("改用简体中文重新整理"). Both keys translate alike.
                         let name = targetName(other.code)
                         SoftButton(name.first?.isASCII == true ? L("改用 \(name) 重新整理") : L("改用\(name)重新整理")) {
                             model.regenerateNotes(id, choice: other.choice)
@@ -636,7 +569,6 @@ struct NotesWindowView: View {
         }
     }
 
-    /// The notes language this meeting's notes are not in, when the meeting's language differs from mine.
     private func otherNotesLanguage(_ id: String) -> (choice: String, code: String)? {
         guard let source = model.meetingLanguage(id), source != settings.myLanguage else { return nil }
         return model.notesChoice(id) == "source" ? ("mine", settings.myLanguage) : ("source", source)
@@ -653,9 +585,6 @@ struct NotesWindowView: View {
 
     @ViewBuilder
     private var banner: some View {
-        // 语音和文字只发给你的服务, and nothing translates finished sentences: it picks up by itself, and
-        // no 改用 Ling, which would send the meeting elsewhere. A dead key or a missing local network
-        // permission is the user's to fix: those lines come first.
         if live, model.translationHealth.googleOff, model.translationHealth.sentencesUntranslated,
            engine.state != .invalidKey, !model.ling.aiCheck.localNetworkDenied {
             let notesWait = [.unreachable, .updating].contains(engine.state) && model.ling.aiCheck.failure?.reason == .unreachable
@@ -675,20 +604,14 @@ struct NotesWindowView: View {
             StatusLine(tone: .needsYou, text: lastCovered > 0 ? L("key 失效了 · 纪要停在 \(NotesEngine.clock(lastCovered))")
                                                               : L("key 失效了 · 纪要等新的 key"),
                        action: (L("换 key"), { model.openSettings(.ai) }))
-        // The rest is about a round of the meeting going on now: a record opened later has none.
         case .rateLimited where live:
             StatusLine(tone: .waiting, text: L("\(serviceLabel) 很忙 · 纪要稍后补上，字幕照常"))
-        // Both: the notes' own request failed, and the service doesn't answer anything. Notes that
-        // only timed out while translations still came back aren't "can't reach"; the next round retries.
-        // The retry that follows (`updating`) hangs as long as a timeout: the line stays meanwhile.
         case .unreachable where live && model.ling.aiCheck.failure?.reason == .unreachable,
              .updating where live && model.ling.aiCheck.failure?.reason == .unreachable:
             if model.ling.aiCheck.localNetworkDenied {
                 StatusLine(tone: .needsYou, text: L("连不上 \(serviceLabel) · 缺本地网络权限"),
                            action: (L("去开启"), { model.openLocalNetworkSettings() }))
             } else {
-                // The network or the proxy, not the notes: it picks up by itself. Where the service
-                // also hears the meeting (Intel) the subtitles wait too.
                 StatusLine(tone: .waiting, text: Recognition.cloudOnly
                            ? L("字幕和纪要等 \(serviceLabel) 恢复 · 连上后自动继续")
                            : lastCovered > 0 ? L("纪要等 \(serviceLabel) 恢复 · 停在 \(NotesEngine.clock(lastCovered))，字幕照常")
@@ -702,8 +625,6 @@ struct NotesWindowView: View {
         }
     }
 
-    /// What the menu bar panel asks while you meet, here too: the panel is shut during a meeting,
-    /// this window is what you look at.
     @ViewBuilder
     private var liveAsks: some View {
         if model.hybridMicDenied {
@@ -733,8 +654,6 @@ struct NotesWindowView: View {
 
     private var serviceLabel: String { model.ling.serviceLabel }
 
-    /// Lines the notes don't cover yet, once they are two minutes behind the meeting (between
-    /// ordinary 45 s updates there is always a little that isn't in yet).
     private var behind: Int {
         guard live, let s = session, lastCovered > 0, elapsed - lastCovered >= 120 else { return 0 }
         return max(0, s.lines.count - engine.notes.covered)
@@ -746,8 +665,6 @@ struct NotesWindowView: View {
     }
 
 
-    /// Without a key, finished sentences rely on Google too: when it can't be reached and nothing
-    /// stands in, the key panel says so, since a key is the fix (Ling needs no proxy in China).
     private var untranslated: Bool {
         live && model.translationHealth.googleDown && model.translationHealth.sentencesUntranslated
     }
@@ -801,7 +718,6 @@ struct NotesWindowView: View {
 
     // MARK: Content
 
-    /// Notes, or what is happening before there are any: listening, writing the first version.
     @ViewBuilder
     private var notesPane: some View {
         if !engine.notes.isEmpty {
@@ -809,13 +725,11 @@ struct NotesWindowView: View {
         } else if engine.state == .noKey || engine.state == .invalidKey {
             Spacer()
         } else if (live && heard > 0 && engine.state == .updating)
-                    || (session != nil && engine.generatingID == session?.id) {  // nil == nil is not "generating"
+                    || (session != nil && engine.generatingID == session?.id) {
             ScrollView {
                 NotesGeneratingView(heard: heard).padding(.horizontal, 24).padding(.vertical, 12)
             }
         } else if live {
-            // Until a request is actually out: the first one waits for a few lines or 20 s, and
-            // audio already playing at the start brings a line within seconds.
             ScrollView {
                 NotesListeningView(heard: heard).padding(.horizontal, 24).padding(.vertical, 12)
             }
@@ -849,8 +763,6 @@ struct NotesWindowView: View {
             .onScrolled {
                 if UserScroll.recent { notesScrolledAt = Date() }
             }
-            // Each live update lands on the topic being discussed now, which is the last one and
-            // soon below the fold; 20 s after the reader's own scroll, follow it again.
             .onChange(of: engine.notes.updatedAt) { _, _ in
                 guard live, Date().timeIntervalSince(notesScrolledAt) > 20 else { return }
                 showCurrentTopic(proxy, animated: true)
@@ -868,7 +780,6 @@ struct NotesWindowView: View {
         if animated { withAnimation(.easeInOut(duration: 0.4)) { proxy.scrollTo(id, anchor: .top) } } else { proxy.scrollTo(id, anchor: .top) }
     }
 
-    /// Not while the window is shown to the other side: names wait in 人名和术语 then.
     @ViewBuilder private var fixAsk: some View {
         if let s = session, !model.settings.notesCapturable, let a = model.fixes.asking(in: s.id) {
             FixConfirmCard(line: a.line, fix: a.fix, count: a.of, onAnswer: { yes in
@@ -986,7 +897,6 @@ struct NotesWindowView: View {
                 }
                 Spacer(minLength: 0)
                 if addedCount.topics + addedCount.points > 0 {
-                    // Only says something when there is something new.
                     Button { catchUp = true; setWidth(320, 420) } label: {
                         HStack {
                             Text(addedLabel).font(.system(size: 13, weight: .semibold)).lineLimit(1)
@@ -1010,7 +920,6 @@ struct NotesWindowView: View {
 
     private var currentTopic: NoteTopic? { engine.notes.topics.last }
 
-    /// Topics with what was added to them since the card was collapsed.
     private var added: [(topic: NoteTopic, points: [String])] {
         engine.notes.topics.compactMap { t in
             let points = t.points.filter { !seenItems.contains($0) }
@@ -1037,8 +946,6 @@ struct NotesWindowView: View {
     }
 }
 
-/// The panel never activates the app, so it is almost never the key window when clicked; a plain
-/// hosting view would spend that click on focus and every button would need two.
 final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

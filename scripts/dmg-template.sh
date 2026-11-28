@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
-# Regenerates Resources/dmg/DS_Store, the installer window layout, by letting Finder lay out a
-# scratch volume. Run it on a Mac after changing the window size, icon positions or background;
-# keep them in step with Sources/Cicada/DMGBackground.swift. The first run asks to let the
-# terminal control Finder (System Settings › Privacy & Security › Automation).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 [[ -d build/Cicada.app && -f build/dmg/background.tiff ]] || { echo "run scripts/package.sh first" >&2; exit 1; }
-# A neutral scratch path: Finder records the disk image path in the layout.
 WORK=/tmp/cicada-dmg-template
 [[ ! -e "/Volumes/Cicada" ]] || { echo "eject the volume named Cicada first" >&2; exit 1; }
 rm -rf "$WORK" && mkdir -p "$WORK/stage/.background"
@@ -17,7 +12,6 @@ cp build/dmg/background.tiff "$WORK/stage/.background/background.tiff"
 hdiutil create -quiet -srcfolder "$WORK/stage" -volname "Cicada" -fs HFS+ -format UDRW -size 60m "$WORK/rw.dmg"
 hdiutil attach -quiet -readwrite -noverify -noautoopen "$WORK/rw.dmg"
 
-# Window 640 × 520 of content (548 with the title bar); icons at the background's marks.
 osascript <<'APPLESCRIPT'
 tell application "Finder"
   tell disk "Cicada"

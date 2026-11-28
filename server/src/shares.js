@@ -1,5 +1,3 @@
-// Creating, revoking and reading shares. D1 holds who owns what and its state; R2 holds the
-// document; the Gate objects count views and wrong passwords.
 import { b64url, unb64, sha256, same, random, now, json, fail, ipKey } from "./util.js";
 import { gate, limit } from "./gate.js";
 import { signed } from "./auth.js";
@@ -15,7 +13,6 @@ async function tokenHash(token) {
   return sha256(unb64(token) || new Uint8Array());
 }
 
-/** POST /api/v1/shares, signed. → 201 {id, url, token, expiresAt} | 422 blocked {hits} */
 export async function create(request, env) {
   if (env.SHARING !== "on") return fail(503, "sharing_off");
   const who = await signed(request, env);
@@ -47,8 +44,6 @@ export async function create(request, env) {
     .bind(who.device, now()).first();
   if (active.n >= ACTIVE_PER_DEVICE) return fail(429, "too_many_shares");
 
-  // A retried request (the network dropped the answer) gets the same link back, with a new token
-  // because only the old token's hash was kept.
   const idem = (request.headers.get("Idempotency-Key") || "").slice(0, 80) || null;
   if (idem) {
     const old = await env.DB.prepare("SELECT id, expires_at FROM shares WHERE device_id = ? AND idem_key = ? AND revoked_at IS NULL")
@@ -63,8 +58,6 @@ export async function create(request, env) {
   const characters = JSON.stringify(doc).length;
   const wait = await limit(env, "review:" + who.device, REVIEW_CHARS_PER_DAY, 86400, characters);
   if (wait) return fail(429, "rate_limited", { retryAfter: wait });
-  // The whole site's review budget a day (Jev is paid per token): past it, sharing waits rather
-  // than skipping the review. Many devices from many addresses can't run up the bill past this.
   const budget = Number(env.REVIEW_CHARS_PER_DAY_ALL || 50_000_000);
   if (await limit(env, "review-all", budget, 86400, characters)) {
     console.error("review: daily budget used up", budget);
@@ -103,7 +96,6 @@ async function revokeRow(env, id, by) {
   await gate(env, "share:" + id).clear();
 }
 
-/** DELETE /api/v1/shares/:id, signed, with the manage token as Bearer. Unknown and not-yours look alike. */
 export async function revoke(request, env, id) {
   const who = await signed(request, env);
   if (who instanceof Response) return who;
@@ -115,7 +107,6 @@ export async function revoke(request, env, id) {
   return new Response(null, { status: 204 });
 }
 
-/** DELETE /api/v1/shares, signed: every share this device made (取消全部, or a lost token). */
 export async function revokeAll(request, env) {
   const who = await signed(request, env);
   if (who instanceof Response) return who;
@@ -124,7 +115,6 @@ export async function revokeAll(request, env) {
   return json({ revoked: results.length });
 }
 
-/** GET /api/v1/shares?ids=a,b, signed → this device's shares among them, with views. */
 export async function stats(request, env) {
   const who = await signed(request, env);
   if (who instanceof Response) return who;
@@ -142,7 +132,6 @@ export async function stats(request, env) {
   return json({ shares });
 }
 
-/** The row a visitor may see, or why not. */
 export async function visible(env, id) {
   if (!/^[A-Za-z0-9_-]{22}$/.test(id)) return { status: 404, code: "not_found" };
   const row = await env.DB.prepare("SELECT * FROM shares WHERE id = ?").bind(id).first();
@@ -163,7 +152,6 @@ async function document(env, request, row) {
   });
 }
 
-/** GET /api/v1/s/:id → the document, or {locked, salt, iter} for a password share. */
 export async function read(request, env, id) {
   const wait = await limit(env, "read:" + (await ipKey(request, env)), 120, 60);
   if (wait) return fail(429, "rate_limited", { retryAfter: wait });
@@ -177,7 +165,6 @@ export async function read(request, env, id) {
   return document(env, request, v.row);
 }
 
-/** POST /api/v1/s/:id/open {verifier}: the browser's PBKDF2 of the password; the server keeps only its hash. */
 export async function open(request, env, id) {
   const ip = await ipKey(request, env);
   const wait = await limit(env, "open:" + ip, 10, 900);
@@ -198,7 +185,6 @@ export async function open(request, env, id) {
   return document(env, request, v.row);
 }
 
-/** Daily: delete what expired, and finish any revoke that stopped half way. */
 export async function purge(env) {
   const { results } = await env.DB.prepare(
     "SELECT id, revoked_at FROM shares WHERE purged_at IS NULL AND (expires_at <= ? OR revoked_at IS NOT NULL) LIMIT 500"

@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""UI strings: Chinese source text is the key; Resources/<lang>.lproj/Localizable.strings (en, ja, ko)
-hold the translations, and each value must use the same format specifiers as its key.
-
-    python3 scripts/strings.py          # check: every key in the code has an entry in every language
-    python3 scripts/strings.py --write  # also add missing keys (value = TODO) and rewrite zh-Hans
-
-Keys come from the compiler (-emit-localized-strings), so interpolations are exactly the format
-keys the app looks up ("已听到 %lld 句"). zh-Hans/Localizable.strings maps every key to itself:
-the development region is English, so without it Chinese systems would fall back to English.
-English plurals live in en.lproj/Localizable.stringsdict.
-The ports read these tables too: a key the Mac no longer uses stays while a port still uses it.
-"""
 import glob, json, os, re, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,23 +19,20 @@ def code_keys():
     subprocess.run(["swift", "build", "--product", "Cicada", "-Xswiftc", "-emit-localized-strings",
                     "-Xswiftc", "-emit-localized-strings-path", "-Xswiftc", out],
                    cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
-    # The iOS app's text shares the same tables (ios/AGENTS.md); it needs Xcode's iOS SDK.
     if subprocess.run(["xcrun", "--sdk", "iphonesimulator", "--show-sdk-path"], capture_output=True).returncode == 0:
         subprocess.run([os.path.join(ROOT, "ios/scripts/build.sh")], cwd=ROOT, check=True, stdout=subprocess.DEVNULL,
                        env={**os.environ, "STRINGS_OUT": os.path.join(out, "ios")})
     else:
         print("ios: no iOS SDK (needs Xcode), its strings are not checked")
     keys = {}
-    # The shared files are in both builds: iOS writes into its own folder, not over the Mac's.
     for f in sorted(glob.glob(os.path.join(out, "*.stringsdata")) + glob.glob(os.path.join(out, "ios", "*.stringsdata"))):
         for entries in json.load(open(f))["tables"].values():
             for e in entries:
-                if CJK.search(e["key"]):  # "%@ · %@" and the like need no translation
+                if CJK.search(e["key"]):
                     keys.setdefault(e["key"], os.path.basename(f).split(".")[0])
     return keys
 
 
-# Where each port's L("…") / LF("…") calls are, as its own scripts/strings.py reads them.
 PORTS = {"Windows": ["windows/src/**/*.cs"], "Android": ["android/app/src/**/*.kt", "android/core/src/**/*.kt"],
          "Linux": ["linux/cicada/**/*.py"]}
 PORT_CALL = re.compile(r'\bLF?\("((?:[^"\\]|\\.)*)"')
@@ -93,7 +78,6 @@ def main():
         table = load(path)
         missing = [k for k in keys if k not in table]
         unused = [k for k in table if k not in keys and k not in ports]
-        # Kept, translated, for the ports; anything they still lack their own scripts report.
         kept = [(k, v, "Only the ports: " + ", ".join(sorted(ports[k]))) for k, v in table.items() if k not in keys and k in ports]
         todo = [k for k, v in table.items() if v == "TODO"]
         mismatch = [k for k, v in table.items() if v != "TODO" and specs(k) != specs(v)]

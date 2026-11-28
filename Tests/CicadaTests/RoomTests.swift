@@ -36,7 +36,6 @@ import Testing
     }
 
     @Test func skipsTheVirtualMicAndHeadsets() {
-        // 同声传译 makes BlackHole the default; AirPods hear the wearer, not the table.
         #expect(RoomMicPlan.pick(defaultUID: "blackhole", inputs: [blackhole, airpods, builtIn]) == "builtin")
         #expect(RoomMicPlan.pick(defaultUID: "airpods", inputs: [airpods, usb, builtIn]) == "builtin")
         #expect(RoomMicPlan.pick(defaultUID: "airpods", inputs: [airpods, usb]) == "usb")
@@ -57,7 +56,6 @@ import Testing
     }
 
     @Test func aQuietRoomHearsAQuietVoice() {
-        // Room noise ~0.002, a voice across the table ~0.006: below -40 dBFS, still speech.
         var g = VoiceGate(adaptive: true)
         for i in 0..<120 { _ = g.voiced(i % 3 == 0 ? 0.002 : 0.006) }
         #expect(g.threshold < 0.006)
@@ -67,7 +65,6 @@ import Testing
     }
 
     @Test func talkingOnAndOnKeepsTheRoomsFloor() {
-        // Half a minute of steady talk: every second has one short gap between words at the room's level.
         var g = VoiceGate(adaptive: true)
         for i in 0..<(30 * VoiceGate.blocksPerSecond) { _ = g.voiced(i % VoiceGate.blocksPerSecond == 0 ? 0.002 : 0.012) }
         #expect(g.threshold < 0.005)

@@ -5,16 +5,7 @@ import CryptoKit
 import Foundation
 import Speech
 
-/// Sets up the BlackHole 2ch virtual microphone without the Terminal, in three steps the UI
-/// shows as a checklist: install → let the system load it → sound test.
-///
-/// Install: download the official, Apple-notarized package, verify its SHA-256, run it through
 /// the standard administrator prompt. (Downloaded, not bundled: we don't redistribute the GPL
-/// driver.) The package only copies the driver and asks for a reboot; Core Audio doesn't load a
-/// new HAL plug-in until `coreaudiod` restarts, so the same prompt restarts it.
-///
-/// Test: speak a phrase into the virtual mic and listen back from its input side, so we know the
-/// whole path the meeting app will use works — not just that a device with the name exists.
 @MainActor
 final class VirtualMicInstaller: ObservableObject {
     enum State: Equatable {
@@ -30,13 +21,11 @@ final class VirtualMicInstaller: ObservableObject {
         var heard: Bool
         var text: String
         var levels: [Float]
-        /// Why nothing was heard, shown instead of the generic line.
         var problem: String? = nil
     }
 
     @Published private(set) var state: State = .idle
     @Published private(set) var test: TestResult?
-    /// Bumped after Core Audio restarts so views re-read the device list.
     @Published private(set) var generation = 0
 
     static let packageURL = URL(string: "https://existential.audio/downloads/BlackHole2ch-0.7.1.pkg")!
@@ -44,36 +33,29 @@ final class VirtualMicInstaller: ObservableObject {
     static let driverPath = "/Library/Audio/Plug-Ins/HAL/BlackHole2ch.driver"
     static let testPhrase = "Hi, can you hear me?"
 
-    /// Plays text through a given device; provided by the speak engine.
     var speakThrough: ((_ text: String, _ language: String, _ device: OutputDevice) async -> Void)?
-    /// Called once Core Audio has the device (after an install or reload).
     var onLoaded: (() -> Void)?
-    /// Tests swap in a session with a stub protocol.
     var session: URLSession = .shared
 
     var device: OutputDevice? { AudioDevices.virtualMic }
     var isLoaded: Bool { device != nil }
-    /// Installed on disk; may not be loaded until Core Audio restarts.
     var isOnDisk: Bool { FileManager.default.fileExists(atPath: Self.driverPath) }
     var busy: Bool { [.downloading, .installing, .reloading, .testing].contains(state) }
     var passed: Bool { test?.heard == true }
 
-    // Kept for existing callers.
     var isInstalled: Bool { isLoaded }
 
-    /// The next thing to do, whatever state the Mac is in.
     func next() {
         if !isOnDisk && !isLoaded { install() } else if !isLoaded { reload() } else { runTest() }
     }
 
-    /// `verifyOnly` stops after the download and checksum (used by tests).
     func install(verifyOnly: Bool = false, onInstalled: (() -> Void)? = nil) {
         guard !busy else { return }
         Task {
             guard let pkg = await download() else { return }
             if verifyOnly { state = .idle; return }
             state = .installing
-            try? await Task.sleep(nanoseconds: 200_000_000) // let "安装中" show before the dialog
+            try? await Task.sleep(nanoseconds: 200_000_000)
             let cmd = "/usr/sbin/installer -pkg " + shellQuote(pkg.path) + " -target / && " + Self.restartAudio
             guard runPrivileged(cmd, prompt: L("\(appDisplayName)要安装虚拟麦克风，让会议里的人听到你的翻译。")) else { return }
             state = .reloading
@@ -81,7 +63,6 @@ final class VirtualMicInstaller: ObservableObject {
         }
     }
 
-    /// The driver is on disk but Core Audio hasn't loaded it: restart Core Audio only.
     func reload() {
         guard !busy else { return }
         Task {
@@ -96,7 +77,6 @@ final class VirtualMicInstaller: ObservableObject {
         guard !busy, let device else { return }
         Task {
             state = .testing
-            // Reading the virtual mic's input side is microphone access like any other.
             if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
                 _ = await AVCaptureDevice.requestAccess(for: .audio)
             }
@@ -115,7 +95,6 @@ final class VirtualMicInstaller: ObservableObject {
 
     // MARK: Steps
 
-    // `launchctl kickstart` is the supported restart; killall is the fallback (launchd relaunches it).
     private static let restartAudio =
         "/bin/launchctl kickstart -k system/com.apple.audio.coreaudiod || /usr/bin/killall coreaudiod"
 
@@ -147,7 +126,6 @@ final class VirtualMicInstaller: ObservableObject {
         }
     }
 
-    /// Runs a shell command through the standard administrator prompt. Cancel goes back to idle.
     private func runPrivileged(_ command: String, prompt: String) -> Bool {
         let script = "do shell script \(appleQuote(command)) with prompt \(appleQuote(prompt)) with administrator privileges"
         var errorInfo: NSDictionary?
@@ -172,7 +150,6 @@ final class VirtualMicInstaller: ObservableObject {
         state = .idle
         onLoaded?()
         extra?()
-        // Core Audio just restarted; give it a moment before the test.
         try? await Task.sleep(nanoseconds: 800_000_000)
         runTest()
     }
@@ -185,8 +162,6 @@ final class VirtualMicInstaller: ObservableObject {
 
 // MARK: - Loopback test
 
-/// Records the virtual mic's input side while a phrase is played into its output side, then
-/// transcribes the recording. Hearing the phrase back proves the room will hear us.
 enum LoopbackTest {
     @MainActor
     static func run(device: OutputDevice, phrase: String, play: @escaping () async -> Void) async -> VirtualMicInstaller.TestResult {
@@ -202,7 +177,6 @@ enum LoopbackTest {
         let levels = LoopbackRecorder.levels(buffers, bars: 12)
         let loud = (levels.max() ?? 0) > 0.02
         let text = loud ? await transcribe(buffers, locale: "en-US") : ""
-        // Any real signal counts; the transcript is shown so people can judge it themselves.
         return .init(heard: loud, text: text, levels: levels,
                      problem: loud ? nil : buffers.isEmpty ? L("虚拟麦克风未收到声音，请再试一次") : nil)
     }
@@ -212,16 +186,12 @@ enum LoopbackTest {
     }
 }
 
-/// Records one device's input side with a plain Core Audio IO proc. (An AVAudioEngine input
-/// node switched to another device keeps the default mic's format and can stop itself on the
-/// format change, which made the test flaky.)
 final class LoopbackRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var samples: [Float] = []
     private var device = AudioObjectID(0)
     private var proc: AudioDeviceIOProcID?
     private(set) var sampleRate: Double = 48_000
-    /// When the first recorded sample was captured (the first callback, minus its own length).
     private var firstAt: Date?
     var startedAt: Date? { lock.lock(); defer { lock.unlock() }; return firstAt }
     private let queue = DispatchQueue(label: "com.wquguru.cicada.loopback")
@@ -243,7 +213,7 @@ final class LoopbackRecorder: @unchecked Sendable {
             let p = data.assumingMemoryBound(to: Float.self)
             self.lock.lock()
             if self.firstAt == nil { self.firstAt = Date().addingTimeInterval(-Double(frames) / self.sampleRate) }
-            for i in 0..<frames { self.samples.append(p[i * channels]) } // first channel is enough
+            for i in 0..<frames { self.samples.append(p[i * channels]) }
             self.lock.unlock()
         }
         guard status == noErr, let proc else {
@@ -270,7 +240,6 @@ final class LoopbackRecorder: @unchecked Sendable {
         return [buf]
     }
 
-    /// Peak level per slice of the recording, 0…1, for the little bar graph.
     static func levels(_ buffers: [AVAudioPCMBuffer], bars: Int) -> [Float] {
         var samples: [Float] = []
         for b in buffers {

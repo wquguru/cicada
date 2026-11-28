@@ -1,4 +1,3 @@
-"""Prints each model's first-run reply per clip from probe.py's results.json, to read side by side."""
 import json
 import sys
 

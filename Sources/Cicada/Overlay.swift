@@ -1,17 +1,5 @@
 import AppKit
 
-/// The floating subtitle bar.
-/// - Auto mode: appears when someone speaks; after a few quiet seconds it
-///   tucks away into a small dot (hover the dot to peek at the last line).
-/// - Always click-through. When the pointer passes over it, it fades to 15%
-///   so whatever is underneath stays visible and clickable.
-/// - Rest the pointer on it for 0.6 s to edit: outline + corner grip.
-/// - Drag anywhere to move (snaps to the screen's centre line).
-/// - Drag the bottom-right grip to scale; the font scales with the width.
-/// - The bottom-left button turns the microphone on or off (打开麦克风, the panel's switch): the
-///   bar has no notes window beside it. Only while editing, so the bar stays click-through.
-/// - Double-click to return to the default spot.
-/// - Position, width and size are remembered per display.
 @MainActor
 final class OverlayController {
     struct Speaking {
@@ -25,34 +13,25 @@ final class OverlayController {
     private var hoverTimer: Timer?
     private var speakClearWork: DispatchWorkItem?
 
-    /// "auto" or "always", and seconds of quiet before tucking away.
     var mode: () -> (auto: Bool, hideAfter: Double) = { (true, 4) }
-    /// Called when the bar tucks away after a quiet spell.
     var onCollapsed: (() -> Void)?
-    /// The microphone button while editing.
     var onMic: (() -> Void)?
     func setMic(_ on: Bool) {
         guard view.micOn != on else { return }
         view.micOn = on
         view.needsDisplay = true
     }
-    /// Where the pointer is while the bar is open.
     enum Pointer: Equatable {
         case away
-        /// Passing over: faded so the app underneath stays usable.
         case passing
-        /// Rested on it: the bar takes clicks (drag, resize, the mic button) until the pointer leaves.
         case editing
     }
 
     enum Visibility: Equatable {
         case hidden
         case open(Pointer)
-        /// Tucked away to a dot after a quiet spell (自动).
         case tucked
-        /// Opened from the dot by hovering it: tucks again once the pointer leaves.
         case peeking
-        /// Put away with the toggle shortcut until it is pressed again.
         case manuallyHidden
     }
 
@@ -130,8 +109,6 @@ final class OverlayController {
         }
     }
 
-    /// A status that has to be seen (the meeting is about to end): brings a tucked-away bar back
-    /// and keeps it up while it is repeated.
     func notice(_ text: String) {
         setStatus(text)
         guard view.isStatus else { return }
@@ -139,9 +116,6 @@ final class OverlayController {
         expand()
     }
 
-    /// Something only you can fix (the microphone refused), kept above the subtitles until it is
-    /// fixed: a status line would give way to the next subtitle. The bar is click-through, so it
-    /// only says it; the menu bar's dot and the panel have the button.
     func setAlert(_ text: String?) {
         guard text != view.alert else { return }
         view.alert = text
@@ -159,7 +133,6 @@ final class OverlayController {
             expand()
         }
         if let s, s.phase == .idle {
-            // Leave the last thing you said up for a few seconds.
             view.speaking = s
             let work = DispatchWorkItem { [weak self] in
                 MainActor.assumeIsolated {
@@ -179,7 +152,6 @@ final class OverlayController {
 
     func show() {
         restore()
-        // Auto mode starts tucked away until someone speaks.
         setExpanded(!mode().auto, animated: false)
         layout()
         panel.alphaValue = 1
@@ -246,7 +218,6 @@ final class OverlayController {
         }
     }
 
-    /// The toggle shortcut (⌃⌥S by default): hide everything now, or bring the bar back.
     func toggleManual() {
         guard isShown else { return }
         if manualHidden || !expanded {
@@ -262,7 +233,6 @@ final class OverlayController {
         }
     }
 
-    /// The listening pill: back on screen however it went away (⌃⌥S, or tucked after a quiet spell).
     func reveal() {
         guard isShown else { show(); return }
         if manualHidden || !expanded { toggleManual() }
@@ -339,7 +309,6 @@ final class OverlayController {
         save()
     }
 
-    /// Debug / tests: place the bar exactly.
     func place(x: CGFloat, y: CGFloat, width w: CGFloat, fontSize fs: CGFloat) {
         origin = NSPoint(x: x, y: y)
         width = w
@@ -373,7 +342,6 @@ final class OverlayController {
         lastMouse = mouse
         let dt = Self.pollInterval
 
-        // Tucked away: hovering the dot peeks at the last line.
         if !expanded {
             if pillFrame.contains(mouse) {
                 setExpanded(true, animated: true)
@@ -384,10 +352,8 @@ final class OverlayController {
 
         let overBar = barFrame.insetBy(dx: -4, dy: -4).contains(mouse)
         if visibility == .open(.editing) {
-            // Editing: stay until the pointer leaves.
             if !overBar { setHover(false); stillFor = 0 }
         } else if overBar && !peeking {
-            // Passing over: fade so the app underneath stays usable.
             setDimmed(true)
             stillFor = moved ? 0 : stillFor + dt
             if stillFor >= 0.6 {
@@ -406,7 +372,6 @@ final class OverlayController {
             return
         }
 
-        // Quiet long enough: tuck away.
         let m = mode()
         if m.auto, visibility == .open(.away), view.speaking == nil,
            Date().timeIntervalSince(lastContentAt) > m.hideAfter {
@@ -447,7 +412,6 @@ final class OverlayController {
             let maxW = min(1800, sf.width - 16)
             width = max(420, min(maxW, dragStartWidth + dx))
             fontSize = max(18, min(48, (dragStartFont * width / dragStartWidth).rounded()))
-            // Grow downwards from the top edge, like a window corner.
             let top = dragStartOrigin.y + view.barHeight(fontSize: dragStartFont)
             origin = NSPoint(x: dragStartOrigin.x, y: top - view.barHeight(fontSize: fontSize))
         } else {
@@ -463,7 +427,6 @@ final class OverlayController {
             }
             origin = NSPoint(x: x, y: y)
         }
-        // Keep the bar on screen.
         let all = NSScreen.screens.reduce(NSRect.null) { $0.union($1.frame) }
         origin.x = max(all.minX + 4 - width + 120, min(all.maxX - 120, origin.x))
         origin.y = max(all.minY + 4, min(all.maxY - barHeight - 4, origin.y))
@@ -494,7 +457,6 @@ final class OverlayView: NSView {
     var hover = false
     var snapped = false
     var collapsed = false
-    /// Translation lines the bar is sized for (1 or 2), so a short line leaves no gap.
     var transLines = 1
     var dragMode: Bool?
     var micOn = false
@@ -531,7 +493,6 @@ final class OverlayView: NSView {
         return NSRect(x: barRect.maxX - s + 6, y: barRect.minY - 6, width: s, height: s)
     }
 
-    /// 打开麦克风 while editing: the grip's twin in the bottom-left corner.
     private var micRect: NSRect {
         let s: CGFloat = 26
         return NSRect(x: barRect.minX - 6, y: barRect.minY - 6, width: s + 8, height: s)
@@ -541,7 +502,6 @@ final class OverlayView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         if collapsed, let alert {
-            // Tucked away with something to fix: the pill says it instead of the dots.
             let fs = fontSize
             let attrs: [NSAttributedString.Key: Any] = [.font: alertFont(fs), .foregroundColor: NSColor.white]
             let size = (alert as NSString).size(withAttributes: attrs)
@@ -554,7 +514,6 @@ final class OverlayView: NSView {
             return
         }
         if collapsed {
-            // Tucked away: a small pill at the bottom centre — still listening.
             let pill = NSRect(x: barRect.midX - 23, y: barRect.minY, width: 46, height: 18)
             NSColor(calibratedWhite: 0.05, alpha: 0.75).setFill()
             NSBezierPath(roundedRect: pill, xRadius: 9, yRadius: 9).fill()
@@ -591,14 +550,12 @@ final class OverlayView: NSView {
             let maxH = line(font) * CGFloat(maxLines)
             let fitted = fitTail(text, attrs: attrs, width: inner.width, maxHeight: maxH + 1)
             let h = min(maxH, height(of: fitted, attrs: attrs, width: inner.width))
-            // Bottom-align within the slot so the newest line sits lowest.
             let rect = NSRect(x: inner.minX, y: y - maxH, width: inner.width, height: h)
             (fitted as NSString).draw(with: rect, options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs)
             y -= maxH
         }
 
         if let alert {
-            // An orange pill, centred over the subtitles.
             let font = alertFont(fs)
             let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
             let size = (alert as NSString).size(withAttributes: attrs)
@@ -623,7 +580,6 @@ final class OverlayView: NSView {
             switch s.phase {
             case .listening: label = L("同传 · 你在说…  ") + s.source
             case .translating: label = L("同传 · 翻译中…  ") + s.source
-            // A notice with nothing said (no virtual mic): just the tag over it.
             case .speaking, .idle: label = s.source.isEmpty ? L("同传") : L("同传 · 你：") + s.source
             }
             draw(label, font: srcFont(fs), color: orange.withAlphaComponent(0.8), maxLines: 1)
@@ -655,7 +611,6 @@ final class OverlayView: NSView {
         }
     }
 
-    /// How many lines the translation needs at the current width (1 or 2).
     func neededLines(barWidth: CGFloat) -> Int {
         let fs = fontSize
         let attrs: [NSAttributedString.Key: Any] = [.font: transFont(fs)]
@@ -668,7 +623,6 @@ final class OverlayView: NSView {
                                           options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs).height)
     }
 
-    /// Keeps the end of the text (newest words) and drops the beginning until it fits.
     private func fitTail(_ text: String, attrs: [NSAttributedString.Key: Any], width: CGFloat, maxHeight: CGFloat) -> String {
         if text.isEmpty || height(of: text, attrs: attrs, width: width) <= maxHeight { return text }
         let chars = Array(text)

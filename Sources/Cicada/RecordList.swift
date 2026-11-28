@@ -1,8 +1,6 @@
 import Foundation
 
-/// How meetings are listed in the records window (Mac) and the records tab (iOS).
 enum RecordList {
-    /// 今天 / 昨天 / 本周 / then one group per month, newest first.
     static func groups(_ sessions: [Session]) -> [(title: String, sessions: [Session])] {
         let cal = Calendar.current
         var out: [(title: String, sessions: [Session])] = []
@@ -23,8 +21,6 @@ enum RecordList {
         return dateText(s.startedAt, cal.isDateInToday(s.startedAt) || cal.isDateInYesterday(s.startedAt) ? "HHmm"
             : cal.isDate(s.startedAt, equalTo: Date(), toGranularity: .weekOfYear) ? "EEE" : "MMMd")
     }
-    /// Notes titles often start with the day ("11月2日 产品周会"); under a 今天 heading that only
-    /// pushes the real title out of the row.
     static func listTitle(_ s: Session) -> String {
         let title = s.displayTitle
         for prefix in [dateText(s.startedAt, "MMMd"), dateText(s.startedAt, "MMMMd")] where title.hasPrefix(prefix) {
@@ -33,9 +29,6 @@ enum RecordList {
         }
         return title
     }
-    /// 电脑和会议室: the room mic and the Mac's audio both brought in the other side's lines, so each
-    /// one says where it was heard. Derived from the lines (`via`), not stored: a meeting that only
-    /// heard one side reads as before.
     static func heardBoth(_ lines: [TranscriptLine]) -> Bool {
         var room = false, mac = false
         for l in lines where l.speaker == "them" {
@@ -44,7 +37,6 @@ enum RecordList {
         }
         return false
     }
-    /// Lines of the other side's where the place changes from the line before: their label shows again.
     static func placeStarts(_ lines: [TranscriptLine]) -> Set<String> {
         var out: Set<String> = [], last: String??
         for l in lines {
@@ -54,10 +46,8 @@ enum RecordList {
         }
         return out
     }
-    /// Where a line of the other side's was heard, in a meeting that heard both.
     static func place(_ l: TranscriptLine) -> String { l.via == "room" ? L("现场") : L("线上") }
 
-    /// Still on the stored "会议 <date>" title: not renamed, and no notes title to show.
     static func untitled(_ s: Session) -> Bool {
         !(s.renamed ?? !s.title.hasPrefix("会议 ")) && (s.notes?.title ?? "").isEmpty && s.sourceFile == nil
     }
@@ -68,7 +58,6 @@ enum RecordList {
         return mins < 60 ? L("\(mins) 分钟") : mins % 60 == 0 ? L("\(mins / 60) 小时") : L("\(mins / 60) 小时 \(mins % 60) 分")
     }
 
-    /// "英 → 中" (short) or "英语 → 中文", from the most common pair among the lines.
     static func pair(_ s: Session, short: Bool) -> String? {
         let pairs = Dictionary(grouping: s.lines.filter { $0.speaker != "me" }, by: { "\(lang($0.srcLang))|\(lang($0.dstLang))" })
         guard let top = pairs.max(by: { $0.value.count < $1.value.count })?.key else { return nil }

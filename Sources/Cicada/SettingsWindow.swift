@@ -31,7 +31,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 // MARK: - Building blocks
 
-/// A white card of rows separated by hairlines, like System Settings.
 struct SettingsCard<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
@@ -45,7 +44,6 @@ struct SettingsRow<Trailing: View>: View {
     let title: String
     var detail: String? = nil
     var divider = true
-    /// A small state mark before the title, e.g. 共享屏幕时让对方看到's.
     var mark: AnyView? = nil
     @ViewBuilder var trailing: Trailing
     var body: some View {
@@ -68,12 +66,10 @@ struct SettingsRow<Trailing: View>: View {
     }
 }
 
-/// A few mutually exclusive choices side by side, the chosen one raised.
 struct Segments: View {
     let options: [(id: String, title: String)]
     let value: String
     var fill = false
-    /// Darker on a grey card, where `Palette.fill` would vanish.
     var track = Palette.fill
     let onPick: (String) -> Void
     var body: some View {
@@ -98,22 +94,18 @@ struct Segments: View {
     }
 }
 
-/// 字幕条: shown while someone talks, or always. Settings and the menu bar panel.
 @MainActor func overlayAutoSegments(model: AppModel, fill: Bool = false, track: Color = Palette.fill) -> some View {
     Segments(options: [("auto", L("有人说话时")), ("always", L("始终显示"))],
                     value: model.settings.overlayAuto ? "auto" : "always", fill: fill, track: track) { model.setOverlayAuto($0 == "auto") }
 }
 
-/// 字幕条: how long it waits after the last words before tucking away.
 @MainActor func hideAfterSegments(settings: AppSettings, fill: Bool = false, track: Color = Palette.fill) -> some View {
     Segments(options: [2.0, 4, 8].map { (String(Int($0)), L("\(Int($0)) 秒")) },
              value: String(Int(settings.overlayHideAfter)), fill: fill, track: track) { settings.overlayHideAfter = Double($0) ?? 4 }
 }
 
-/// The 字幕 choices.
 let subtitleOptions: [(id: String, title: String)] = [("both", L("原文 + 译文")), ("translation", L("只看译文")), ("original", L("只看原文"))]
 
-/// A grey pill that opens a menu: the value and a small chevron.
 struct PillMenu: View {
     let value: String
     let options: [(id: String, title: String)]
@@ -138,7 +130,6 @@ struct PillMenu: View {
 struct SoftButton: View {
     let title: String
     var dark = false
-    /// White, for a button sitting on a grey card.
     var onGrey = false
     let action: () -> Void
     init(_ title: String, dark: Bool = false, onGrey: Bool = false, action: @escaping () -> Void) {
@@ -161,8 +152,6 @@ struct SoftButton: View {
 
 // MARK: - Shortcut field
 
-/// Shows a shortcut as key caps; click it, then press the new keys (esc cancels).
-/// The talk key also accepts the right ⌥ on its own.
 struct ShortcutField: View {
     @ObservedObject var model: AppModel
     let role: AppModel.ShortcutRole
@@ -206,7 +195,6 @@ struct ShortcutField: View {
             }
         }
         .onDisappear { stop() }
-        // Another app grabbed the keys (its launcher came up): stop waiting for them.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in stop() }
     }
 
@@ -237,7 +225,6 @@ struct ShortcutField: View {
             commit(Shortcut(keyCode: e.keyCode, flags: flags))
         case .flagsChanged:
             if role == .talk && e.keyCode == UInt16(kVK_RightOption) {
-                // Right ⌥ pressed and released with nothing else: that's the choice.
                 if e.modifierFlags.rawValue & 0x40 != 0 { rightDown = true } else if rightDown { commit(.rightOption) }
             } else {
                 rightDown = false
@@ -253,7 +240,6 @@ struct ShortcutField: View {
     }
 }
 
-/// "输入监控" is missing for the right ⌥ key: one line and a button.
 struct TalkKeyPermissionRow: View {
     @ObservedObject var model: AppModel
     var body: some View {
@@ -264,11 +250,9 @@ struct TalkKeyPermissionRow: View {
     }
 }
 
-/// A check, an exclamation mark, or (speaking off) a grey dash, in a small circle.
 struct HealthMark: View {
     let ok: Bool
     let on: Bool
-    /// On a tinted problem row the pale circle would vanish.
     var onTint = false
     var body: some View {
         ZStack {
@@ -283,12 +267,8 @@ struct HealthMark: View {
 
 // MARK: - Virtual microphone checklist
 
-/// The one place the virtual mic is set up: onboarding step 4 and the settings window.
-/// Not ready → a three-step checklist with one button that does the next step.
-/// Ready → one line with a status dot and the sound test.
 struct MicSetupCard: View {
     @ObservedObject var installer: VirtualMicInstaller
-    /// Re-read the device list when the app's copy changes.
     var deviceName: String?
 
     private var onDisk: Bool { installer.isOnDisk || deviceName != nil }
@@ -424,7 +404,6 @@ struct SettingsView: View {
         .background(Color(red: 0.965, green: 0.969, blue: 0.976))
     }
 
-    /// The current section without the scroll view (also drawn by the `settingsRender` debug command).
     var page: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
@@ -475,7 +454,6 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
-            // Diagnostics is for chasing slowness: off it leaves no trace in the sidebar.
             HStack(spacing: 8) {
                 Text("诊断").font(.system(size: 12)).foregroundStyle(settings.diagnostics ? Palette.ink : Palette.secondary)
                     .fixedSize()
@@ -494,8 +472,6 @@ struct SettingsView: View {
 
     // MARK: Sections
 
-    /// One card says whether the room hears you; it opens into a checklist only when something
-    /// is wrong. Below it, plain settings: what you say with, and which microphones.
     private var speak: some View {
         VStack(alignment: .leading, spacing: 14) {
             if model.virtualMic == nil {
@@ -505,7 +481,6 @@ struct SettingsView: View {
             }
             group(L("说话")) {
                 SettingsRow(title: L("按住说话")) { ShortcutField(model: model, role: .talk) }
-                // Hands-free runs only while listening, and pauses with the room mic on (`AppModel.handsFreeSetting`).
                 SettingsRow(title: L("不用按键"),
                             detail: !settings.speakHandsFree ? L("开口就翻译，停顿 1 秒后说出去")
                                 : settings.hearsRoom ? L("打开麦克风时暂停") : model.running ? L("开口就翻译，停顿 1 秒后说出去") : L("开始听会议后生效")) {
@@ -542,7 +517,6 @@ struct SettingsView: View {
         .padding(.top, 4)
     }
 
-    /// Something keeping the room from hearing you, with the one button that fixes it.
     private struct SpeakProblem: Identifiable {
         let id: String
         let text: String
@@ -555,7 +529,6 @@ struct SettingsView: View {
         if settings.speakEnabled && model.talkNeedsPermission {
             out.append(.init(id: "key", text: L("按键还需要“输入监控”权限"), button: L("去允许"), action: model.allowTalkKey))
         }
-        // A switched-away or never-restored system mic matters even with speaking off.
         let virtual = model.virtualMic?.name ?? "BlackHole 2ch"
         switch model.systemMicState {
         case .notRestored:
@@ -577,7 +550,6 @@ struct SettingsView: View {
         return out
     }
 
-    /// What already works, listed above the problems so the broken step reads in context.
     private var speakOK: [String] {
         var out = [L("虚拟麦克风 \(model.virtualMic?.name ?? "BlackHole 2ch")")]
         if case .switched = model.systemMicState { out.append(L("系统麦克风已换好，关掉时换回")) }
@@ -638,27 +610,21 @@ struct SettingsView: View {
                 }
             }
         }
-        // The tinted problem rows would otherwise square off the card's corners.
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(ok ? Color.clear : Palette.accent.opacity(0.35), lineWidth: 1))
     }
 
-    /// The last measured press, else what to expect.
     private var latencyLine: String {
         guard let v = model.lastSpeakLatency else {
-            // Measured with 试一句: Ming's voice ~3 s after release, the Mac's ~1 s.
             let mac = model.voiceID(for: model.speak.targetCode)?.hasPrefix("system:") ?? true
             return mac ? L("按住说话，松开后约 1 秒，对方听到译文") : L("按住说话，松开后约 3 秒，对方听到译文")
         }
         return L("上次发言：松开后 \(String(format: "%.1f", v)) 秒，对方听到译文")
     }
 
-    /// 麦克风: the virtual mic as the system default while speaking, the real mic Cicada records
-    /// from, and where the spoken translation goes. Their state shows in the card above.
     private var micSettings: some View {
         let virtual = model.virtualMic?.name ?? "BlackHole 2ch"
         let inputs = model.systemMic.realInputs
-        // A chosen mic that's unplugged reads as 自动 until it's back.
         let chosen = inputs.first { $0.uid == settings.speakMic }?.name
         let auto = model.systemMic.recordingDevice?.name
         return group(L("麦克风")) {
@@ -672,7 +638,6 @@ struct SettingsView: View {
                     settings.speakMic = $0
                 }
             }
-            // Only virtual mics: the translation is for the people online, never the speakers.
             SettingsRow(title: L("译文送到"), detail: L("只给线上的人听，不从扬声器放"), divider: false) {
                 PillMenu(value: outputName,
                          options: [("", L("虚拟麦克风（自动）"))] + model.outputs.filter(\.isVirtualMic).map { ($0.uid, $0.name) }) {

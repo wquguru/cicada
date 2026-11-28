@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Prints the release notes for one version: its CHANGELOG.md section, a compare link to the version
-# below it, the Chinese changelog on the website, then how to install each platform it ships
-# (.github/release-notes-<platform>.md). PLATFORMS (space-separated) overrides the shipped list, as
-# the release workflow does when it leaves Android out for want of its signing key.
-# scripts/release_notes.sh 1.0.0
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VERSION=${1:?usage: scripts/release_notes.sh <version>}

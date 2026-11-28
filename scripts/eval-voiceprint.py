@@ -1,25 +1,3 @@
-# Scores voiceprint models and the clustering behind 说话人识别 on AMI meetings, so a model or
-# threshold change is a measured decision. Developer-only, like convert-voiceprint.py.
-#
-# Lines are cut the way the app hears a meeting: one timeline from the Mix-Headset audio, where the
-# person holding the floor owns overlapped speech (a "yeah" under someone else's sentence is part of
-# that sentence, as SpeechAnalyzer writes it), cut at pauses and every 10 s. A line's truth is whoever
-# talks most in it; a line nobody clearly owns is ambiguous and scores neither way. Each line gets the
-# app's fbank, a voiceprint, and ~1.5 s window voiceprints when long enough, all cached per model.
-# Scored per line, as the user sees it:
-#   shown    lines that get a speaker number
-#   right    lines whose number is that speaker's (one number per person, Hungarian matching,
-#            so splitting one person in two or merging two people both count as wrong)
-#   wrong    lines shown with someone else's number
-#   count    meetings whose number of speakers shown equals the people who said 5+ lines
-# The sweep picks thresholds on dev by right - 2 × wrong (a wrong name costs more than none), then
-# scores test once.
-#
-# Needs Python 3.11 with onnxruntime "numpy<2" soundfile scipy, the WeSpeaker ONNX files, and
-#   git clone https://github.com/pyannote/AMI-diarization-setup
-#   amicorpus/<meeting>/audio/<meeting>.Mix-Headset.wav for the dev and test meetings
-# usage: python3 scripts/eval-voiceprint.py --ami AMI-diarization-setup --wav wavdir --cache cachedir \
-#            --model resnet34=voxceleb_resnet34_LM.onnx [--model campp=voxceleb_CAM++_LM.onnx:cpu] [--jobs 4] [--no-windows]
 import argparse, os, time
 import numpy as np
 
@@ -44,7 +22,6 @@ def _mel_banks():
 MELS = _mel_banks()
 
 def fbank(samples):
-    """Frames × 80 log-mel, as `Fbank.compute` does for 16 kHz mono samples in -1...1."""
     if len(samples) < FRAME:
         return np.zeros((0, BINS), np.float32)
     n = 1 + (len(samples) - FRAME) // SHIFT
@@ -58,7 +35,6 @@ def fbank(samples):
     return np.log(np.maximum(power @ MELS.T, np.finfo(np.float32).eps)).astype(np.float32)
 
 def check_fbank():
-    """The reference values SpeakerTests.fbankMatchesKaldi checks the Swift fbank against."""
     t = np.arange(16000) / 16000
     x = 0.3 * np.sin(2 * np.pi * 220 * t) + 0.1 * np.sin(2 * np.pi * 1234 * t) \
         + 0.05 * (((np.arange(16000) * 7919) % 1000) / 1000 - 0.5)
@@ -74,14 +50,13 @@ class Model:
         opts = ort.SessionOptions()
         opts.intra_op_num_threads = threads
         providers = ["CPUExecutionProvider"]
-        if gpu:   # FP16 on the GPU, as the app runs it; fixed shapes only, or it recompiles every call
+        if gpu:
             providers.insert(0, ("CoreMLExecutionProvider", {"ModelFormat": "MLProgram", "MLComputeUnits": "CPUAndGPU"}))
         self.sess = ort.InferenceSession(path, opts, providers=providers)
         self.seconds = 0.0
 
     @staticmethod
     def feats(samples):
-        """Mean-normalised fbank for a line, or None when too short (as `Voiceprints.embed`)."""
         if len(samples) < MIN_SECONDS * SR:
             return None
         f = fbank(samples[: int(MAX_SECONDS * SR)])
@@ -95,12 +70,10 @@ class Model:
         return v / np.maximum(n, 1e-12)
 
     def embed(self, samples):
-        """A unit-length voiceprint, or None when the line is too short."""
         f = self.feats(samples)
         return None if f is None else self.run(f[None])[0]
 
     def embed_all(self, clips, batch=32):
-        """Voiceprints of equal-length clips, in fixed-size batches."""
         fs = [self.feats(c) for c in clips]
         out = []
         for i in range(0, len(fs), batch):
@@ -110,7 +83,6 @@ class Model:
             out += list(self.run(x)[: len(chunk)])
         return out
 
-# Window voiceprints: lines this long also get one per WIN_SECONDS window, WIN_HOP apart.
 WIN_FROM, WIN_SECONDS, WIN_HOP = 3.0, 1.5, 0.75
 
 def windows(samples):
@@ -135,7 +107,6 @@ def split_of(ami, meeting):
     return _splits[meeting]
 
 def lines(ami, meeting):
-    """(start, seconds, truth or None) per line, in time order; see the header."""
     turns = []
     with open(os.path.join(ami, "only_words", "rttms", split_of(ami, meeting), meeting + ".rttm")) as f:
         for line in f:
@@ -151,7 +122,6 @@ def lines(ami, meeting):
         active[i, a:b] = True
         take = since[a:b] > s
         holder[a:b][take], since[a:b][take] = i, s
-    # Runs of one floor holder, joined across pauses shorter than PAUSE.
     edges = np.flatnonzero(np.diff(holder)) + 1
     runs = []
     for a, b in zip(np.r_[0, edges], np.r_[edges, frames]):
@@ -179,7 +149,6 @@ def cache_path(cache, name, meeting):
     return os.path.join(cache, f"{name}.{meeting}.lines.npz")
 
 def compute(job):
-    """Voiceprints of one meeting's lines into the cache (a worker process); returns model seconds."""
     name, path, ami, wav, cache, meeting, threads, gpu = job
     import soundfile as sf
     model, win_model = Model(path, threads), Model(path, threads, gpu)
@@ -187,7 +156,6 @@ def compute(job):
     assert sr == SR and audio.ndim == 1, (sr, audio.shape)
     clips = [audio[int(s * SR): int((s + d) * SR)] for s, d, _ in lines(ami, meeting)]
     embs = [model.embed(c) for c in clips]
-    # --no-windows: whole lines only, for models too slow to embed every window (live+vote needs them)
     per_line = [[] if os.environ.get("EVAL_NO_WINDOWS") else windows(c) for c in clips]
     flat = win_model.embed_all([w for ws in per_line for w in ws])
     wins, k = [], 0
@@ -210,7 +178,6 @@ class Meeting:
 # MARK: clustering, live (`VoiceClusterer`) and after the meeting
 
 NEW_SECONDS, SHOWN_AFTER = 2.0, 5
-# `SpeakerLabels.substantive` wants three words; these lines carry no text, so a second stands in.
 SUBSTANTIVE_SECONDS = 1.0
 
 def _best(v, sums, norms):
@@ -221,8 +188,6 @@ def _best(v, sums, norms):
     return i, float(sims[i])
 
 def live(m, join, start_new, margin=0.0, vote=False):
-    """The app's online clustering. margin: a line moves its voice only when this much surer than
-    `join`. vote: a long line goes by its windows' majority, and moves its voice by the agreeing ones."""
     sums, out = [], []
     for v, ws, s in zip(m.embs, m.wins, m.seconds):
         if v is None:
@@ -260,8 +225,6 @@ def live(m, join, start_new, margin=0.0, vote=False):
     return out
 
 def after(m, threshold, clean=False):
-    """Whole-meeting agglomerative clustering (average linkage, cosine) of the lines' voiceprints;
-    clean: a long line by the mean of its windows rather than its whole-line voiceprint."""
     from scipy.cluster.hierarchy import fcluster, linkage
     idx = [i for i, v in enumerate(m.embs) if v is not None]
     vecs = []
@@ -279,7 +242,6 @@ def after(m, threshold, clean=False):
 # MARK: scoring (`SpeakerLabels`)
 
 def shown_numbers(voices, seconds):
-    """Voice → number for the voices on show, as `SpeakerLabels.voiceNumbers`."""
     count, reached = {}, {}
     for i, (v, s) in enumerate(zip(voices, seconds)):
         if v is None or s < SUBSTANTIVE_SECONDS:
@@ -322,7 +284,6 @@ def fmt(s):
             f"count {s['count']}/{s['meetings']}  value {100 * s['value']:5.1f}")
 
 def eer(ms):
-    """Same vs different speaker within a meeting, unambiguous lines of 2 s and more."""
     tg, ng = [], []
     for m in ms:
         keep = [i for i, (v, s, t) in enumerate(zip(m.embs, m.seconds, m.truth)) if v is not None and s >= 2 and t]
@@ -337,7 +298,6 @@ def eer(ms):
 
 GRID = [round(x, 2) for x in np.arange(0.2, 0.751, 0.05)]
 METHODS = {
-    # name: (clustering, parameter grid); "app" is today's VoiceClusterer at its own thresholds.
     "app": (lambda m, p: live(m, 0.5, 0.5), [()]),
     "live": (lambda m, p: live(m, *p), [(j, n) for j in GRID for n in GRID if n <= j]),
     "live+margin": (lambda m, p: live(m, *p), [(j, n, g) for j in GRID for n in GRID if n <= j for g in (0.05, 0.1, 0.15, 0.2)]),
@@ -357,7 +317,7 @@ def main():
     ap.add_argument("--jobs", type=int, default=4, help="meetings embedded at once; one is quickest when the GPU does the windows")
     a = ap.parse_args()
     if a.no_windows:
-        os.environ["EVAL_NO_WINDOWS"] = "1"   # read by the worker processes
+        os.environ["EVAL_NO_WINDOWS"] = "1"
     check_fbank()
     os.makedirs(a.cache, exist_ok=True)
     sets = {s: open(os.path.join(a.ami, "lists", s + ".meetings.txt")).read().split() for s in ("dev", "test")}

@@ -5,7 +5,6 @@ import SwiftUI
 
 struct DiagnosticsView: View {
     @ObservedObject var diagnostics: Diagnostics
-    /// The service in settings: names the group, and the empty page before any request.
     var service: AIConfig
     @State private var copied = false
     @State private var tick = Date()
@@ -15,13 +14,10 @@ struct DiagnosticsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(subtitle).font(.system(size: 12)).foregroundStyle(Palette.secondary).padding(.top, -8)
             if empty {
-                // Nothing measured yet: four dashes, a grey bar and zeros read as broken. Show
-                // what each stage is and the shape a sentence will take instead.
                 pipeline
                 emptyChannels
                 emptyRecent
             } else {
-                // What people feel; each step's time is in the list below.
                 HStack(spacing: 8) {
                     tile(L("对方说完 → 你看到字幕"), diagnostics.endToEnd, dark: true)
                     tile(L("你说完 → 对方听到"), diagnostics.toRoom)
@@ -33,7 +29,6 @@ struct DiagnosticsView: View {
             HStack(spacing: 8) {
                 SoftButton(copied ? L("已复制") : L("复制诊断信息"), dark: !empty) { copy() }
                     .disabled(empty)
-                // The meeting folder holds metrics.jsonl; the log only exists in dev builds or with `debug` on.
                 SoftButton(diagnostics.folder() == nil ? L("打开日志") : L("打开本场数据")) {
                     NSWorkspace.shared.open(diagnostics.folder() ?? URL(fileURLWithPath: DevBuild.logPath))
                 }
@@ -155,7 +150,6 @@ struct DiagnosticsView: View {
         }
     }
 
-    /// The service's own ids (ling, zenmux…), as recorded in `via` and the fallbacks.
     private static func serviceName(_ id: String) -> String? { AIProvider.all.first { $0.id.rawValue == id }?.name }
 
     private static func color(_ via: String) -> Color {
@@ -192,7 +186,6 @@ struct DiagnosticsView: View {
         return who.isEmpty ? why : "\(who) \(why)"
     }
 
-    /// "inclusionai/ling-3.0-flash" → "ling-3.0-flash": the vendor is in the group name already.
     static func short(_ model: String) -> String { model.split(separator: "/").last.map(String.init) ?? model }
 
     private static func seconds(_ x: Double) -> String { String(format: "%.1fs", x) }
@@ -210,9 +203,6 @@ struct DiagnosticsView: View {
         }
     }
 
-    /// 1A: one row per use, a single big number (p50) with p95 under it. Uses that follow the AI
-    /// service come first; the ones fixed on this Mac or Google come after, so switching service
-    /// visibly changes only the first group.
     private var uses: some View {
         let uses = diagnostics.uses
         let retreats = diagnostics.retreats
@@ -324,7 +314,6 @@ struct DiagnosticsView: View {
         }
     }
 
-    /// The last few sentences as stacked bars: recognise · queue · translate (· voice).
     private var recent: some View {
         let rows = Array(diagnostics.sentences.suffix(6).reversed())
         return VStack(alignment: .leading, spacing: 0) {
@@ -353,14 +342,13 @@ struct DiagnosticsView: View {
     }
 
     private func bar(_ s: SentenceTiming) -> some View {
-        let scale: CGFloat = 50   // points per second; 4 s ≈ 200 pt
+        let scale: CGFloat = 50
         let fallback = s.failed
         return HStack(spacing: 1) {
             if let r = s.recognize { seg(r, Color(red: 0.42, green: 0.44, blue: 0.50), scale) }
             if s.queue > 0.05 { seg(s.queue, Color(red: 0.96, green: 0.78, blue: 0.71), scale) }
             if fallback > 0.05 { seg(fallback, Palette.accent, scale) }
             seg(max(0.02, s.translate - s.queue - fallback), Palette.ink, scale)
-            // Speak-back counts to the first sound, not the whole clip: that's what the other side waits for.
             if let v = s.firstAudio ?? s.voice { seg(v, Color(red: 0.60, green: 0.63, blue: 0.67), scale) }
         }
         .frame(width: 200, alignment: .leading).clipped()

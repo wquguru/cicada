@@ -2,9 +2,6 @@ import CommonCrypto
 import CryptoKit
 import Foundation
 
-/// A meeting shared as a link: what the Mac keeps about it. The manage token (needed to turn the
-/// link off) lives only here, in a 0600 file under Application Support (Shares/<record id>.json),
-/// never in the record, exports or logs; so does the password, so it can be copied again.
 struct ShareRecord: Codable, Equatable {
     var id: String
     var url: String
@@ -15,14 +12,12 @@ struct ShareRecord: Codable, Equatable {
     var createdAt: Date
 }
 
-/// Where the review found a problem: the notes, or lines `from`…`to` of what was sent.
 struct ShareHit: Codable, Equatable {
     var part: String
     var from: Int?
     var to: Int?
     var questions: [String]
 
-    /// The record's line indices behind the hits, given which record lines were sent (`kept`).
     static func recordLines(_ hits: [ShareHit], kept: [Int]) -> Set<Int> {
         var out: Set<Int> = []
         for h in hits where h.part == "lines" {
@@ -36,8 +31,6 @@ struct ShareHit: Codable, Equatable {
 enum SharePassword {
     static let iterations = 210_000
 
-    /// PBKDF2-SHA256, 32 bytes: what the browser derives from the password (site/share.js). The
-    /// server keeps only its hash, so the password itself never leaves either side.
     static func verifier(_ password: String, salt: Data, iterations: Int = iterations) -> Data {
         var out = Data(count: 32)
         let pw = Array(password.utf8)
@@ -52,7 +45,6 @@ enum SharePassword {
         return out
     }
 
-    /// "ruby-41-lake": easy to read out and type; the server limits how many can be tried.
     static func make() -> String {
         let w = words.split(separator: " ")
         return "\(w.randomElement()!)-\(Int.random(in: 10...99))-\(w.randomElement()!)"
@@ -61,7 +53,6 @@ enum SharePassword {
     private static let words = "amber apple arrow aspen basil beach birch bloom brook cedar cherry cloud coral comet dawn delta dune ember fern field flint frost grove harbor hazel honey iris island jade lake lark lemon lily linen maple meadow mint moss olive orbit pearl pine plum pond quartz rain reed river ruby sage sand shell silk sky slate snow spruce stone storm sun tide tulip velvet willow wind"
 }
 
-/// Shares/<record id>.json, 0600 in a 0700 folder.
 enum ShareStore {
     nonisolated(unsafe) static var folderOverride: URL?
 
@@ -99,7 +90,6 @@ enum ShareStore {
     }
 }
 
-/// A file only this user can read, left out of backups (like the AI keys in AIKey).
 enum SecretFile {
     static func write(_ data: Data, to file: URL) -> Bool {
         let fm = FileManager.default
@@ -124,10 +114,6 @@ enum SecretFile {
     }
 }
 
-/// Talks to the share service on cicada.indaloop.app (server/). There are no accounts: this Mac is
-/// an Ed25519 key made on first use (share-device.json, 0600), registered once with a small proof of
-/// work, and every write is signed (method, path, time, nonce, body hash), as server/src/auth.js
-/// checks. Not an AI call, so not LingClient: the review runs on the server.
 @MainActor
 final class ShareClient {
     static let shared = ShareClient()
@@ -145,7 +131,6 @@ final class ShareClient {
         var views: Int
     }
 
-    /// Which app shares (the server keeps it per device and checks the version).
     #if CICADA_IOS
     static let platform = "ios"
     #else
@@ -153,7 +138,6 @@ final class ShareClient {
     #endif
     static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
 
-    /// Dev builds can point at a local Worker: `defaults write com.wquguru.cicada.dev shareServer http://127.0.0.1:8787`.
     var base: URL {
         if let s = UserDefaults.standard.string(forKey: "shareServer"), let u = URL(string: s) { return u }
         return URL(string: "https://cicada.indaloop.app")!
@@ -182,7 +166,6 @@ final class ShareClient {
         if let data = try? JSONEncoder().encode(f) { _ = SecretFile.write(data, to: deviceFile) }
     }
 
-    /// The device id, registering this Mac with the server first if needed.
     private func device(force: Bool = false) async throws -> (Curve25519.Signing.PrivateKey, String) {
         var (key, f) = loadDevice()
         if !force, let id = f.device, f.server == base.absoluteString { return (key, id) }
@@ -200,7 +183,6 @@ final class ShareClient {
         return (key, id)
     }
 
-    /// 20 leading zero bits of sha256(public key ‖ nonce): about a million hashes, a second or two.
     nonisolated static func proofOfWork(_ pub: Data) -> Data {
         var n: UInt64 = 0
         while true {
@@ -247,7 +229,6 @@ final class ShareClient {
         }
     }
 
-    /// A signed call; registers again once if the server no longer knows this Mac.
     private func signed(_ method: String, _ path: String, body: Data? = nil, headers: [String: String] = [:]) async throws -> (Data, Int) {
         var signer = try await device()
         var (data, status) = try await send(method, path, body: body, headers: headers, signer: signer)
@@ -284,8 +265,6 @@ final class ShareClient {
         }
         do {
             let data = try JSONSerialization.data(withJSONObject: body)
-            // The same meeting, content and settings sent again (the answer was lost) gets the same
-            // link back; any other setting makes a new share.
             let settings = "\(o.scope.rawValue)|\(o.days)|\(o.names)|\(o.password ?? "")|\(o.summaryInPreview)"
             let idem = s.id + "-" + SHA256.hash(data: ShareProjection.encode(doc) + Data(settings.utf8)).prefix(8)
                 .map { String(format: "%02x", $0) }.joined()
@@ -318,12 +297,10 @@ final class ShareClient {
         }
     }
 
-    /// Turns the link off on the server and forgets it here. `sessionID` nil: the record is being replaced.
     @discardableResult
     func revoke(_ r: ShareRecord, sessionID: String?) async -> Bool {
         let ok: Bool
         if let (data, status) = try? await signed("DELETE", "/api/v1/shares/\(r.id)", headers: ["Authorization": "Bearer \(r.token)"]) {
-            // 404: already gone (or never ours); either way nothing to keep.
             ok = status == 204 || status == 404
             if !ok { debugLog("share: revoke \(r.id) failed \(status) \(Self.code(data) ?? "?")") }
         } else {

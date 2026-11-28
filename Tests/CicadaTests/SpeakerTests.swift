@@ -3,8 +3,6 @@ import Testing
 @testable import Cicada
 
 @Suite struct SpeakerTests {
-    /// 1 s of two tones plus a deterministic ripple; reference values from
-    /// torchaudio.compliance.kaldi.fbank(x * 32768, num_mel_bins=80, dither=0).
     private var signal: [Float] {
         (0..<16000).map { n in
             let t = Double(n) / 16000
@@ -36,9 +34,9 @@ import Testing
     @Test func clustererJoinsStartsAndAbstains() {
         var c = VoiceClusterer()
         #expect(c.label(unit(0), seconds: 3) == 0)
-        #expect(c.label(unit(0, noise: 0.02), seconds: 1) == 0)   // similar: joins
-        #expect(c.label(unit(1), seconds: 1) == nil)              // new voice, too short to start one
-        #expect(c.label(unit(1), seconds: 2.5) == 1)              // long enough: a new voice
+        #expect(c.label(unit(0, noise: 0.02), seconds: 1) == 0)
+        #expect(c.label(unit(1), seconds: 1) == nil)
+        #expect(c.label(unit(1), seconds: 2.5) == 1)
         #expect(c.sums.count == 2)
     }
 
@@ -53,7 +51,6 @@ import Testing
     }
 
     @Test func voicesNamedOnceTwoHaveEnoughLines() {
-        // Voice 9 speaks first, then 4; voice 2 has only four lines and stays 对方.
         var lines = (0..<5).map { line($0, 9) } + (5..<10).map { line($0, 4) } + (10..<14).map { line($0, 2) }
         lines.append(line(14, nil))
         let n = SpeakerLabels.numbers(lines)
@@ -61,11 +58,9 @@ import Testing
         #expect(n["l5"] == 2)
         #expect(n["l10"] == nil && n["l14"] == nil)
         #expect(SpeakerLabels.shownCount(lines) == 2)
-        // A voice that spoke first but reached five lines later doesn't take an earlier number.
         let late = [line(0, 3)] + (1..<6).map { line($0, 9) } + (6..<11).map { line($0, 4) } + (11..<15).map { line($0, 3) }
         let m = SpeakerLabels.numbers(late)
         #expect(m["l1"] == 1 && m["l6"] == 2 && m["l0"] == 3)
-        // Four lines of voice 4 are not enough yet.
         #expect(SpeakerLabels.numbers(Array(lines.prefix(9))).isEmpty)
     }
 
@@ -76,7 +71,6 @@ import Testing
         #expect(TranscriptExport.speakerName(line(4, nil, me: true), ["l4": 1]) == L("你 · 同传"))
     }
 
-    /// An imported file names nobody ("对方" means nothing there) until its voices are told apart.
     @Test func importedFilesNameSpeakersOnceTold() {
         var s = Session(id: "i", title: "t", startedAt: Date(), endedAt: nil, lines: [line(0, 1)], hasAudio: false)
         s.sourceFile = "call.m4a"
@@ -110,18 +104,14 @@ import Testing
         let reply = #"{"speakers": [{"speaker": 2, "name": " George ", "evidence": "L6"}, {"speaker": 7, "name": "X"}, {"speaker": 1, "name": ""}]}"#
         let g = SpeakerNameGuess.parse(reply, s)
         #expect(g == [4: VoiceGuess(name: "George", evidence: "00:05 “a full line”")])
-        // One name for two voices: the one with more lines keeps it.
         var more = s
         more.lines += (11..<14).map { line($0, 4) }
         #expect(SpeakerNameGuess.parse(#"{"speakers": [{"speaker": 1, "name": "Ann", "evidence": "L1"}, {"speaker": 2, "name": "Ann", "evidence": "L6"}]}"#, more).keys.sorted() == [4])
         #expect(SpeakerNameGuess.parse("not json", s).isEmpty)
-        // One voice on show: nothing to ask.
         #expect(SpeakerNameGuess.content(Session(id: "s", title: "t", startedAt: Date(), endedAt: nil,
                                                  lines: (0..<6).map { line($0, 1) }, hasAudio: false, notes: nil, renamed: nil)) == nil)
     }
 
-    /// The end of session 20261103-000911 (Bloomberg TV): voice 0 is the guest, voice 1 the anchor,
-    /// then an advert break with other voices.
     private var bloomberg: Session {
         let rows: [(Int?, String)] = [
             (0, "We have to invest in alternative routes to the Strait of Hormuz."), (0, "That is something that financial markets are not used to doing."),
@@ -144,24 +134,18 @@ import Testing
     @Test func aNameNeedsItsSpeakerNearTheEvidence() {
         let s = bloomberg
         #expect(SpeakerLabels.voiceNumbers(s.lines) == [0: 1, 1: 2])
-        // Amos (voice 0, 说话人1) is thanked on L12, right after his own L10 and L11: kept.
-        // "I'm Christina Raffini." (L21) is an advert, voice 1 last spoke on L15: dropped.
         let reply = #"{"speakers": [{"speaker": 1, "name": "Amos Hochstein", "evidence": "L12"}, {"speaker": 2, "name": "Christina Raffini", "evidence": "L21"}]}"#
         let r = SpeakerNameGuess.read(reply, s)
         #expect(r.found.keys.sorted() == [0] && r.found[0]?.name == "Amos Hochstein")
         #expect(r.found[0]?.evidence.hasPrefix("00:11 “Okay, Amos") == true)
         #expect(r.refuted == [1: "Christina Raffini"])
-        // Asked again without JSON mode, the same reply may come in a fence.
         #expect(SpeakerNameGuess.read("```json\n" + reply + "\n```", s).found[0]?.name == "Amos Hochstein")
-        // Said by the speaker themselves; "L12, L13" reads as L12; no evidence, or one out of range, is no name.
         #expect(SpeakerNameGuess.parse(#"{"speakers": [{"speaker": 2, "name": "Anchor", "evidence": "L12, L14"}]}"#, s)[1]?.name == "Anchor")
         #expect(SpeakerNameGuess.parse(#"{"speakers": [{"speaker": 2, "name": "Anchor"}]}"#, s).isEmpty)
         #expect(SpeakerNameGuess.parse(#"{"speakers": [{"speaker": 2, "name": "Anchor", "evidence": "L99"}]}"#, s).isEmpty)
-        // Two lines away still counts; three doesn't.
         #expect(SpeakerNameGuess.parse(#"{"speakers": [{"speaker": 1, "name": "Amos", "evidence": "L13"}]}"#, s)[0] != nil)
         #expect(SpeakerNameGuess.parse(#"{"speakers": [{"speaker": 1, "name": "Amos", "evidence": "L14"}]}"#, s).isEmpty)
         #expect(SpeakerNameGuess.instruction.contains("misspells"))
-        // A guess stored before the check is tested again from its quoted line.
         #expect(!SpeakerNameGuess.holds(VoiceGuess(name: "Christina Raffini", evidence: "00:20 “I'm Christina Raffini.”"), voice: 1, in: s))
         #expect(SpeakerNameGuess.holds(VoiceGuess(name: "Amos", evidence: "00:11 “Okay, Amos, thank you so much for your time this morning, Amos…”"), voice: 0, in: s))
         #expect(SpeakerNameGuess.holds(VoiceGuess(name: "Ann", evidence: "09:59 “Not in this meeting”"), voice: 1, in: s))
@@ -172,7 +156,7 @@ import Testing
         s.voiceGuesses = ["9": VoiceGuess(name: "Emma", evidence: ""), "4": VoiceGuess(name: "George", evidence: "")]
         #expect(SpeakerLabels.names(s) == [1: "Emma", 2: "George"])
         #expect(SpeakerLabels.guessed(s).keys.sorted() == [1, 2])
-        s.voiceNames = ["9": "Emily", "4": ""]          // corrected, and turned down
+        s.voiceNames = ["9": "Emily", "4": ""]
         #expect(SpeakerLabels.names(s) == [1: "Emily"])
         #expect(SpeakerLabels.guessed(s).isEmpty)
     }

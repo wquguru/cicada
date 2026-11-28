@@ -1,7 +1,3 @@
-// GET /s/:id: the share page. It is one static shell per language (site/share.html, built by
-// scripts/site.py); share.js in the browser fetches and shows the document. Here only the head is
-// rewritten, for link previews: an open share's title and size, never its text unless the owner
-// chose to show the summary. Password shares, gone shares and unknown ids keep the shell's generic card.
 import { visible } from "./shares.js";
 import { SECURITY } from "./util.js";
 
@@ -25,7 +21,6 @@ export function pickLang(request) {
   return "en";
 }
 
-// Only this page runs a script, its own (share.js); the document is drawn with textContent.
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 export async function page(request, env, id) {

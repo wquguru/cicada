@@ -2,14 +2,10 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// Answers Ling requests from the test, and keeps what was asked. Requests reach a URLProtocol
-/// with the body as a stream, not `httpBody`.
 final class LingStub: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var reply: (Int, String) = (200, "")
     nonisolated(unsafe) static var seen: [(at: Date, body: [String: Any])] = []
-    /// Where each request went and the key it carried, in order.
     nonisolated(unsafe) static var sent: [(host: String, auth: String?)] = []
-    /// Answers each request by what it asked, instead of `reply`.
     nonisolated(unsafe) static var respond: (([String: Any]) -> (Int, String))?
     private static let lock = NSLock()
 
@@ -48,7 +44,6 @@ final class LingStub: URLProtocol, @unchecked Sendable {
     }
 }
 
-/// The key file and the Ling client share `AIKey`'s state, so these run one at a time in a temp folder.
 @MainActor @Suite(.serialized) struct LingTests {
     let folder: URL
 
@@ -82,13 +77,11 @@ final class LingStub: URLProtocol, @unchecked Sendable {
         _ = try await ling.chat(content: "y", instruction: "Translate.", priority: .translate)
         let bodies = LingStub.seen.map(\.body)
         #expect(bodies.count == 3 && bodies[0]["chat_template_kwargs"] != nil && bodies[1]["chat_template_kwargs"] == nil)
-        // Not sent again once refused.
         #expect(bodies[2]["chat_template_kwargs"] == nil)
     }
 
     @Test func aRefusalForSomethingElseKeepsThinkingOff() async throws {
         LingStub.reset(200, "")
-        // No JSON mode on this server: 400 with or without the kwargs. Asked again without JSON mode.
         LingStub.respond = { body in body["response_format"] != nil ? (400, "{}") : (200, LingStub.chatReply("好")) }
         let ling = customClient()
         #expect(try await ling.chat(content: "x", instruction: "Notes.", priority: .translate, json: true) == "好")
@@ -124,7 +117,6 @@ final class LingStub: URLProtocol, @unchecked Sendable {
         let ling = notesClient(own: true)
         _ = try await ling.chat(content: "x", instruction: "Notes.", priority: .notes)
         #expect(LingStub.sent.first?.auth == "Bearer sk-main-1111111111")
-        // The same service, another model: same address and key.
         let same = notesClient(own: false)
         AIKey.save("sk-notes-222222222", LingClient.notesKeyName)
         _ = try await same.chat(content: "x", instruction: "Notes.", priority: .notes)
@@ -162,7 +154,6 @@ final class LingStub: URLProtocol, @unchecked Sendable {
         #expect(!plain.notesApart && plain.forNotes == plain)
         let model = AIConfig(provider: .custom, base: base, textModel: "mt", notesModel: "big")
         #expect(model.notesApart && model.forNotes.textModel == "big" && model.forNotes.base == base)
-        // Only the custom service splits.
         let ling = AIConfig(provider: .ling, base: AIProvider.ling.base, textModel: "x", notesModel: "big")
         #expect(!ling.notesApart && ling.forNotes.textModel == "x")
     }
@@ -188,7 +179,7 @@ final class LingStub: URLProtocol, @unchecked Sendable {
         #expect(LingClient.retryAfterSeconds("5") == 5)
         #expect(LingClient.retryAfterSeconds(nil) == nil)
         #expect(LingClient.retryAfterSeconds("soon") == nil)
-        let now = Date(timeIntervalSince1970: 1_700_000_000)  // Tue, 14 Nov 2023 22:13:20 GMT
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
         #expect(LingClient.retryAfterSeconds("Tue, 14 Nov 2023 22:13:30 GMT", now: now) == 10)
     }
 
@@ -201,8 +192,6 @@ final class LingStub: URLProtocol, @unchecked Sendable {
         }
         let ling = client()
         async let heard = ling.chat(content: "x", instruction: "Hear.", priority: .translate, audio: Data([0, 1]))
-        // The 429 pauses the gate: a text translation now fails at once (its caller uses Google)
-        // instead of spending the pause in the queue.
         try await Task.sleep(for: .milliseconds(300))
         await #expect(throws: LingClient.Failure.rateLimited) {
             try await ling.chat(content: "y", instruction: "Translate.", priority: .translate)
@@ -237,7 +226,7 @@ final class LingStub: URLProtocol, @unchecked Sendable {
     @Test func keyReadsTrimmedAndRemoves() throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try "  sk-spaced-key \n".write(to: folder.appendingPathComponent("ling-api-key"), atomically: true, encoding: .utf8)
-        AIKey.folderOverride = folder // forget the cached value
+        AIKey.folderOverride = folder
         #expect(AIKey.read() == "sk-spaced-key")
         AIKey.remove()
         #expect(AIKey.read() == nil)
@@ -302,7 +291,7 @@ final class LingStub: URLProtocol, @unchecked Sendable {
         let ling = client()
         var calls: [AICall] = []
         ling.onCall = { calls.append($0) }
-        LingStub.reset(200, "0123456789")   // no Content-Type: raw PCM, one chunk
+        LingStub.reset(200, "0123456789")
         var chunks = 0
         for try await _ in ling.speech("你好世界") { chunks += 1 }
         #expect(chunks == 1)
@@ -354,7 +343,6 @@ final class LingStub: URLProtocol, @unchecked Sendable {
     @Test func startsAreSpacedAndGoInPriorityOrder() async throws {
         let ling = client()
         LingStub.reset(200, LingStub.chatReply("ok"))
-        // The first call takes the gate; the next three queue behind it, asked in reverse priority.
         _ = try await ling.chat(content: "first", instruction: "i", priority: .notes)
         async let notes = ling.chat(content: "notes", instruction: "i", priority: .notes)
         async let translate = ling.chat(content: "translate", instruction: "i", priority: .translate)

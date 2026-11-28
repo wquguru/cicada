@@ -1,4 +1,3 @@
-"""Lists the models a service offers that take audio in: python3 catalog.py zenmux|openrouter."""
 import json
 import os
 import sys

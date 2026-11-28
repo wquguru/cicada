@@ -1,8 +1,3 @@
-// Core Audio from the shell, for room tests (macOS has no command for these):
-//   audio list                 devices, the default input and output, each input's level
-//   audio out <name part>      make it the default output (and the system output)
-//   audio level <name part> <0-1>   an input's level (the MacBook mic's)
-// Build: swiftc -O audio.swift -o audio (round.sh does it once into the work folder).
 import CoreAudio
 import Foundation
 

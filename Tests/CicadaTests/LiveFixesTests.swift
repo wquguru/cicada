@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import Cicada
 
-/// Who wins on a line: the user's decisions, then the word list, then the recheck, then the first guess.
 @MainActor @Suite struct LiveFixesTests {
     private func setup(_ lines: [String]) -> (LiveFixes, SessionStore, String) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("fixes-\(UUID().uuidString)")
@@ -28,7 +27,6 @@ import Testing
         #expect(line(store, id, "l0").shown.contains("跑跑的"))
         fx.answer(fx.pending(in: id)[0].fix, yes: true, in: id)
         #expect(line(store, id, "l0").shown == "最近那个Curve提了，这个是跑跑的测试")
-        // The recheck, with the lines after it in view, proposes nothing.
         fx.received(text, [])
         #expect(line(store, id, "l0").shown == "最近那个Curve提了，这个是跑好的测试")
     }
@@ -49,7 +47,6 @@ import Testing
         #expect(n == 2)
         #expect(line(store, id, "l1").shown == "Monad那边也有")
         #expect(fx.vocabulary.knows(heard: "木娜", word: "Monad"))
-        // A later pass can't override what the user wrote.
         fx.received(line(store, id, "l1").src, [.init(from: "木娜", to: "Mona", confidence: 0.95)])
         #expect(line(store, id, "l1").shown == "Monad那边也有")
         fx.undo()

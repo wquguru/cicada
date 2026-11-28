@@ -1,7 +1,5 @@
 import AppKit
 
-/// "关于知了": the standard About panel (icon, name, version and copyright come from Info.plist)
-/// with a line about the app and links to the website, the project and its issues.
 @MainActor
 enum AboutPanel {
     static let website = URL(string: "https://cicada.indaloop.app/")!

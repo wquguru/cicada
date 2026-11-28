@@ -10,7 +10,6 @@ import Testing
     @Test func onlyAMeetingThatHeardBothShowsPlaces() {
         #expect(!RecordList.heardBoth([line("a"), line("b")]))
         #expect(!RecordList.heardBoth([line("a", via: "room"), line("b", via: "room")]))
-        // Your own lines (the talk key) don't make it a meeting that heard the Mac.
         #expect(!RecordList.heardBoth([line("a", via: "room"), line("b", "me")]))
         #expect(RecordList.heardBoth([line("a", via: "room"), line("b")]))
     }

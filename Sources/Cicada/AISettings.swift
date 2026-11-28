@@ -1,9 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Settings › AI 服务: the service and its key, what works with it, and (folded away) its models.
-/// Ling is the default and the only one with everything; the others are a way in for people who
-/// cannot use Ling, with the recommended models already chosen.
 struct AISettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var ling: LingClient
@@ -14,7 +11,6 @@ struct AISettingsView: View {
     @State private var textDraft = ""
     @State private var notesKeyDraft = ""
     @State private var editingNotesKey = false
-    /// A pasted key that belongs elsewhere: what it is, and (for another service's key) where it fits.
     @State private var keyHint: (text: String, service: AIProvider.Kind?, key: String)?
 
     private var provider: AIProvider { settings.provider }
@@ -52,9 +48,6 @@ struct AISettingsView: View {
 
     // MARK: Own service
 
-    /// 其他（兼容 OpenAI）: one row per use, each at its own address if need be (a text model, a
-    /// speech model and a recognition model often run as separate servers), each saying whether it
-    /// works and how fast. Recognition stays on this Mac unless the user picks their service.
     private var customPage: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("每样可以接不同的机器；这台 Mac 和局域网里的服务可以用 http。")
@@ -81,13 +74,11 @@ struct AISettingsView: View {
         }
         .onAppear {
             syncDrafts()
-            // A service that isn't set up yet, or doesn't work, opens where it needs filling in.
             if open.isEmpty, !ling.aiCheck.passed || ling.aiCheck.slow { open = ["text"] }
         }
         .onChange(of: settings.aiProvider) { _, _ in syncDrafts(); editing = false; draft = ""; keyHint = nil }
     }
 
-    /// A row that opens to its fields: a state dot, the use, what it runs on, and how it's doing.
     private func sectionHeader(_ id: String, title: String, detail: String, dot: Color, trailing: String?,
                                trailingColor: Color = Palette.tertiary) -> some View {
         Button {
@@ -111,10 +102,7 @@ struct AISettingsView: View {
         .buttonStyle(.plain)
     }
 
-    /// Under an address on the local network (not this Mac): macOS asks once before the first
-    /// connection, and a "Don't Allow" there reads like a dead server.
     @ViewBuilder private func localNetworkNote(_ address: String) -> some View {
-        // Once it said no, macOS won't ask again: the check's own line says what to do then.
         if !ling.aiCheck.needsLocalNetwork, let host = AIProvider.customBase(address)?.host,
            AIProvider.isNearby(host), !AIProvider.isLocal(host) {
             Text("局域网里的服务器：macOS 会问一次能否访问本地网络，点“允许”。")
@@ -123,8 +111,6 @@ struct AISettingsView: View {
         }
     }
 
-    /// 语音和文字只发给你的服务: Google is never asked. The grey line says what it costs, and while
-    /// the service can't be reached, what stands in (this Mac's translation, or the original only).
     private var onlyRow: some View {
         let on = settings.aiCustomOnly
         let failure = ling.aiCheck.failure
@@ -141,7 +127,6 @@ struct AISettingsView: View {
         }
     }
 
-    /// Where the custom service's audio and text go: one host when every use shares it.
     private var customHosts: String {
         let c = settings.aiConfig
         var hosts = [c.base?.host]
@@ -156,7 +141,6 @@ struct AISettingsView: View {
 
     private var textHost: String { AIProvider.customBase(baseDraft)?.host ?? settings.aiConfig.base?.host ?? "" }
 
-    /// "192.168.1.20 · qwen-mt-turbo", then the notes' model, or their own server after a bar.
     private var textDetail: String {
         let c = settings.aiConfig
         let model = settings.aiModels["custom"] ?? ""
@@ -205,7 +189,6 @@ struct AISettingsView: View {
                 }
                 HStack(spacing: 8) {
                     fieldLabel(L("模型"))
-                    // The models the service lists; a name it doesn't list can be typed. Picking saves and checks.
                     ModelPicker(value: textDraft, placeholder: L("例如 qwen3:14b"), catalog: ling.catalog, host: textHost,
                                 refetch: { Task { await ling.fetchCatalog() } }) {
                         textDraft = $0
@@ -237,13 +220,10 @@ struct AISettingsView: View {
         }
     }
 
-    /// 纪要: the same service as translation (another model at most), or another one with its own
-    /// address and key. Switching back keeps what was typed.
     @ViewBuilder private var notesGroup: some View {
         let c = settings.aiConfig
         let own = settings.aiCustomNotesOwn
         let notesHost = c.forNotes.base?.host ?? textHost
-        // "给它单独填一个" only where a key of its own can be given (另一个服务).
         let shared = own && !ling.notesHasOwnKey
         HStack {
             groupTitle(L("纪要"))
@@ -300,7 +280,6 @@ struct AISettingsView: View {
         }
     }
 
-    /// After a check with notes apart: one row each, what it runs and how it did.
     private func checkRows(_ t: AICheck.Speed) -> some View {
         let c = settings.aiConfig
         let notes = ling.aiCheck.notes
@@ -351,7 +330,6 @@ struct AISettingsView: View {
 
     private var model_: AppModel { model }
 
-    /// "能写纪要 · 不思考": what the check proved beyond the speed.
     private var textFacts: String {
         var parts = [ling.aiCheck.failure == nil ? L("能写纪要") : L("纪要写不了")]
         if let t = ling.aiCheck.translate { parts.append(t.thinks ? L("会先思考") : L("不思考")) }
@@ -454,8 +432,6 @@ struct AISettingsView: View {
 
     // MARK: Translation
 
-    /// Shown only while the translation behind live subtitles can't be reached. No provider names:
-    /// with a key it costs only the half-sentence preview, without one the subtitles themselves.
     private var translationCard: some View {
         let health = model.translationHealth
         return SettingsCard {
@@ -490,7 +466,6 @@ struct AISettingsView: View {
         guard let proxy else { return nil }
         return switch proxy {
         case .systemOn: L("开了代理也连不上：换一个节点，或让代理软件放过 translate.googleapis.com。")
-        // As text: a number would be grouped ("7,890").
         case .appRunning(let port): L("代理软件在运行（端口 \(String(port))），但没开系统代理。在代理软件里打开“系统代理”。")
         case .none: L("这台电脑没开代理。在国内通常要开代理才能翻译。")
         }
@@ -607,7 +582,6 @@ struct AISettingsView: View {
             : L("只存在这台 Mac 上（只有你的账户能读），只发给 \(name)（\(host)）")
     }
 
-    /// Where the custom service's key is sent: every use's address, the notes' only while they share it.
     private var keyHosts: String {
         let c = settings.aiConfig
         var hosts = [c.base?.host]
@@ -620,13 +594,11 @@ struct AISettingsView: View {
         return seen.count == 1 ? seen[0] : L("你填的地址")
     }
 
-    /// Saves what was typed (a custom service's address and model too), then checks.
     private func save() {
         if provider.id == .custom {
             settings.aiCustomBase = baseDraft.trimmingCharacters(in: .whitespaces)
             settings.aiModels["custom"] = textDraft.trimmingCharacters(in: .whitespaces)
             model.applyAIService()
-            // Notes' own key (另一个服务): saved here too; it goes only to the notes' address.
             let nk = notesKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
             if !nk.isEmpty, settings.aiCustomNotesOwn {
                 notesKeyDraft = ""
@@ -636,8 +608,6 @@ struct AISettingsView: View {
         }
         let k = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         keyHint = nil
-        // The prefix says whose key it is: a management key can't call models, and another
-        // service's key goes there with one click (never a silent switch).
         if let owner = AICheck.owner(ofKey: k) {
             if owner.management {
                 keyHint = (L("这是 ZenMux 的管理 key，不能用来调用模型。请粘贴 sk-payg 开头的 key。"), nil, "")
@@ -662,7 +632,6 @@ struct AISettingsView: View {
         textDraft = settings.aiModels["custom"] ?? ""
     }
 
-    /// The steps show while something is wrong or being checked; all passed folds into the title line.
     private var showSteps: Bool {
         let c = ling.aiCheck
         return c.running || c.failure != nil || c.busy || (c.at != nil && !c.passed)
@@ -679,7 +648,6 @@ struct AISettingsView: View {
     }
 
     private var statusTitle: String {
-        // Named after the step that failed: a missing model is not a connection problem.
         if let f = ling.aiCheck.failure, f.reason != .busy, !ling.aiCheck.running {
             switch f.step {
             case .reach: return ling.aiCheck.localNetworkDenied ? L("没有本地网络权限") : L("暂时连不上")
@@ -708,8 +676,6 @@ struct AISettingsView: View {
 
     // MARK: What works
 
-    /// Only what the last result supports: when the service can't be reached (or the key fails)
-    /// nothing says "用 ZenMux" in green.
     @ViewBuilder private var usage: some View {
         let reason = ling.aiCheck.failure?.reason
         let down = ling.hasKey && [.unreachable, .badAddress, .invalidKey, .mgmtKey, .noCredit].contains(reason)
@@ -828,7 +794,6 @@ struct AISettingsView: View {
     }
 }
 
-/// The service, in the page header: Ling first, the others for when Ling cannot be used.
 struct AIServiceMenu: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: AppSettings
@@ -845,8 +810,6 @@ struct AIServiceMenu: View {
     }
 }
 
-/// A model menu: the recommended ones (with why) first, then everything the service lists, by
-/// maker, then a name typed by hand.
 struct ModelMenu: View {
     let value: String
     let recommended: [AIProvider.Model]
@@ -906,7 +869,6 @@ struct ModelMenu: View {
         if !t.isEmpty { onPick(t) }
     }
 
-    /// "openai/gpt-5-mini" → under "openai"; names without a maker go under "其他".
     private func groups(_ ids: [String]) -> [(String, [String])] {
         let other = L("其他")
         let by = Dictionary(grouping: ids) { $0.contains("/") ? String($0.prefix { $0 != "/" }) : other }
@@ -914,15 +876,11 @@ struct ModelMenu: View {
     }
 }
 
-/// A custom service's model: the names its `/models` lists, searchable, and any name typed that it
-/// doesn't list (an alias, a model it hides). Without a list it is a plain field.
 struct ModelPicker: View {
     let value: String
     let placeholder: String
-    /// A first choice that clears the value ("和翻译模型一样"); nil: none.
     var sameLabel: String? = nil
     let catalog: [String]
-    /// The address the list came from, for the line under it.
     let host: String
     let refetch: () -> Void
     let onPick: (String) -> Void
@@ -979,7 +937,6 @@ struct ModelPicker: View {
                 TextField(L("搜索或输入模型"), text: $query)
                     .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
                     .onSubmit {
-                        // Return: the only match, else exactly what was typed.
                         let m = matches
                         if m.count == 1 { pick(m[0]) } else if !q.isEmpty { pick(q) }
                     }
@@ -1038,7 +995,6 @@ struct ModelPicker: View {
     }
 }
 
-/// A labelled text field that saves on return or when it loses focus.
 private struct CommitField: View {
     let label: String
     let placeholder: String

@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// 设置 › 词表: the switches for 改正听错的词, and the word list itself (`Vocabulary`): each word,
-/// what it has been heard as, where it came from and how often it fixed a line. Everything is
-/// edited in place; changes count from the next sentence on.
 struct WordListSettings: View {
     @ObservedObject var model: AppModel
     @ObservedObject var settings: AppSettings
@@ -10,7 +7,6 @@ struct WordListSettings: View {
     @ObservedObject var ling: LingClient
     @State private var importing = false
     @State private var query = ""
-    /// A deleted word, shown in its place with 撤销 for a few seconds.
     @State private var deleted: (term: Vocabulary.Term, index: Int)?
     @State private var deletedAt = Date.distantPast
 
@@ -84,7 +80,6 @@ struct WordListSettings: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { if deletedAt == at { deleted = nil } }
     }
 
-    /// Most recently useful first, then the rest newest first.
     private var shown: [Vocabulary.Term] {
         let q = Vocabulary.key(query)
         let all = vocabulary.terms.reversed().sorted { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }
@@ -102,7 +97,6 @@ private struct WordRow: View {
     @State private var editing = false
     @State private var word = ""
     @State private var newHeard = ""
-    /// A heard form typed here that another word already has: whose it should be.
     @State private var conflict: (heard: String, owner: String)?
     @FocusState private var wordFocused: Bool
 
@@ -127,7 +121,6 @@ private struct WordRow: View {
                     ForEach(term.heard, id: \.self) { h in
                         HeardChip(text: h) { vocabulary.forget(heard: h, word: term.word) }
                     }
-                    // Only while pointed at (or typed in): hidden, it would still take room and wrap the forms.
                     if hovering || !newHeard.isEmpty {
                         TextField("加一个容易听错的词", text: $newHeard)
                             .textFieldStyle(.plain).font(.system(size: 11)).frame(width: 110)
@@ -179,7 +172,6 @@ private struct WordRow: View {
     }
 }
 
-/// One heard form; pointing at it shows × to take it off.
 private struct HeardChip: View {
     let text: String
     let onRemove: () -> Void
@@ -201,8 +193,6 @@ private struct HeardChip: View {
     }
 }
 
-/// 粘贴导入: many words at once, each line one word, heard forms after "=". The counts follow
-/// what is pasted, and the button says how many go in.
 private struct WordImportSheet: View {
     @ObservedObject var vocabulary: Vocabulary
     @Environment(\.dismiss) private var dismiss
