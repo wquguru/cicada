@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// 会议记录 (iPhone), as the design's home: the title with the import button, the 听会议室 card,
-/// then the meetings as grouped white cards on the grey ground. Grouping and titles are the Mac's
-/// (RecordList).
 struct RecordsSplit: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
@@ -50,8 +47,6 @@ struct RecordsSplit: View {
     }
 }
 
-/// The app icon, drawn by the Mac's renderer at build time (ios/scripts/build.sh); its macOS margin
-/// is cropped so the tile fills the frame.
 struct Logo: View {
     let size: CGFloat
     private static let image = Bundle.main.path(forResource: "logo", ofType: "png").flatMap(UIImage.init(contentsOfFile:))
@@ -70,8 +65,6 @@ struct Logo: View {
     }
 }
 
-/// iPad: the design's glass sidebar (title, import, settings, a search field, the meetings) beside
-/// the open meeting, which is the newest until one is picked, as on the Mac.
 struct PadRoot: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
@@ -153,7 +146,6 @@ struct PadRoot: View {
     }
 }
 
-/// The sidebar's small white round buttons.
 struct PadIcon: View {
     let systemName: String
 
@@ -174,8 +166,6 @@ struct EmptyRecords: View {
     }
 }
 
-/// 今天 / 昨天 / 本周 / months, each a card of rows (iPhone) or plain rows with the picked one on a
-/// white card (iPad's sidebar, as in the design's iPad screen).
 struct RecordGroups: View {
     @EnvironmentObject var model: AppModel
     enum Style { case cards, sidebar }
@@ -203,7 +193,6 @@ struct RecordGroups: View {
                         ForEach(group.sessions) { s in
                             Button { pick(s.id) } label: {
                                 RecordRow(session: s, chevron: false)
-                                    // White on the light glass needs a soft edge to read as picked.
                                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
                                         .fill(s.id == picked ? Color.white : .clear)
                                         .shadow(color: Ink.ink.opacity(s.id == picked ? 0.10 : 0), radius: 6, y: 2))
@@ -219,7 +208,6 @@ struct RecordGroups: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The Mac's row menu, less what iOS can't do (Finder, the original file).
     @ViewBuilder private func menu(_ s: Session) -> some View {
         if s.renamed ?? !s.title.hasPrefix("会议 "), s.notes?.title != nil {
             Button { model.rename(s.id, to: "") } label: { Label("恢复自动标题", systemImage: "arrow.uturn.backward") }
@@ -230,7 +218,6 @@ struct RecordGroups: View {
     }
 }
 
-/// A pressed row darkens slightly, like a system list cell.
 struct RowPress: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.background(configuration.isPressed ? Ink.ink.opacity(0.05) : .clear)
@@ -241,7 +228,6 @@ struct RecordRow: View {
     @EnvironmentObject var model: AppModel
     let session: Session
     let chevron: Bool
-    /// Watched here so "3 人" comes and goes with 说话人识别 (a row's session doesn't change).
     @AppStorage(Pref.voices) private var voices = true
 
     private var runs: [SpeakerRail.Run] {
@@ -265,7 +251,6 @@ struct RecordRow: View {
                 }
             }
             .padding(.leading, runs.isEmpty ? 0 : 14)
-            // Scheme A's upright strip: each person's turns in grey, a bookmark of the meeting.
             .overlay(alignment: .leading) {
                 if !runs.isEmpty { RailView(runs: runs, axis: .upright, thickness: 4).padding(.vertical, 2) }
             }
@@ -278,7 +263,6 @@ struct RecordRow: View {
         .contentShape(Rectangle())
     }
 
-    /// "10:02 · 48 分钟 · 3 人 · 英 → 中 · 会议室", as in the design's rows.
     static func meta(_ s: Session, voices on: Bool) -> String {
         var parts = [RecordList.when(s), RecordList.length(s)]
         let voices = on ? SpeakerLabels.voiceNumbers(s).count : 0
@@ -289,8 +273,6 @@ struct RecordRow: View {
     }
 }
 
-/// Search on its own tab: titles and every line, original and translation. A meeting opened from
-/// here opens at the first line found (RecordView's `searching`).
 struct SearchView: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var store: SessionStore
@@ -299,7 +281,6 @@ struct SearchView: View {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return sessions }
         return sessions.filter { s in
-            // As the Mac's records: a name the notes say was misheard finds those lines too.
             let terms = TranscriptSearch.terms(q, notes: s.notes?.terms ?? [])
             return s.displayTitle.localizedCaseInsensitiveContains(q) || s.lines.contains { TranscriptSearch.matches($0, terms) }
         }
@@ -324,18 +305,14 @@ struct SearchView: View {
             .navigationDestination(for: String.self) { id in
                 if let s = store.sessions.first(where: { $0.id == id }) { RecordView(session: s, searching: true) }
             }
-            // At the top, under the title: the bottom is the tab bar's.
             .searchable(text: $model.query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("搜索文字记录"))
         }
     }
 }
 
 extension AppModel {
-    /// The search in a meeting: the query, plus how its notes say those names were heard.
     func searchTerms(_ s: Session) -> [String] { TranscriptSearch.terms(query, notes: s.notes?.terms ?? []) }
-    /// The ids of the lines the search finds in a meeting, in order.
     func searchMatches(_ s: Session) -> [String] { TranscriptSearch.matches(s.lines, searchTerms(s)) }
-    /// 上一个 / 下一个, round from the last back to the first.
     func stepSearch(_ d: Int, in s: Session) {
         let n = searchMatches(s).count
         guard n > 0 else { return }
@@ -343,7 +320,6 @@ extension AppModel {
     }
 }
 
-/// Where the search is in the open meeting (本场 2 / 7), and the way to the previous and next line.
 struct SearchMatchBar: View {
     let index: Int
     let count: Int

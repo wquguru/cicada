@@ -1,14 +1,8 @@
 import AppIntents
 import Foundation
 
-// 快速开始: 开始听 for the Action button, Control Center and Siri, and the Live Activity's 暂停 and
-// 结束并出纪要. Compiled into the app and into the CicadaLive extension (its Control Center button
-// names the intent); every intent runs in the app, which hands it to AppModel through `IntentHub`.
-
 @MainActor
 enum IntentHub {
-    /// Set by AppModel. An intent that comes before it (the app launched by the intent) is kept
-    /// in `pending` and run once AppModel is there.
     static var run: ((Action) -> Void)? {
         didSet { if let run, let p = pending { pending = nil; run(p) } }
     }
@@ -24,7 +18,6 @@ enum IntentHub {
 struct StartListeningIntent: AppIntent {
     static let title: LocalizedStringResource = "开始听"
     static let description = IntentDescription("用麦克风听会议室，出实时双语字幕和纪要")
-    /// The microphone starts with the app in front: iOS won't start recording from the background.
     static let openAppWhenRun = true
 
     @MainActor
@@ -57,7 +50,6 @@ struct PauseListeningIntent: LiveActivityIntent {
 }
 
 #if !CICADA_LIVE
-/// Siri and Spotlight (the app's only; the extension builds with CICADA_LIVE). Phrases in the languages people ask in; each must name the app.
 struct CicadaShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: StartListeningIntent(), phrases: [

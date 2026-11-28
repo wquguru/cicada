@@ -1,8 +1,6 @@
 import ActivityKit
 import Foundation
 
-/// Starts the Live Activity when listening starts, sends it each translated line (at most every
-/// 1.5 s: the system throttles more anyway) and ends it with the meeting.
 @MainActor
 final class LiveActivityController {
     private var activity: Activity<ListenActivity>?
@@ -57,7 +55,6 @@ final class LiveActivityController {
         Task { await activity.update(.init(state: state, staleDate: nil)) }
     }
 
-    /// 暂停 / 继续, shown at once (not held back by the line throttle).
     func setPaused(_ on: Bool) {
         guard let activity, paused != on else { return }
         paused = on

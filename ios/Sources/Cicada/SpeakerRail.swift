@@ -1,21 +1,15 @@
 import SwiftUI
 
-/// Scheme A of the speaker colours (the design page 说话人配色): everyone's stretch of the meeting
-/// is the same light grey, so a strip shows how many turns and how long; only the person you are
-/// looking for, picked on a chip or the one the recording is at, is drawn in ink. Names stay ink
-/// or grey text. The accent keeps meaning "live" and the playhead.
 enum SpeakerRail {
     static let rest = Color(hex: 0xD5D8DE)
     static let focus = Ink.ink
 
-    /// One person's unbroken stretch: consecutive lines of the same voice are one run.
     struct Run: Equatable {
         var number: Int?
         var start: Double
         var length: Double
     }
 
-    /// The meeting as runs, by its lines' times (a line lasts until the next one starts).
     static func runs(_ s: Session, numbers: [String: Int]) -> [Run] {
         let lines = s.lines
         guard !lines.isEmpty else { return [] }
@@ -35,8 +29,6 @@ enum SpeakerRail {
         return out
     }
 
-    /// What a strip can draw: a turn under `minShare` of the meeting joins the one before it (a
-    /// strip beside a row is a few dozen points tall), and neighbours of the same person merge.
     static func compact(_ runs: [Run], minShare: Double) -> [Run] {
         let total = runs.reduce(0) { $0 + $1.length }
         guard total > 0 else { return runs }
@@ -49,7 +41,6 @@ enum SpeakerRail {
                 out.append(r)
             }
         }
-        // A short first turn swallowed nothing before it: fold it into the next.
         if out.count > 1, out[0].length < total * minShare {
             out[1].start = out[0].start
             out[1].length += out[0].length
@@ -62,7 +53,6 @@ enum SpeakerRail {
         return merged
     }
 
-    /// Each speaker number's share of the time (0–1).
     static func shares(_ runs: [Run]) -> [Int: Double] {
         let total = runs.reduce(0) { $0 + $1.length }
         guard total > 0 else { return [:] }
@@ -72,7 +62,6 @@ enum SpeakerRail {
     }
 }
 
-/// The strip: across under a meeting's title, or upright beside a row.
 struct RailView: View {
     enum Axis { case across, upright }
     let runs: [SpeakerRail.Run]
@@ -85,7 +74,6 @@ struct RailView: View {
             let length = axis == .across ? g.size.width : g.size.height
             let runs = SpeakerRail.compact(self.runs, minShare: axis == .across ? 0.01 : 0.08)
             let total = max(0.001, runs.reduce(0) { $0 + $1.length })
-            // Too many turns for the room: no gaps, rather than a dotted line.
             let gap: CGFloat = CGFloat(runs.count) > length / 5 ? 0 : 2
             let room = length - gap * CGFloat(max(0, runs.count - 1))
             let layout = axis == .across ? AnyLayout(HStackLayout(spacing: gap)) : AnyLayout(VStackLayout(spacing: gap))
@@ -105,11 +93,9 @@ struct RailView: View {
     }
 }
 
-/// The record page's strip with the playhead: an accent mark where the recording is.
 struct MeetingRail: View {
     let runs: [SpeakerRail.Run]
     let focus: Int?
-    /// 0–1, nil before playing.
     let playhead: Double?
 
     var body: some View {

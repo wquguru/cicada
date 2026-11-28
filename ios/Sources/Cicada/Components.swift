@@ -1,9 +1,5 @@
 import SwiftUI
 
-// The pieces the design canvas (知了 iOS 设计) is built from: white cards on the grey ground,
-// grey section labels, a grey pill switch, hairlines, and Liquid Glass for what floats.
-
-/// A white card, the design's 22 pt corners.
 struct Card<Content: View>: View {
     var radius: CGFloat = 22
     @ViewBuilder var content: Content
@@ -15,7 +11,6 @@ struct Card<Content: View>: View {
     }
 }
 
-/// The grey label above a card ("今天", "AI 服务").
 struct SectionLabel: View {
     let text: String
 
@@ -29,7 +24,6 @@ struct SectionLabel: View {
     }
 }
 
-/// The 0.5 pt line between rows in a card, inset like the design's.
 struct Hairline: View {
     var inset: CGFloat = 16
 
@@ -38,7 +32,6 @@ struct Hairline: View {
     }
 }
 
-/// The design's two-way switch: a grey track, the picked side a white pill with a soft shadow.
 struct PillSwitch<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [(Value, LocalizedStringKey)]
@@ -70,7 +63,6 @@ struct PillSwitch<Value: Hashable>: View {
     }
 }
 
-/// A row's trailing chevron.
 struct Chevron: View {
     var body: some View {
         Image(systemName: "chevron.right")
@@ -80,7 +72,6 @@ struct Chevron: View {
     }
 }
 
-/// The design's round glass buttons (back, import, the trailing pair on a record): 44 pt, ink icon.
 struct GlassIcon: View {
     let systemName: String
     var size: CGFloat = 44
@@ -94,7 +85,6 @@ struct GlassIcon: View {
     }
 }
 
-/// Lays out chips left to right and wraps, so every voice shows without scrolling sideways.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 

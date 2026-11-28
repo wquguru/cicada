@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Builds the release app for the App Store, packs it as an .ipa and uploads it to App Store Connect,
-# where it shows up in TestFlight after processing (10–30 min).
-#   ios/scripts/testflight.sh            build, pack and upload
-#   ios/scripts/testflight.sh --no-upload
-# Signing: ~/.cicada-signing/ios-appstore.env (ios/tools/provision.py appstore > that file).
-# Upload: ASC_KEY_ID and ASC_ISSUER_ID, with the key's .p8 in ~/.cicada-signing (altool looks there
-# through API_PRIVATE_KEYS_DIR). The app's record must exist in App Store Connect first.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ENV=~/.cicada-signing/ios-appstore.env

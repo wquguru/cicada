@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Builds the dev app for a connected iPhone or iPad, installs and opens it.
-#   ios/scripts/device.sh [<device name or UDID>]
-# Signing: the variables ios/tools/provision.py development prints, read from
-# ~/.cicada-signing/ios-development.env (run provision.py once and save its output there).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ENV=~/.cicada-signing/ios-development.env

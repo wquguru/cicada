@@ -20,7 +20,6 @@ def b64url(b: bytes) -> str:
 
 
 def der_to_raw(der: bytes) -> bytes:
-    """openssl's ECDSA signature is DER (SEQUENCE of two INTEGERs); a JWT wants r || s, 32 bytes each."""
     def read_int(buf, i):
         assert buf[i] == 0x02
         n = buf[i + 1]

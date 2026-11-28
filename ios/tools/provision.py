@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""Makes what a signed iOS build needs, through the App Store Connect API (ios/tools/asc.py):
-the App IDs, the connected devices, a certificate whose private key is on this Mac, and the two
-provisioning profiles (the app and the CicadaLive extension). Prints the variables
-ios/scripts/build.sh signs with. Safe to run again: it reuses what is there.
-
-  ios/tools/provision.py development        Apple Development, the dev bundle ids, this Mac's devices
-  ios/tools/provision.py appstore           Apple Distribution, the release bundle ids (TestFlight)
-
-Needs ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH for a key that may manage Certificates,
-Identifiers & Profiles (Admin, or App Manager with that access). Keys and certificates live in
-~/.cicada-signing (0700); the certificate goes into the login keychain, usable by codesign only.
-"""
 import base64, json, os, re, subprocess, sys, urllib.parse
 sys.path.insert(0, os.path.dirname(__file__))
 from asc import call
@@ -46,7 +34,6 @@ def bundle_id(identifier, name):
 
 
 def devices():
-    """Physical devices this Mac is paired with, registered if they aren't yet."""
     out = run("xcrun", "devicectl", "list", "devices")
     udids = {m.group(2): m.group(1).strip() for m in re.finditer(r"^(\S.*?)\s{2,}.*?([0-9A-F]{8}-[0-9A-F]{16}) \(UDID\)", out, re.M)}
     _, r = call("GET", "/v1/devices?limit=200&fields[devices]=udid,name,status")
@@ -65,7 +52,6 @@ def devices():
 
 
 def certificate():
-    """A certificate of this kind whose private key is in ~/.cicada-signing; made if there is none."""
     key, cer = f"{HOME}/ios-{KIND}.key", f"{HOME}/ios-{KIND}.cer"
     _, r = call("GET", f"/v1/certificates?filter[certificateType]={CERT_TYPE}&fields[certificates]=certificateContent,serialNumber,expirationDate")
     if os.path.exists(key) and os.path.exists(cer):
@@ -92,18 +78,12 @@ def sha1(cer):
 
 
 def into_keychain(key, cer):
-    """The certificate and its key in the login keychain, the key usable by codesign without a prompt."""
-    # The intermediate it is issued by (WWDR G3), shipped inside Xcode; without it the identity
-    # isn't valid and codesign can't use it.
-    # Imported every time; the keychain refuses a duplicate, which is fine.
     subprocess.run(["security", "import", "/Applications/Xcode.app/Contents/SharedFrameworks/DVTFoundation.framework/Versions/A/Resources/AppleWWDRCA-2030.cer",
                     "-k", os.path.expanduser("~/Library/Keychains/login.keychain-db")], capture_output=True)
     if sha1(cer) in run("security", "find-identity", "-v", "-p", "codesigning"):
         return
     p12, password = f"{HOME}/ios-{KIND}.p12", base64.b64encode(os.urandom(18)).decode()
     pem = run("openssl", "x509", "-inform", "der", "-in", cer)
-    # OpenSSL 3 writes a cipher the keychain can't read unless told -legacy; macOS's LibreSSL
-    # writes the old one already and doesn't know the flag.
     legacy = ["-legacy"] if run("openssl", "version").startswith("OpenSSL 3") else []
     run("openssl", "pkcs12", "-export", *legacy, "-inkey", key, "-out", p12, "-passout", f"pass:{password}", input=pem)
     try:
@@ -117,7 +97,7 @@ def into_keychain(key, cer):
 def profile(identifier, bundle, cert, device_ids):
     name = f"Cicada {KIND} {identifier}"
     _, r = call("GET", f"/v1/profiles?filter[name]={urllib.parse.quote(name)}&fields[profiles]=name,profileState")
-    for p in r.get("data", []):   # remade each time, so it always holds today's devices and certificate
+    for p in r.get("data", []):
         call("DELETE", f"/v1/profiles/{p['id']}")
     rel = {"bundleId": {"data": {"type": "bundleIds", "id": bundle}},
            "certificates": {"data": [{"type": "certificates", "id": cert}]}}

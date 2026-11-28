@@ -1,9 +1,5 @@
 import SwiftUI
 
-/// The design's shell. iPhone: 会议记录 and 设置 on a glass bar, search a glass circle beside it, and
-/// the bar only on those top screens (a meeting has the page to itself). iPad: a glass sidebar of
-/// meetings beside the open one, settings as a sheet. The system TabView can't draw either: it
-/// merges search into the bar and puts a tab pill over the iPad's detail.
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -17,7 +13,6 @@ struct RootView: View {
             }
         }
         .tint(Ink.accent)
-        // The Mac's palette is light only (Palette in Views.swift); a dark one comes later, for both.
         .preferredColorScheme(.light)
         .fullScreenCover(isPresented: $model.showFace, onDismiss: { model.closeFace() }) {
             FaceView(face: model.face).environmentObject(model)
@@ -41,7 +36,6 @@ struct PhoneRoot: View {
 
     var body: some View {
         ZStack {
-            // Each tab keeps its place while another is shown, like a tab bar's.
             RecordsSplit(store: model.store).opacity(model.tab == .records ? 1 : 0)
                 .allowsHitTesting(model.tab == .records)
             SettingsView().opacity(model.tab == .settings ? 1 : 0)
@@ -64,7 +58,6 @@ struct PhoneRoot: View {
     }
 }
 
-/// Two tabs in a glass capsule, the picked one on a faint accent pill, and search on its own.
 struct TabBar: View {
     @EnvironmentObject var model: AppModel
 
@@ -114,7 +107,6 @@ struct TabBar: View {
     }
 
     private func pick(_ tab: AppTab) {
-        // Tapping the open tab again goes back to its top, as a tab bar does.
         if model.tab == tab {
             if tab == .records { model.selection = nil }
             if tab == .search { model.searchPath = [] }

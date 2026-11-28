@@ -1,17 +1,11 @@
 import AVFoundation
 import SwiftUI
 
-/// 每种语言各记一个声音: the Mac's `speakVoices` (language key → voice id), read by 面对面.
 enum SpeakVoices {
     static let key = "speakVoices"
 
     static var all: [String: String] { UserDefaults.standard.dictionary(forKey: key) as? [String: String] ?? [:] }
 
-    /// The voice for a language: the one picked, while it can still be used (Ming and the clone need
-    /// the key, the clone its recording), else the catalog's default. `mine`: read for me (their
-    /// words in my language), where my own voice would make no sense.
-    /// `clones`: the service can speak in the user's own voice (Ling only). A voice of another
-    /// service (Ming's picked under Ling, then ZenMux chosen) gives way to the default.
     static func chosenID(for language: String, hasKey: Bool, mine: Bool = false, clones: Bool = true) -> String? {
         if let id = all[VoiceCatalog.key(for: language)] {
             if id.hasPrefix("system:") { return id }
@@ -31,8 +25,6 @@ enum SpeakVoices {
     }
 }
 
-/// 设置 › 念给对方的声音: 用你自己的声音 (a recording Ming clones), then each language 面对面
-/// speaks, with Ming's voices and the phone's; ▶ tries one with a line in that language.
 struct VoicesPage: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var ling: LingClient
@@ -69,7 +61,6 @@ struct VoicesPage: View {
         .onDisappear { voice.stop() }
     }
 
-    /// Theirs first: what 面对面 reads to the other person; then mine, what it reads to me.
     private var languages: [String] {
         let both = [face.theirs.code, face.mine.code]
         return both.enumerated().filter { i, c in both.prefix(i).allSatisfy { VoiceCatalog.key(for: $0) != VoiceCatalog.key(for: c) } }.map(\.1)
@@ -121,7 +112,6 @@ struct VoicesPage: View {
     private func section(_ lang: String) -> some View {
         let options = VoiceCatalog.options(for: lang)
         let mine = VoiceCatalog.key(for: lang) == VoiceCatalog.key(for: face.mine.code) && lang != face.theirs.code
-        // My own voice only for what is read to the other person (这是我自己的声音。只在我说话时用它替我翻译。).
         let rows = (!mine && hasOwn && ling.clones ? [VoiceCatalog.cloneOption] : []) + options
         let current = SpeakVoices.chosenID(for: lang, hasKey: ling.hasKey, mine: mine, clones: ling.clones)
         return VStack(alignment: .leading, spacing: 6) {
@@ -187,7 +177,6 @@ struct VoicesPage: View {
     }
 }
 
-/// 录制你的声音: the passage to read, a meter and the seconds, 读完了; then 录好了，先听听像不像.
 struct OwnVoiceSheet: View {
     @EnvironmentObject var ling: LingClient
     let locale: String
@@ -261,7 +250,6 @@ struct OwnVoiceSheet: View {
         .buttonStyle(.plain)
     }
 
-    /// What the other person will hear: a line in their language, in the voice just recorded.
     private func listen() {
         if trying { voice.stop(); trying = false; return }
         trying = true
@@ -273,9 +261,6 @@ struct OwnVoiceSheet: View {
     }
 }
 
-/// Records the user reading the passage: 16 kHz mono into a WAV, with a level for the meter;
-/// stops by itself at 30 s. Saved as `VoiceReference` with the passage as what it says (the Mac
-/// transcribes its recording; here the passage is read as shown, and Ming only needs it close).
 @MainActor
 final class OwnVoiceRecorder: ObservableObject {
     enum Phase: Equatable { case idle, recording, ready, failed(String) }

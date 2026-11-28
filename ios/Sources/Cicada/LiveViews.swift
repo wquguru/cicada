@@ -1,17 +1,11 @@
 import SwiftUI
 
-// The design's scheme 3 (知了当标题): the logo, the date and 会议记录 make the home's title, 开始听 is
-// one glass bar under it, and while listening the same two places turn into 正在听 · 12:48 and the
-// wave, who is talking and 结束. iPhone and the iPad's sidebar share them.
-
-/// "11月4日 星期三 / 会议记录", or "● 正在听 · 12:48 / 会议室 · 英 → 中" while listening.
 struct HomeTitle: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
     var logo: CGFloat = 52
     var titleSize: CGFloat = 28
     var trailing: AnyView? = nil
-    /// What stands at the right while listening (the iPhone's 收起).
     var liveTrailing: AnyView? = nil
 
     var body: some View {
@@ -28,14 +22,12 @@ struct HomeTitle: View {
                         .foregroundStyle(room.paused ? Ink.secondary : Ink.accentText)
                     }
                     let pair = Pref.pairText(room.languagePair.source, room.languagePair.target)
-                    // Same language both sides (Chinese heard, Chinese shown): no pair to name.
                     Text(pair.isEmpty ? (room.speakerMode ? L("外放") : L("会议室"))
                          : (room.speakerMode ? L("外放 · \(pair)") : L("会议室 · \(pair)")))
                         .font(.system(size: titleSize - 4, weight: .bold)).foregroundStyle(Ink.ink)
                         .lineLimit(1).minimumScaleFactor(0.7)
                 } else {
                     Text(dateText(Date(), "MMMdEEEE")).font(.footnote).foregroundStyle(Ink.secondary)
-                    // iPad's narrow sidebar: "Meetings" shrinks rather than breaking in two.
                     Text("会议记录").font(.system(size: titleSize, weight: .bold)).foregroundStyle(Ink.ink)
                         .lineLimit(1).minimumScaleFactor(0.7)
                 }
@@ -48,7 +40,6 @@ struct HomeTitle: View {
     }
 }
 
-/// The orange dot that breathes while listening.
 struct LiveDot: View {
     @State private var on = false
 
@@ -60,14 +51,12 @@ struct LiveDot: View {
     }
 }
 
-/// 开始听 · 英语 → 简体中文 · the orange round button; while listening: the wave, who is talking, 结束.
 struct ListenBar: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
     @AppStorage(Pref.source) private var source = "auto"
     @AppStorage(Pref.target) private var target = "system"
     @AppStorage(Pref.hear) private var hear = "room"
-    /// Glass on the ground (iPhone); white on the iPad's glass sidebar.
     var onGlass = false
 
     var body: some View {
@@ -95,7 +84,6 @@ struct ListenBar: View {
                         Text("手机外放").tag("speaker")
                     } label: { Text("声音来源") }
                     .pickerStyle(.inline)
-                    // The one grey line: what 手机外放 needs, else what iPhone can't hear at all.
                     Text(hear == "speaker" ? L("别戴耳机，字幕会浮在小窗里") : L("听不到其他 app 的声音，线上会议请用电脑版"))
                 }
                 Picker(selection: $source) {
@@ -130,7 +118,6 @@ struct ListenBar: View {
 
     private var live: some View {
         Group {
-            // 收起 left the meetings on screen: the wave and who is talking bring 正在听 back.
             Button { model.liveHidden = false } label: {
                 HStack(spacing: 10) {
                     Wave(level: room.level)
@@ -175,7 +162,6 @@ private struct GlassCapsule: ViewModifier {
     }
 }
 
-/// Five bars that follow the microphone's level.
 struct Wave: View {
     let level: Float
 
@@ -194,7 +180,6 @@ struct Wave: View {
     }
 }
 
-/// 正在听 on the iPhone: the title and bar as on the home, 字幕 / 纪要, and the lines as cards.
 struct LivePhone: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
@@ -239,8 +224,6 @@ struct LivePhone: View {
 
 enum LivePage: String { case subtitles, notes }
 
-/// Under 纪要: what is being said now (else the newest line), so the notes page still shows the
-/// room live; a tap goes to 字幕.
 struct SayingNow: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
@@ -270,14 +253,10 @@ struct SayingNow: View {
     }
 }
 
-/// 连不上翻译: why the subtitles are only the original. Without a key, the key is the fix (Ling
-/// needs no proxy in mainland China), so the card opens 设置; with one, it comes back by itself.
 struct TranslateDownCard: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        // 语音和文字只发给你的服务, and the service doesn't translate: it picks up by itself, and no
-        // other service is offered, which would send the meeting elsewhere (as the Mac's notes window).
         if model.translationHealth.googleOff, model.translationHealth.sentencesUntranslated {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "hourglass").foregroundStyle(Ink.secondary).padding(.top, 2)
@@ -311,7 +290,6 @@ struct TranslateDownCard: View {
     }
 }
 
-/// The lines so far as white cards, the one being said outlined in the accent; follows the newest.
 struct LiveLines: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
@@ -331,7 +309,6 @@ struct LiveLines: View {
                             .frame(maxWidth: .infinity).padding(.top, 40)
                     }
                     ForEach(room.lines) { l in
-                        // The record's line, so its fixed words show (改正听错的词); `room.lines` keeps what was heard.
                         let rec = session?.lines.first { $0.id == l.id }
                         card(who: numbers[l.id].map { SpeakerLabels.label($0, names) }, time: l.t,
                              src: rec.map(FixedText.attributed) ?? AttributedString(l.src), dst: l.dst, live: false)
@@ -366,7 +343,6 @@ struct LiveLines: View {
     }
 }
 
-/// 正在听 on the iPad, beside the sidebar: 字幕 and 纪要 side by side when wide, switched when not.
 struct LivePad: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
@@ -383,7 +359,6 @@ struct LivePad: View {
             }
         GeometryReader { g in
             if g.size.width >= 820 {
-                // 纪要 on the left and wider, 字幕 beside it, as the Mac's notes window reads.
                 HStack(alignment: .top, spacing: 22) {
                     column(notesTitle) {
                         ScrollView {
@@ -426,8 +401,6 @@ struct LivePad: View {
     }
 }
 
-/// A speech model on its way: the system says only "not yet" or "done", so a moving bar and the time
-/// waited show it is still coming (the Mac's download card).
 struct ModelWaitCard: View {
     @EnvironmentObject var room: RoomListen
 
@@ -451,8 +424,6 @@ struct ModelWaitCard: View {
     }
 }
 
-/// Under 开始听 when it didn't start: why, and the one thing that helps (the Mac's 听不出 card for a
-/// speech model; the microphone permission; anything else, 再试一次).
 struct StartProblemCard: View {
     @EnvironmentObject var room: RoomListen
 
@@ -519,9 +490,6 @@ struct StartProblemCard: View {
     }
 }
 
-/// The notes' trouble while listening, in one line, as the Mac's notes window: a dead key stops
-/// them (换 key), a busy or unreachable service only delays them (改用 Ling when there is its key),
-/// and the subtitles carry on either way.
 struct NotesStatusLine: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
@@ -550,7 +518,6 @@ struct NotesStatusLine: View {
         }
     }
 
-    /// Where the notes stopped, in meeting time; 0 before they covered anything.
     private var lastCovered: Double {
         guard let s = model.store.session(room.sessionID), notes.notes.covered > 0, notes.notes.covered <= s.lines.count else { return 0 }
         return s.lines[notes.notes.covered - 1].t
@@ -566,7 +533,6 @@ struct NotesStatusLine: View {
         case .rateLimited:
             return (L("\(service) 很忙 · 纪要稍后补上，字幕照常"), false, nil)
         case .unreachable where unreachable, .updating where unreachable:
-            // 语音和文字只发给你的服务: TranslateDownCard says it, and 改用 Ling would send the meeting elsewhere.
             if model.translationHealth.googleOff, model.translationHealth.sentencesUntranslated { return nil }
             return (lastCovered > 0 ? L("纪要等 \(service) 恢复 · 停在 \(NotesEngine.clock(lastCovered))，字幕照常") : L("纪要等 \(service) 恢复 · 字幕照常"),
                     false, model.canSwitchToLing ? (L("改用 Ling"), { model.switchToLing() }) : nil)

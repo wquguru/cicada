@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# Sends debug commands to the dev build (ios/Sources/Cicada/Debug.swift), the iOS counterpart of
-# tools/lsctl:  ios/scripts/ctl.sh [-d "<device>"] <cmd> [<cmd>...]
-# A simulator gets them through the container and a Darwin notification. A connected iPhone or iPad
-# (its UDID, as `xcrun devicectl list devices` prints it) gets each one as a cicada-dev://debug URL,
-# which devicectl opens without the confirmation simctl's openurl asks for.
-#   ios/scripts/ctl.sh -d <UDID> --log [<lines>]    the device's debug log, last 40 lines by default
-#   ios/scripts/ctl.sh -d <UDID> --shot <file.png>  a screenshot of the device
 set -euo pipefail
 DEVICE=booted
 if [[ ${1:-} == -d ]]; then DEVICE=$2; shift 2; fi

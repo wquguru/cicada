@@ -3,12 +3,8 @@ import AVKit
 import SwiftUI
 import UIKit
 
-/// 手机外放's subtitles over other apps: iOS lets an app float only a picture-in-picture video, so
-/// the newest line is drawn into frames and fed to a sample buffer layer as a live stream. It starts
-/// by itself when the app goes to the background while listening to video played aloud.
 @MainActor
 final class PiPSubtitles: NSObject, ObservableObject {
-    /// The layer PiP takes its frames from; it has to sit in the window (PiPHost).
     let layer = AVSampleBufferDisplayLayer()
     @Published private(set) var isActive = false
     private var controller: AVPictureInPictureController?
@@ -22,7 +18,6 @@ final class PiPSubtitles: NSObject, ObservableObject {
         var note: String
     }
 
-    /// 32:10 at the scale the window is drawn: wide enough for two lines of Chinese.
     static let size = CGSize(width: 960, height: 300)
 
     override init() {
@@ -31,7 +26,6 @@ final class PiPSubtitles: NSObject, ObservableObject {
         draw(Caption(src: "", dst: "", note: L("正在听外放…")))
     }
 
-    /// On while 手机外放 is listening, so leaving the app floats the window; off otherwise.
     func setEnabled(_ on: Bool) {
         if on, controller == nil, AVPictureInPictureController.isPictureInPictureSupported() {
             let source = AVPictureInPictureController.ContentSource(sampleBufferDisplayLayer: layer, playbackDelegate: self)
@@ -45,7 +39,6 @@ final class PiPSubtitles: NSObject, ObservableObject {
         debugLog("pip: enabled=\(on) supported=\(AVPictureInPictureController.isPictureInPictureSupported())")
     }
 
-    /// Debug (`pip`): float it now, as leaving the app would.
     func start() {
         debugLog("pip: start possible=\(controller?.isPictureInPicturePossible ?? false)")
         controller?.startPictureInPicture()
@@ -56,7 +49,6 @@ final class PiPSubtitles: NSObject, ObservableObject {
         guard c != shown else { return }
         pending = c
         guard !drawing else { return }
-        // A few frames a second at most: a draft changes on every word.
         drawing = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self else { return }
@@ -73,7 +65,6 @@ final class PiPSubtitles: NSObject, ObservableObject {
         renderer.enqueue(buffer)
     }
 
-    /// The design's dark card: 知了 · 正在听 in the accent, what was said in grey, the translation in white.
     private static func frame(_ c: Caption) -> CMSampleBuffer? {
         let image = UIGraphicsImageRenderer(size: size, format: { let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f }()).image { ctx in
             UIColor(red: 0x15 / 255, green: 0x17 / 255, blue: 0x1C / 255, alpha: 1).setFill()
@@ -97,7 +88,6 @@ final class PiPSubtitles: NSObject, ObservableObject {
             let wrap = NSMutableParagraphStyle()
             wrap.lineBreakMode = .byWordWrapping
             wrap.lineSpacing = 6
-            // The end of a long line matters most: keep its last two lines.
             let font = UIFont.systemFont(ofSize: 46, weight: .medium)
             let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white, .paragraphStyle: wrap]
             let text = tail(main, fitting: CGSize(width: width, height: size.height - y - 24), attrs)
@@ -128,7 +118,6 @@ final class PiPSubtitles: NSObject, ObservableObject {
         return sample
     }
 
-    /// The shortest ending of `text` that fills `box`, starting at a character boundary.
     private static func tail(_ text: String, fitting box: CGSize, _ attrs: [NSAttributedString.Key: Any]) -> String {
         func fits(_ s: String) -> Bool {
             (s as NSString).boundingRect(with: CGSize(width: box.width, height: .greatestFiniteMagnitude),
@@ -156,7 +145,6 @@ extension PiPSubtitles: AVPictureInPictureControllerDelegate, AVPictureInPicture
 
     nonisolated func pictureInPictureController(_ c: AVPictureInPictureController, setPlaying playing: Bool) {}
 
-    /// A live stream: no timeline, no skipping.
     nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ c: AVPictureInPictureController) -> CMTimeRange {
         CMTimeRange(start: .negativeInfinity, duration: .positiveInfinity)
     }
@@ -169,7 +157,6 @@ extension PiPSubtitles: AVPictureInPictureControllerDelegate, AVPictureInPicture
                                                 completion: @escaping () -> Void) { completion() }
 }
 
-/// Holds the PiP layer in the window, as PiP requires; a few points, under the page.
 struct PiPHost: UIViewRepresentable {
     let pip: PiPSubtitles
 

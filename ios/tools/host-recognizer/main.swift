@@ -1,12 +1,6 @@
 import AVFoundation
 import Foundation
 
-// Recognizes speech for the iOS simulator's dev build, whose speech models are empty placeholders
-// (ios/Sources/Cicada/HostRecognizer.swift). Watches each app container's Caches/host-recognizer:
-// a folder with request.json is one stream; its audio.f32 (16 kHz mono Float32, growing) goes
-// through the Mac's own Recognition.swift, and every piece is appended to results.jsonl.
-//   ios/scripts/host-recognizer.sh   (builds this and watches the booted simulators)
-
 enum DevBuild { static let isDev = true }
 func debugLog(_ message: String) { print("\(Date()) \(message)") }
 func contentLog(_ message: @autoclosure () -> String) {}
@@ -76,8 +70,6 @@ func serve(_ dir: URL) async {
     }
 }
 
-/// Every simulator app container's Caches/host-recognizer, found again on each pass: reinstalling
-/// the app moves its container.
 func roots(_ devices: [String]) -> [URL] {
     let fm = FileManager.default
     let base = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Developer/CoreSimulator/Devices")

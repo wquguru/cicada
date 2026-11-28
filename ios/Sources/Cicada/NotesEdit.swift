@@ -2,10 +2,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// 复制纪要 and changing a finished meeting's notes in place, as on the Mac (RichCopy.swift,
-/// NotesEditing.swift): the summary, a conclusion or a to-do; topics are the AI's to rewrite.
 extension AppModel {
-    /// Not while the meeting is being written, nor while an import is still transcribing.
     func canEditNotes(_ s: Session) -> Bool {
         s.id != store.liveID && importer.current?.id != s.id && !(s.notes?.isEmpty ?? true)
     }
@@ -27,8 +24,6 @@ extension AppModel {
         debugLog("notes edit: saved \(target) in \(id)")
     }
 
-    /// 复制纪要: HTML for document apps (Feishu, DingTalk, Notion, Notes), the Markdown as plain text
-    /// for chats; each app takes the one it reads.
     func copyNotes(_ s: Session) {
         let n = s.notes.map { SpeakerLabels.named($0, SpeakerLabels.names(s)) }
         let html = TranscriptExport.htmlDocument("<h1>\(TranscriptExport.esc(s.displayTitle))</h1>\n" + TranscriptExport.notesHTML(n))
@@ -43,7 +38,6 @@ extension AppModel {
     }
 }
 
-/// One editable piece of the notes: the text, a tap opens a field in place with 取消 and 完成.
 struct EditableNote<Label: View>: View {
     let target: NoteEdit.Target
     let text: String
@@ -84,7 +78,6 @@ struct EditableNote<Label: View>: View {
     }
 }
 
-/// 已复制纪要, dark above the player for a few seconds.
 struct CopiedToast: View {
     var body: some View {
         HStack(spacing: 10) {

@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Installs ios/build/Cicada.app into a simulator and launches it.
-#   ios/scripts/run.sh [device name] [--seed <session folder>...]
-# --seed copies Mac meeting folders (…/LiveSubs Dev/Sessions/<id>) into the app first.
-# Then drive it: xcrun simctl openurl "<device>" 'cicada-dev://debug?cmd=…' (commands: ios/Sources/Cicada/Debug.swift).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 DEVICE=${1:-"iPhone 18 Pro"}; shift || true

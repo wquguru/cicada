@@ -2,11 +2,6 @@ import AVFoundation
 import Foundation
 
 #if targetEnvironment(simulator)
-/// The simulator's speech models are empty placeholders (every recognizer answers "model not
-/// available"), so a dev build there sends its audio to the Mac it runs on: `ios/tools/host-recognizer`
-/// reads it from the app's container and recognizes it on device with the Mac's own `Recognition`,
-/// writing the pieces back. Same clock as any `RecognitionStream`: seconds of audio appended.
-/// Only for testing in the simulator; an iPhone recognizes on itself.
 enum HostRecognizer {
     static var root: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("host-recognizer", isDirectory: true)
@@ -47,7 +42,6 @@ final class HostStream: RecognitionStream, @unchecked Sendable {
         FileManager.default.createFile(atPath: dir.appendingPathComponent("results.jsonl").path, contents: nil)
         audio = try FileHandle(forWritingTo: audioURL)
         (results, out) = AsyncThrowingStream.makeStream(of: Recognition.Piece.self)
-        // Written last: the host starts on a folder once its request is there.
         let request = try JSONSerialization.data(withJSONObject: ["locale": locale, "drafts": drafts])
         try request.write(to: dir.appendingPathComponent("request.json"))
         let resultsURL = dir.appendingPathComponent("results.jsonl")
@@ -97,7 +91,6 @@ final class HostStream: RecognitionStream, @unchecked Sendable {
     func finish() async {
         queue.sync { try? audio.close() }
         FileManager.default.createFile(atPath: dir.appendingPathComponent("end").path, contents: nil)
-        // The host finishes the last line and says done; don't wait forever on it.
         for _ in 0..<100 where reader?.isCancelled == false {
             if (try? String(contentsOf: dir.appendingPathComponent("results.jsonl"), encoding: .utf8))?.contains("\"done\"") == true { break }
             try? await Task.sleep(nanoseconds: 100_000_000)

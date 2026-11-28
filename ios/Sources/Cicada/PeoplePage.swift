@@ -1,16 +1,10 @@
 import SwiftUI
 
-/// 记住的人, as the Mac's 人员库 (SpeakerLibraryView, AppModel.rememberSpeaker): a voice in a
-/// meeting is remembered only when the user asks and confirms (voiceprints are biometric data),
-/// from the meeting's own recording; later meetings name it as soon as it is heard. Everything stays
-/// on this phone and every row can be deleted.
 extension AppModel {
-    /// The confirmation's question, and then the voiceprint built from the meeting's recording.
     func rememberSpeaker(session id: String, voice: Int, name: String) {
         guard let s = store.session(id) else { return }
         let chosen = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !chosen.isEmpty else { speakerProblem = (L("先给这个人起个名字"), L("在“是谁”里输入名字后，再记住这个声音。")); return }
-        // An imported file's own audio, else the meeting's recording (still partial while it goes on).
         let fm = FileManager.default
         let audio = store.systemAudioURL(s.id), partial = AudioFileWriter.partial(audio)
         let source = s.sourceFile != nil ? s.sourcePath.map(Self.inThisContainer) : nil
@@ -47,8 +41,6 @@ extension AppModel {
         }
     }
 
-    /// An imported file's stored path under the app's container as it is now: the container's folder
-    /// changes when the app is reinstalled (and can on an update), the part inside it doesn't.
     static func inThisContainer(_ path: String) -> URL {
         let marker = "/Library/Application Support/"
         guard !FileManager.default.fileExists(atPath: path), let r = path.range(of: marker) else { return URL(fileURLWithPath: path) }
@@ -68,7 +60,6 @@ extension AppModel {
     }
 }
 
-/// 设置 › 人员库: who is remembered, a note for each (公司、职位、下次要记住的事), delete one or all.
 struct PeoplePage: View {
     @EnvironmentObject var model: AppModel
     @State private var confirmAll = false

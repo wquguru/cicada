@@ -1,8 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 存到文件夹's settings on iOS: the Mac's names (`exportOn`, `exportFolder`), plus the folder as a
-/// security-scoped bookmark, since an app can reopen a folder picked in Files only through one.
 @MainActor
 final class FolderPrefs: FolderExportPrefs {
     private let d = UserDefaults.standard
@@ -25,7 +23,6 @@ final class FolderPrefs: FolderExportPrefs {
         return url
     }
 
-    /// Keeps the picked folder for later launches. Must run while the picker's access is open.
     @discardableResult
     func remember(_ url: URL) -> Bool {
         let scoped = url.startAccessingSecurityScopedResource()
@@ -39,8 +36,6 @@ final class FolderPrefs: FolderExportPrefs {
     }
 }
 
-/// 设置 › 存到文件夹: on/off, the folder (picked in Files: iCloud Drive, an Obsidian vault, any
-/// app's folder), what was saved last or why it wasn't, and the meetings from before.
 struct FolderPage: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var exporter: FolderExporter

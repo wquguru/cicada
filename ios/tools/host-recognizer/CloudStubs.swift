@@ -1,8 +1,5 @@
 import AVFoundation
 
-// The host recognizer only uses the speech models; Recognition.swift also names the AI service's
-// stream (CloudHearing.swift), which would pull in the whole AI client. These stand in for it here.
-
 struct CloudHeard: Equatable, Sendable {}
 
 final class CloudStream: RecognitionStream, @unchecked Sendable {

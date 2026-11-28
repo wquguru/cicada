@@ -1,12 +1,6 @@
 import SwiftUI
 
-// 改正听错的词 on iPhone and iPad: the Mac's FixViews and WordListSettings in iOS idiom. The engine
-// is the Mac's own (`LiveFixes`, `Vocabulary`); these only show it and pass taps back.
-
-/// A line as shown, its fixed words with the Mac's dotted underline.
 enum FixedText {
-    /// The line with its applied fixes; each fixed word dotted, a word still waiting (这样改对吗？)
-    /// on a pale wash as heard. The Mac's `TranscriptParagraphs.joinFixed` for one line.
     static func attributed(_ l: TranscriptLine) -> AttributedString {
         let (text, marks) = Correction.apply(l.fixes ?? [], to: l.src)
         var a = AttributedString(text)
@@ -20,11 +14,9 @@ enum FixedText {
         return a
     }
 
-    /// The line's applied fixes, as the user sees them ("莫拉" → "Morpho").
     static func applied(_ l: TranscriptLine) -> [LineFix] { (l.fixes ?? []).filter(\.applied) }
 }
 
-/// 改这句… open: the meeting, the line, and what the editor starts with.
 struct LineEdit: Identifiable, Equatable {
     var id: String { session + "/" + line }
     let session: String
@@ -32,7 +24,6 @@ struct LineEdit: Identifiable, Equatable {
     let start: String
 }
 
-/// A small button on a card or banner: ink for the answer that changes something, grey for the other.
 struct FixButton: View {
     let title: LocalizedStringKey
     var dark = false
@@ -52,8 +43,6 @@ struct FixButton: View {
     }
 }
 
-/// 这样改对吗？ while listening: a name the app couldn't check by sound, asked about once. 对 fixes
-/// every line waiting on it and adds it to the word list; 稍后再看 asks again after the meeting.
 struct FixAskCard: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var fixes: LiveFixes
@@ -95,8 +84,6 @@ struct FixAskCard: View {
     }
 }
 
-/// Above a finished meeting's transcript: how many words were fixed, and the ones waiting for the
-/// user, one at a time (对 / 不对 / 改成…). Nothing when there was nothing to fix.
 struct FixReviewBanner: View {
     @ObservedObject var fixes: LiveFixes
     let session: Session
@@ -129,16 +116,12 @@ struct FixReviewBanner: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Ink.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Ink.accentWash, lineWidth: 1))
-            // Not scrolled to on opening, as the Mac does: on a phone the banner would leave the
-            // screen with it. A tap on the question goes there.
         } else if fixedCount > 0 {
             Text("改了 \(fixedCount) 处听错的词").font(.footnote).foregroundStyle(Ink.tertiary)
         }
     }
 }
 
-/// Under a line tapped open in the record: each fixed word, what it was heard as, 改回; and 改这句….
-/// The Mac shows the same while the line is pointed at.
 struct FixedWords: View {
     let line: TranscriptLine
     let onRevert: (LineFix) -> Void
@@ -167,8 +150,6 @@ struct FixedWords: View {
     }
 }
 
-/// 改这句…: the line as shown, to rewrite. What changed becomes the user's own fix
-/// (`LiveFixes.edit`), on every line heard the same way or only this one.
 struct LineEditorSheet: View {
     let edit: LineEdit
     @ObservedObject var fixes: LiveFixes
@@ -246,7 +227,6 @@ struct LineEditorSheet: View {
     }
 }
 
-/// The last fix decision said back for a few seconds, with 撤销: the speaker toast's look.
 struct FixToast: View {
     @ObservedObject var fixes: LiveFixes
 
@@ -259,9 +239,6 @@ struct FixToast: View {
 
 // MARK: - 设置 › 词表
 
-/// The switches for 改正听错的词 and the word list itself: each word, what it has been heard as,
-/// where it came from and how often it fixed a line. Swipe to delete (撤销 in its place for a few
-/// seconds), tap to change the spelling or the heard forms, 粘贴导入 for many at once.
 struct WordListPage: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var ling: LingClient
@@ -342,7 +319,6 @@ struct WordListPage: View {
         .animation(.snappy(duration: 0.2), value: model.deletedWord?.term.word)
     }
 
-    /// Most recently useful first, then the rest newest first.
     private var shown: [Vocabulary.Term] {
         let q = Vocabulary.key(query)
         let all = vocabulary.terms.reversed().sorted { ($0.used ?? .distantPast) > ($1.used ?? .distantPast) }
@@ -351,7 +327,6 @@ struct WordListPage: View {
     }
 }
 
-/// 搜索词表 once the list is long enough to need it, as on the Mac (more than 12).
 private struct WordSearch: ViewModifier {
     let on: Bool
     @Binding var query: String
@@ -361,21 +336,17 @@ private struct WordSearch: ViewModifier {
     }
 }
 
-/// A heard form typed for a word that another word already has: whose it should be.
 struct WordConflict: Equatable {
     let word: String
     let heard: String
     let owner: String
 }
 
-/// A deleted word, shown in its place with 撤销 for a few seconds.
 struct DeletedWord: Equatable {
     let term: Vocabulary.Term
     let index: Int
 }
 
-/// One word: its spelling, what it was heard as, where it came from and how often it fixed a line.
-/// Tapped, it opens in place: the spelling to change, heard forms to take off or add.
 private struct WordRow: View {
     @EnvironmentObject var model: AppModel
     let term: Vocabulary.Term
@@ -473,8 +444,6 @@ private struct WordRow: View {
     }
 }
 
-/// 粘贴导入: many words at once, each line one word, heard forms after "=". The counts follow what
-/// is pasted, and the button says how many go in.
 struct WordImportSheet: View {
     @ObservedObject var vocabulary: Vocabulary
     @Environment(\.dismiss) private var dismiss

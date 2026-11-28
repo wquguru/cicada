@@ -3,22 +3,16 @@ import SwiftUI
 
 enum RecordPage: String { case transcript, notes }
 
-/// One meeting, as the design's 会议记录 screen: one white sheet with the title, the voices as
-/// chips, the 文字记录 / 纪要 switch, and the recording on a glass bar at the bottom.
 struct RecordView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var ling: LingClient
     @EnvironmentObject var notes: NotesEngine
     let session: Session
-    /// Opened from 搜索 (or the iPad's sidebar search): the transcript opens at the first line found,
-    /// every match marked, as the Mac's records (#33).
     var searching = false
     @StateObject private var player = RecordPlayer()
     @State private var needsKey = false
-    /// What's typed into the title; nil until it is touched, so opening it changes nothing.
     @State private var titleDraft: String?
     @FocusState private var titleFocused: Bool
-    /// The speaker picked on a chip (scheme A: only they are drawn in ink); nil follows the recording.
     private var picked: Int? { model.focusSpeaker }
     @AppStorage(Pref.voices) private var voicesOn = true
 
@@ -26,10 +20,6 @@ struct RecordView: View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // The design's 28 pt title; the day is in the line below, so a notes title's
-                // leading "11月3日" goes.
-                // Editable in place, as on the Mac: an unchanged title isn't a rename, an emptied
-                // one goes back to the automatic title.
                 TextField(text: Binding(get: { titleDraft ?? shownTitle }, set: setTitle), axis: .vertical) {
                     Text("未命名会议")
                 }
@@ -62,7 +52,6 @@ struct RecordView: View {
 
                 switch model.recordPage {
                 case .transcript:
-                    // 改正听错的词 after the meeting: the waiting fixes, one at a time.
                     if session.id != model.store.liveID {
                         FixReviewBanner(fixes: model.fixes, session: session,
                                         onShow: { id in withAnimation { proxy.scrollTo(id, anchor: .center) } },
@@ -79,7 +68,6 @@ struct RecordView: View {
                         }
                         .frame(maxWidth: .infinity).padding(.top, 40)
                     } else {
-                        // Ling wrote "说话人 6" before anyone was named; show the names since given.
                         NotesPage(notes: session.notes.map { SpeakerLabels.named($0, SpeakerLabels.names(session)) },
                                   edit: model.editHooks(session))
                             .padding(.top, 18)
@@ -97,14 +85,12 @@ struct RecordView: View {
         }
         .onAppear {
             showMatches()
-            // The lazy list needs a moment to lay out (and the page to switch) before it can go to the line found.
             if let id = currentMatch { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { proxy.scrollTo(id, anchor: .center) } }
         }
         .onChange(of: model.query) { showMatches() }
         .onChange(of: currentMatch) { _, id in
             if let id, model.recordPage == .transcript { withAnimation { proxy.scrollTo(id, anchor: .center) } }
         }
-        // The transcript follows the recording while it plays, until scrolled by hand (as on the Mac).
         .onScrollPhaseChange { _, phase in if phase == .interacting { player.userScrolled() } }
         .onChange(of: player.lineID(in: session)) { _, id in
             if player.playing, player.following, model.recordPage == .transcript, let id { withAnimation { proxy.scrollTo(id, anchor: .center) } }
@@ -115,7 +101,6 @@ struct RecordView: View {
         }
         .background(Color.white)
         .navigationBarTitleDisplayMode(.inline)
-        // The design's trailing glass pair: 生成纪要 and 导出, in ink like the back button.
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
@@ -172,7 +157,6 @@ struct RecordView: View {
                 }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
-                    // The page fades out under the bar, as in the design, so text doesn't show through the glass.
                     .background(alignment: .bottom) {
                         LinearGradient(colors: [.white.opacity(0), .white], startPoint: .top, endPoint: .center)
                             .padding(.top, -24)
@@ -195,7 +179,6 @@ struct RecordView: View {
         }
     }
 
-    /// The search in this meeting: its terms (misheard names too), and the line being looked at.
     private var searchTerms: [String] { searching ? model.searchTerms(session) : [] }
     private var matches: [String] { TranscriptSearch.matches(session.lines, searchTerms) }
     private var currentMatch: String? {
@@ -203,7 +186,6 @@ struct RecordView: View {
         return ms.isEmpty ? nil : ms[min(model.searchMatch, ms.count - 1)]
     }
 
-    /// A search that finds lines here opens the transcript at the first one.
     private func showMatches() {
         guard searching else { return }
         model.searchMatch = 0
@@ -216,7 +198,6 @@ struct RecordView: View {
         return SearchMatchBar(index: min(model.searchMatch, n - 1), count: n) { model.stepSearch($0, in: session) }
     }
 
-    /// The speaker the recording is at, while it plays.
     private func playingNumber(_ numbers: [String: Int]) -> Int? {
         guard player.playing, let id = player.lineID(in: session) else { return nil }
         return numbers[id]
@@ -224,7 +205,6 @@ struct RecordView: View {
 
     private var shownTitle: String { RecordList.untitled(session) ? "" : RecordList.listTitle(session) }
 
-    /// Return ends the edit (the field wraps long titles, so it would otherwise add a line).
     private func setTitle(_ v: String) {
         if v.contains("\n") {
             titleDraft = v.replacingOccurrences(of: "\n", with: "")
@@ -240,7 +220,6 @@ struct RecordView: View {
         model.rename(session.id, to: draft)
     }
 
-    /// "今天 10:02 · 48 分钟 · 英 → 中".
     static func meta(_ s: Session) -> String {
         var parts = [dateText(s.startedAt, "MMMdHHmm"), RecordList.length(s)]
         if let pair = RecordList.pair(s, short: true) { parts.append(pair) }
@@ -248,33 +227,25 @@ struct RecordView: View {
     }
 }
 
-/// The voices told apart in this meeting, as chips in their colours ("Sarah", "说话人 3"); only
-/// with 说话人识别 on, as the transcript. A chip renames the voice or merges it into another.
 struct SpeakerChips: View {
     @EnvironmentObject var model: AppModel
     let session: Session
-    /// Each speaker number's share of the meeting, shown on the chip ("Sarah · 58%").
     var shares: [Int: Double] = [:]
-    /// Drawn in ink: the picked speaker, or the one playing.
     var focus: Int? = nil
     @Binding var picked: Int?
     @AppStorage(Pref.voices) private var voicesOn = true
     @State private var draft = ""
-    /// 记住这个声音: the voice and the name, waiting for the user to confirm.
     @State private var remembering: (voice: Int, name: String)?
-    /// The speaker number being named; on the model so a debug command can open it too.
     private var naming: Int? { model.namingSpeaker }
 
     var body: some View {
         let names = SpeakerLabels.names(session)
         let voices = voicesOn ? SpeakerLabels.voiceNumbers(session) : [:]
-        // Voice id by its speaker number.
         let byNumber = Dictionary(uniqueKeysWithValues: voices.map { ($1, $0) })
         let numbers = byNumber.keys.sorted()
         if !numbers.isEmpty {
             FlowLayout(spacing: 8) {
                 ForEach(numbers, id: \.self) { n in
-                    // Tap picks the speaker (only they stay in ink); a long press renames or merges.
                     Menu {
                         Button { draft = names[n] ?? ""; model.namingSpeaker = n } label: { Label("改名字", systemImage: "pencil") }
                         if let v = byNumber[n] {
@@ -325,7 +296,6 @@ struct SpeakerChips: View {
         }
     }
 
-    /// The Mac's rule: keeping Ling's guess stores nothing, so a later, better guess can still replace it.
     private func save(_ byNumber: [Int: Int]) {
         guard let n = naming, let voice = byNumber[n] else { return }
         model.namingSpeaker = nil
@@ -336,7 +306,6 @@ struct SpeakerChips: View {
     }
 }
 
-/// "说话人 6 已改成 David · 撤销", dark above the player, the Mac toast's pale accent on 撤销, for a few seconds.
 struct SpeakerUndoBar: View {
     let text: String
     let undo: () -> Void
@@ -359,27 +328,19 @@ struct SpeakerUndoBar: View {
 struct TranscriptList: View {
     @EnvironmentObject var model: AppModel
     let session: Session
-    /// The line the recording is at, highlighted like the design's.
     let playing: String?
-    /// Scheme A: this speaker's lines carry an ink bar, the rest a light grey one.
     var focus: Int? = nil
-    /// A speaker was picked on purpose: the others' lines step back.
     var dimOthers = false
-    /// With a recording, a tap on a line plays from it (and opens what was fixed in it, if anything).
     var playable = false
-    /// A search's terms, marked in place; the line it is on stands out.
     var terms: [String] = []
     var found: String? = nil
     let seek: (Double) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
-    /// The design's 14 pt grey original over a 16 pt translation, scaling with the text size.
     @ScaledMetric(relativeTo: .subheadline) private var srcSize: CGFloat = 14
     @ScaledMetric(relativeTo: .callout) private var dstSize: CGFloat = 16
 
     var body: some View {
         let numbers = TranscriptExport.speakerNumbers(session), names = SpeakerLabels.names(session)
-        // At the largest text sizes the time column would squeeze the text: the time goes on the
-        // speaker's line instead.
         let inline = typeSize.isAccessibilitySize
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(session.lines.enumerated()), id: \.element.id) { i, l in
@@ -390,7 +351,6 @@ struct TranscriptList: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
                             if inline { time(l, on) }
-                            // An imported file names a line once its voice is told apart (the Mac's saysWho).
                             if session.sourceFile == nil || numbers[l.id] != nil {
                                 Text(TranscriptExport.speakerName(l, numbers, names))
                                     .font(.caption.weight(.semibold))
@@ -401,7 +361,6 @@ struct TranscriptList: View {
                         if let d = l.dst, d != l.src, d != l.shown {
                             Text(TranscriptSearch.highlighted(AttributedString(d), terms, current: l.id == found)).font(.system(size: dstSize)).foregroundStyle(Ink.ink).lineSpacing(4)
                         }
-                        // Tapped open: what its fixed words were heard as, 改回, and 改这句….
                         if model.openLine == l.id {
                             FixedWords(line: l, onRevert: { f in model.fixes.revert(f, lineID: l.id, in: session.id) },
                                        onEdit: { edit(l) })
@@ -415,7 +374,6 @@ struct TranscriptList: View {
                         withAnimation(.snappy(duration: 0.2)) { model.openLine = model.openLine == l.id ? nil : l.id }
                     }
                 }
-                // Held: the same, and 拷贝 (a long press here can't also select text).
                 .contextMenu {
                     Button { edit(l) } label: { Label("改这句…", systemImage: "pencil") }
                     ForEach(Array(FixedText.applied(l).enumerated()), id: \.offset) { _, f in
@@ -436,7 +394,6 @@ struct TranscriptList: View {
                 .padding(.vertical, 14)
                 .padding(.horizontal, 20)
                 .background(on ? Ink.accent.opacity(0.06) : .clear)
-                // The upright strip beside the text: each line in its speaker's run.
                 .overlay(alignment: .leading) {
                     if !numbers.isEmpty {
                         RoundedRectangle(cornerRadius: 2).fill(mine ? SpeakerRail.focus : SpeakerRail.rest)
@@ -457,7 +414,6 @@ struct TranscriptList: View {
         model.editingLine = LineEdit(session: session.id, line: l.id, start: l.shown)
     }
 
-    /// The time; with a recording it plays from that line.
     private func time(_ l: TranscriptLine, _ on: Bool) -> some View {
         Button { seek(l.t) } label: {
             Text(TranscriptExport.clock(l.t))
@@ -470,9 +426,7 @@ struct TranscriptList: View {
 
 struct NotesPage: View {
     let notes: MeetingNotes?
-    /// A finished meeting's: the summary, conclusions and to-dos open in place on a tap.
     var edit: NotesEditHooks? = nil
-    /// The design's 16 pt notes text, as the transcript's translation.
     @ScaledMetric(relativeTo: .callout) private var size: CGFloat = 16
 
     var body: some View {
@@ -559,7 +513,6 @@ struct NotesPage: View {
     }
 }
 
-/// A topic's fishbone as the narrow Mac window draws it upright: the question, then each cause.
 struct FishboneList: View {
     let fishbone: Fishbone
 
@@ -580,17 +533,12 @@ struct FishboneList: View {
 
 // MARK: - The recording
 
-/// Plays what the record was heard from, as the Mac's RecordingPlayer: the meeting's own recording,
-/// or an imported file (audio or video) where it was copied in. The transcript follows it while it
-/// plays, until scrolled by hand; a line, or the bar, seeks.
 @MainActor
 final class RecordPlayer: ObservableObject {
     @Published private(set) var now: Double = 0
     @Published private(set) var playing = false
     @Published private(set) var rate: Float = 1
     @Published private(set) var following = true
-    /// The record says there is audio, but the file isn't there (`own`: the meeting's recording,
-    /// else the imported file).
     @Published private(set) var missing = false
     @Published private(set) var own = true
     @Published private(set) var duration: Double = 0
@@ -601,7 +549,6 @@ final class RecordPlayer: ObservableObject {
 
     var available: Bool { player != nil }
 
-    /// Another meeting's replaces it (the page is reused when one is picked).
     func load(store: SessionStore, session: Session) {
         guard loaded != session.id else { return }
         unload()
@@ -630,7 +577,6 @@ final class RecordPlayer: ObservableObject {
         ended = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: p.currentItem, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.playing = false }
         }
-        // Recordings made before RoomAudio leveled them are too quiet to hear: leveled as they play.
         if own, let item = p.currentItem { Task { await GainTap.attach(to: item) } }
         Task {
             if let d = try? await p.currentItem?.asset.load(.duration).seconds, d.isFinite { duration = d }
@@ -667,7 +613,6 @@ final class RecordPlayer: ObservableObject {
         playing.toggle()
     }
 
-    /// Plays from `t` (a line, the bar): the transcript follows again from there.
     func play(from t: Double) {
         guard player != nil else { return }
         seek(t)
@@ -687,21 +632,17 @@ final class RecordPlayer: ObservableObject {
         if playing { player?.rate = rate }
     }
 
-    /// The transcript was scrolled by hand while it plays: it stops following until 回到正在播放.
     func userScrolled() { if following, playing { following = false } }
     func follow() { following = true }
 
     func stop() { player?.pause(); playing = false }
 
-    /// The last line that started at or before the playhead, once playing has begun.
     func lineID(in s: Session) -> String? {
         guard playing || now > 0 else { return nil }
         return s.lines.last(where: { $0.t <= now + 0.2 })?.id
     }
 }
 
-/// The design's glass bar: play / pause, the time, a bar to drag, the length and the speed; when the
-/// file is gone, why it can't play.
 struct PlayerBar: View {
     @ObservedObject var player: RecordPlayer
 
@@ -744,7 +685,6 @@ struct PlayerBar: View {
     }
 }
 
-/// 回到正在播放: the transcript was scrolled away while it plays.
 struct FollowPill: View {
     @ObservedObject var player: RecordPlayer
     var body: some View {
@@ -761,7 +701,6 @@ struct FollowPill: View {
 }
 
 extension TranscriptSearch {
-    /// The Mac's marks in iOS's colours: every term on the pale accent, the line being looked at solid.
     static func highlighted(_ base: AttributedString, _ terms: [String], current: Bool) -> AttributedString {
         var a = base
         for term in terms where !term.isEmpty {
@@ -777,8 +716,6 @@ extension TranscriptSearch {
 }
 
 extension Notification.Name {
-    /// Debug `play:<seconds>`: the open record plays from there.
     static let debugPlay = Notification.Name("cicada.debugPlay")
-    /// Debug `scrollTo:<line id>`: the open record scrolls there.
     static let debugScroll = Notification.Name("cicada.debugScroll")
 }

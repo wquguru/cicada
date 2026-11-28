@@ -1,10 +1,6 @@
 import AVFoundation
 import SwiftUI
 
-// 第一次打开: three steps, as the design canvas (知了 iOS M2–M4). iPhone can't hear other apps or
-// speak into them, so the Mac's system-audio and BlackHole steps have no place here: the microphone
-// and the speech model, a sample meeting played aloud, then the Ling key.
-
 struct Welcome: View {
     @EnvironmentObject var model: AppModel
 
@@ -30,7 +26,6 @@ struct Welcome: View {
     }
 }
 
-/// Where the user is: the current step a short bar, the others dots.
 private struct Dots: View {
     let step: Int
 
@@ -46,7 +41,6 @@ private struct Dots: View {
     }
 }
 
-/// The black capsule every step ends on.
 struct PrimaryButton: View {
     let title: String
     var enabled = true
@@ -293,7 +287,6 @@ private struct SampleLine: View {
     }
 }
 
-/// sample.m4a through the speaker while the microphone listens: the room pipeline end to end.
 @MainActor
 final class SampleRun: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = SampleRun()
@@ -425,8 +418,6 @@ private struct WelcomeKey: View {
 }
 
 extension AppModel {
-    /// The sample on step 2: listening starts (in English, the sample's language), and the sample
-    /// plays once the microphone is on; the meeting ends shortly after it does, so its last line lands.
     func playSample() {
         let sample = SampleRun.shared
         guard !sample.playing else { return }

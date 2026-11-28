@@ -1,9 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// 导出: Markdown and SRT are the Mac's own (TranscriptExport); Word is written here, since the Mac's
-// `.officeOpenXML` writer is macOS-only. Same order and content as the Mac's `TranscriptExport.docx`.
-
 enum ExportFormat: String, CaseIterable, Identifiable {
     case markdown, word, srt
     var id: String { rawValue }
@@ -16,7 +13,6 @@ enum ExportFormat: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The file, under a temporary folder, named after the meeting.
     @MainActor func file(_ s: Session) throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("export-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -31,15 +27,13 @@ enum ExportFormat: String, CaseIterable, Identifiable {
     }
 }
 
-/// A minimal .docx: three XML parts in a zip, stored uncompressed (Word reads that fine), no
-/// third-party code.
 enum Docx {
     struct Para {
         var text: String
-        var size: Int          // points
+        var size: Int
         var bold = false
         var grey = false
-        var after = 4          // points after
+        var after = 4
     }
 
     @MainActor static func document(_ s: Session) -> Data {
@@ -98,7 +92,6 @@ enum Docx {
     }
 
     static func escape(_ s: String) -> String {
-        // Control characters other than tab are not allowed in XML 1.0.
         let clean = String(String.UnicodeScalarView(s.unicodeScalars.filter { $0.value >= 0x20 || $0 == "\t" }))
         return clean.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
@@ -107,7 +100,6 @@ enum Docx {
     static let contentTypes = #"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#
     static let rels = #"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#
 
-    /// A zip with every entry stored (method 0).
     static func zip(_ entries: [(String, String)]) -> Data {
         var out = Data(), central = Data()
         func u16(_ v: Int, _ d: inout Data) { d.append(contentsOf: [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF)]) }
@@ -115,7 +107,6 @@ enum Docx {
         for (name, text) in entries {
             let data = Data(text.utf8), nameData = Data(name.utf8)
             let crc = crc32(data), offset = UInt32(out.count)
-            // Local header: signature, version 2.0, flags (bit 11: UTF-8 names), stored, no time.
             u32(0x0403_4B50, &out); u16(20, &out); u16(0x0800, &out); u16(0, &out); u16(0, &out); u16(0x21, &out)
             u32(crc, &out); u32(UInt32(data.count), &out); u32(UInt32(data.count), &out)
             u16(nameData.count, &out); u16(0, &out)
@@ -147,7 +138,6 @@ enum Docx {
     }
 }
 
-/// 分享和导出: 分享链接 (ShareCard), then the three formats and 分享 (the system share sheet with the file).
 struct ExportSheet: View {
     let session: Session
     @Environment(\.dismiss) private var dismiss

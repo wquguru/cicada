@@ -1,19 +1,12 @@
 import SwiftUI
 
-/// 设置 › AI 服务, as on the Mac and Android: Ling (recommended), OpenRouter, ZenMux, OpenAI or the
-/// user's own OpenAI-compatible service. The settings are the Mac's (`aiProvider`, `aiModels`,
-/// `aiVoiceModels`, `aiCustomBase`, Ling's model in `aiModel`), each service with its own key file.
-/// The custom service here is the Mac's plain one: one address, a text model and optionally a speech
-/// model; recognition stays on the phone, notes use the same server.
 enum AIPrefs {
     static let provider = "aiProvider"
     static let models = "aiModels"
     static let voiceModels = "aiVoiceModels"
     static let customBase = "aiCustomBase"
-    /// 语音和文字只发给你的服务, the Mac's key: with the user's own service, Google is never asked.
     static let customOnly = "aiCustomOnly"
 
-    /// Whether the translator leaves Google out: only with the user's own service and the switch on.
     static var googleOff: Bool { current.id == .custom && d.bool(forKey: customOnly) }
 
     private static var d: UserDefaults { .standard }
@@ -21,12 +14,10 @@ enum AIPrefs {
     static var modelMap: [String: String] { d.dictionary(forKey: models) as? [String: String] ?? [:] }
     static var voiceMap: [String: String] { d.dictionary(forKey: voiceModels) as? [String: String] ?? [:] }
 
-    /// What `LingClient` calls with, as the Mac's `AppSettings.aiConfig`.
     static var config: AIConfig {
         let p = current
         switch p.id {
         case .ling:
-            // Ming speaks 面对面 with the same key: without the voice model, every turn fell back to the phone's voice.
             return AIConfig(provider: p, base: p.base, textModel: d.string(forKey: Pref.model) ?? p.textModels.first?.id ?? "",
                             voiceModel: p.voiceModels.first?.id, voiceBase: p.base)
         case .custom:
@@ -40,7 +31,6 @@ enum AIPrefs {
         }
     }
 
-    /// 面对面's voices follow the service: Ming's with Ling, the speech model's with the others.
     static func applyVoices() {
         let c = config
         switch c.provider.id {
@@ -107,7 +97,6 @@ struct AIServicePage: View {
                 Card {
                     NavigationLink { KeyPage() } label: {
                         HStack(spacing: 8) {
-                            // No key: the status beside it says so; this shows what a key looks like.
                             Text(verbatim: ling.key.map { $0.isEmpty ? L("不用 key") : AIKey.masked($0) } ?? "sk-…")
                                 .font(.body.monospaced()).foregroundStyle(ling.key == nil ? Ink.secondary : Ink.ink).lineLimit(1)
                             Spacer()
@@ -153,7 +142,6 @@ struct AIServicePage: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    /// 语音和文字只发给你的服务, as on the Mac: Google is never asked.
     private var onlyRow: some View {
         Toggle(isOn: Binding(get: { customOnly }, set: { customOnly = $0; model.aiChanged() })) {
             Text("语音和文字只发给你的服务").foregroundStyle(Ink.ink)
@@ -162,7 +150,6 @@ struct AIServicePage: View {
         .padding(.horizontal, 16).frame(minHeight: 50)
     }
 
-    /// What the switch costs, and while the service can't be reached, what stands in.
     private var onlyDetail: String {
         let down: Bool
         switch ling.keyState {
@@ -228,8 +215,6 @@ struct AIServicePage: View {
 }
 
 extension LingClient {
-    /// Opening AI 服务 after a failed check asks again: what was wrong may have been fixed on the
-    /// service's side (a key's model list, its credit) without anything changing here.
     func recheckIfFailed() {
         switch keyState {
         case .invalid, .unreachable, .unchecked: Task { await check() }
@@ -239,7 +224,6 @@ extension LingClient {
 }
 
 extension AppModel {
-    /// 改用 Ling: another service can't be reached and a Ling key is here.
     var canSwitchToLing: Bool { AIPrefs.current.id != .ling && AIKey.read("ling") != nil }
 
     func switchToLing() {
@@ -248,8 +232,6 @@ extension AppModel {
         aiChanged()
     }
 
-    /// The service, its address or a model changed: LingClient checks again and 面对面 takes the
-    /// service's voices.
     func aiChanged() {
         AIPrefs.applyVoices()
         translator.googleOff = AIPrefs.googleOff

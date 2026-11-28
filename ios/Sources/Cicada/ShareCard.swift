@@ -1,9 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// 分享链接 at the top of 导出: the Mac's share (ShareClient, cicada.indaloop.app) in one card.
-/// 只分享纪要 or 纪要和双语全文, valid 7 days, no password (the Mac's defaults); the server checks
-/// for sensitive content first, and flagged parts can be left out and checked again.
 struct ShareCard: View {
     let session: Session
     private enum Step: Equatable {
@@ -146,7 +143,6 @@ struct ShareCard: View {
         .background(Ink.accentWash, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    /// As the Mac's: an hour's slack, so a fresh 7-day link reads 7, not 8.
     private static func daysLeft(_ r: ShareRecord) -> Int { max(1, Int(ceil((r.expiresAt.timeIntervalSinceNow - 3600) / 86400))) }
 
     private func validity(_ r: ShareRecord) -> String {
@@ -154,12 +150,10 @@ struct ShareCard: View {
         return left >= 365 ? L("1 年内有效") : L("\(left) 天内有效")
     }
 
-    /// What 复制链接 puts on the clipboard, as the Mac's: the title, the link, how long it lasts.
     private func clipboard(_ r: ShareRecord) -> String {
         [L("「\(session.displayTitle)」会议记录"), r.url, validity(r)].joined(separator: "\n")
     }
 
-    /// The Mac's wording for the server's codes (ShareViews.swift).
     static func message(_ code: String) -> String {
         switch code {
         case "rate_limited", "too_many_shares": return L("分享得太频繁了，请稍后再试。")

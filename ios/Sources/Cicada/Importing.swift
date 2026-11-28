@@ -4,14 +4,6 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-// 导入录音或视频: the Mac's FileImporter, fed from Files, Photos or another app's share sheet. Each
-// file is copied into the app first (a picked file's access ends with the picker, and Photos hands
-// over a temporary copy), and the copy is the record's source. While files are turning into
-// records the system keeps the app running behind other apps (BGContinuedProcessingTask) and shows
-// its progress.
-
-/// 对方说 and 翻译成 as the iOS app has them: an import is in the language the user listens to
-/// (自动识别: FileImporter hears it).
 @MainActor
 final class ImportPrefs: ImportSettings {
     var importLanguage: String { Pref.sourceAuto ? "auto" : Pref.sourceLang.locale }
@@ -20,13 +12,11 @@ final class ImportPrefs: ImportSettings {
 }
 
 enum ImportFiles {
-    /// The app's own copies of imported files.
     static var folder: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(DevBuild.supportFolder).appendingPathComponent("Imports")
     }
 
-    /// A copy under `folder`, keeping the file's name (it becomes the record's title).
     static func copy(_ url: URL) -> URL? {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
@@ -42,27 +32,23 @@ enum ImportFiles {
         }
     }
 
-    /// The copy goes with its record.
     static func remove(_ path: String?) {
         guard let path, path.hasPrefix(folder.path) else { return }
         try? FileManager.default.removeItem(at: URL(fileURLWithPath: path).deletingLastPathComponent())
     }
 }
 
-/// A video from Photos, as a file.
 struct PickedMovie: Transferable {
     let url: URL
 
     static var transferRepresentation: some TransferRepresentation {
         FileRepresentation(contentType: .movie) { SentTransferredFile($0.url) } importing: { received in
-            // The received file is gone after this returns: our own copy is what is imported.
             guard let copy = ImportFiles.copy(received.file) else { throw CocoaError(.fileWriteUnknown) }
             return PickedMovie(url: copy)
         }
     }
 }
 
-/// The system's progress for imports running behind other apps (iOS 26).
 @MainActor
 enum ImportBackground {
     static var identifier: String { (Bundle.main.bundleIdentifier ?? "com.indaloop.cicada") + ".import" }
@@ -70,7 +56,6 @@ enum ImportBackground {
     private static var ticker: Timer?
     static weak var importer: FileImporter?
 
-    /// Before the app finishes launching, as BGTaskScheduler requires.
     static func register() {
         let ok = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) { t in
             MainActor.assumeIsolated { run(t) }
@@ -94,7 +79,6 @@ enum ImportBackground {
         task = t
         t.progress.totalUnitCount = 1000
         t.expirationHandler = {
-            // The system wants the time back: what was transcribed stays, the record offers 重新转写.
             MainActor.assumeIsolated {
                 debugLog("import: background time expired")
                 importer?.cancelAll()
@@ -123,7 +107,6 @@ enum ImportBackground {
 }
 
 extension AppModel {
-    /// Files from the picker, Photos or the share sheet: copied, then queued as records.
     func importFiles(_ urls: [URL], copied: Bool = false) {
         let files = urls.filter(FileImporter.importable).compactMap { copied ? $0 : ImportFiles.copy($0) }
         guard !files.isEmpty else {
@@ -137,7 +120,6 @@ extension AppModel {
         }
     }
 
-    /// A file shared to the app ("用知了打开"): it arrives in the app's Inbox, already a copy.
     func openedFile(_ url: URL) -> Bool {
         guard url.isFileURL else { return false }
         importFiles([url])
@@ -146,7 +128,6 @@ extension AppModel {
     }
 }
 
-/// The import button's two sources.
 struct ImportMenu<Label: View>: View {
     @EnvironmentObject var model: AppModel
     @State private var files = false
@@ -179,8 +160,6 @@ struct ImportMenu<Label: View>: View {
     }
 }
 
-/// 正在导入, at the top of the records while files are turning into records: the file, how far
-/// it has got, and 停止.
 struct ImportCard: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var importer: FileImporter
@@ -234,15 +213,12 @@ private extension String {
 }
 
 extension AppModel {
-    /// 重新转写: a record that stopped halfway (the system took the background time back, or 停止),
-    /// or one heard badly, transcribed again from its file or recording; the old transcript is backed up.
     func retranscribe(_ id: String, lang: Lang? = nil) {
         importer.retry(id, lang: lang)
         guard importer.current?.id == id || importer.queue.contains(where: { $0.id == id }) else { return }
         ImportBackground.begin(store.session(id)?.displayTitle ?? "")
     }
 
-    /// Whether 重新转写 has something to hear: the imported file's copy, or the meeting's recording.
     func canRetranscribe(_ s: Session) -> Bool {
         if let path = s.sourcePath, FileManager.default.fileExists(atPath: path) { return true }
         return [store.systemAudioURL(s.id), store.micAudioURL(s.id), store.roomAudioURL(s.id)]
@@ -250,7 +226,6 @@ extension AppModel {
     }
 }
 
-/// 重新转写 by language, for a record's menus: not while it is live or being transcribed.
 struct RetranscribeMenu: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var importer: FileImporter
@@ -268,8 +243,6 @@ struct RetranscribeMenu: View {
     }
 }
 
-/// Under an imported record's title, as on the Mac: queued, how far transcribing got, or that it
-/// stopped, with 重新转写.
 struct ImportStatusStrip: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var importer: FileImporter
@@ -319,7 +292,6 @@ struct ImportStatusStrip: View {
     }
 }
 
-/// The list row's word for a record still being worked on, as on the Mac.
 struct ImportRowTag: View {
     @ObservedObject var importer: FileImporter
     let session: Session

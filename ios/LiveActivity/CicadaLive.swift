@@ -2,11 +2,6 @@ import ActivityKit
 import SwiftUI
 import WidgetKit
 
-// The CicadaLive extension: draws ListenActivity (ios/Sources/Cicada/ListenActivity.swift) on the
-// lock screen and in the Dynamic Island, and 开始听 in Control Center. Built by ios/scripts/build.sh
-// into PlugIns/CicadaLive.appex. Its buttons are App Intents (ios/Sources/Cicada/Intents.swift),
-// which run in the app.
-
 @main
 struct CicadaLiveBundle: WidgetBundle {
     var body: some Widget {
@@ -15,7 +10,6 @@ struct CicadaLiveBundle: WidgetBundle {
     }
 }
 
-/// 开始听 in Control Center and on the lock screen.
 struct StartListeningControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "com.indaloop.cicada.start") {
@@ -28,7 +22,6 @@ struct StartListeningControl: ControlWidget {
     }
 }
 
-/// 暂停 / 继续 and 结束并出纪要, on the lock screen and in the expanded Dynamic Island.
 private struct LiveButtons: View {
     let paused: Bool
     var dark = false
@@ -73,7 +66,6 @@ private struct LiveLogo: View {
     }
 }
 
-/// The elapsed time, counting up from the start, ticked by the system.
 private struct Elapsed: View {
     let since: Date
     var body: some View {
@@ -85,7 +77,6 @@ private struct Elapsed: View {
 struct ListenLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ListenActivity.self) { context in
-            // Lock screen: the logo, 正在听 · time, the languages, and the newest line.
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     LiveLogo(size: 34)
@@ -150,7 +141,6 @@ struct ListenLiveActivity: Widget {
                     LiveLogo(size: 20)
                 }
             } compactTrailing: {
-                // Paused: a still pause mark, not a clock that keeps running as if it were listening.
                 if context.state.paused {
                     Image(systemName: "pause.fill").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.6))
                 } else {

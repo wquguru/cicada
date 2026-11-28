@@ -1,9 +1,6 @@
 import SwiftUI
 
-/// 设置, as the design's: grey section labels over white cards: the Ling key and model (纪要), the
-/// language meetings are translated into, 说话人识别, 面对面's own language, and 快速开始.
 struct SettingsView: View {
-    /// iPad shows it as a sheet, with 完成.
     var sheet = false
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var ling: LingClient
@@ -78,7 +75,6 @@ struct SettingsView: View {
                                 .tint(Ink.ok)
                         }, L("只存在这台手机上，会议记录里能回放原声"))
                     }
-                    // As on the Mac and Android, minus 会议应用挂断后结束: iOS can't see another app's microphone.
                     SectionLabel(text: L("结束会议"))
                     Card {
                         helped(row(Text("没人说话时")) {
@@ -104,7 +100,6 @@ struct SettingsView: View {
                     SectionLabel(text: L("纪要"))
                     Card {
                         row(Text("纪要语言")) {
-                            // The menu names the language; the row only the choice, so it fits on one line in English.
                             Menu {
                                 Picker(selection: $notesLanguage) {
                                     Text(L("我的语言 · \(targetName(Pref.targetCode))")).tag("mine")
@@ -163,7 +158,6 @@ struct SettingsView: View {
                         .font(.footnote).foregroundStyle(Ink.tertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 28)
-                    // For a bug report: numbers only (timings, counts, the service and model), never what was said.
                     Button {
                         UIPasteboard.general.string = model.diagnosticsReport
                         copiedDiagnostics = true
@@ -176,7 +170,6 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 120)
-                // On iPad a readable column, not the whole width.
                 .frame(maxWidth: 640)
                 .frame(maxWidth: .infinity)
             }
@@ -200,7 +193,6 @@ struct SettingsView: View {
         .tint(Ink.ink)
     }
 
-    /// A row with its one grey helper line under it.
     private func helped<R: View>(_ row: R, _ help: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             row
@@ -210,7 +202,6 @@ struct SettingsView: View {
         }
     }
 
-    /// 念给对方的声音 at a glance: the voice the other person hears.
     private var voiceSummary: String {
         let lang = model.face.theirs.code
         let id = SpeakVoices.chosenID(for: lang, hasKey: ling.hasKey, clones: ling.clones)
@@ -231,7 +222,6 @@ struct SettingsView: View {
     }
 }
 
-/// "● 已连接" and the other key states, as on the Mac's AI 服务 page.
 struct KeyStatus: View {
     let state: LingClient.KeyState
 
@@ -262,7 +252,6 @@ struct KeyStatus: View {
     }
 }
 
-/// Paste or type the key; it is checked with one tiny request and kept only in the app's file.
 struct KeyPage: View {
     @EnvironmentObject var ling: LingClient
     @AppStorage(Pref.model) private var aiModel = LingClient.models[0]
@@ -324,7 +313,6 @@ struct KeyPage: View {
                 }
                 if ling.key != nil && !editing {
                     HStack {
-                        // Any state: a key fixed on the service's side (its model list, its credit) is checked again here.
                         Button("重新检查") { Task { await ling.check() } }
                             .disabled(ling.keyState == .checking)
                         Spacer()
@@ -363,10 +351,7 @@ struct KeyPage: View {
     }
 }
 
-/// 设置 › 快速开始: where 开始听 can be put. iOS lets only the user choose them, in the system's own
-/// settings; this page says where.
 struct QuickStartPage: View {
-    /// What Siri and the Action button list the app as.
     private let name = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? appDisplayName
 
     var body: some View {

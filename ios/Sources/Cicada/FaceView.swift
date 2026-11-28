@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// 面对面, as the design: the top half turned around for the person across the table, each half with
-/// its own hold-to-talk button, and between them 结束 and the two languages. Each half speaks its
-/// own language, so the other person's half is in theirs (the app's strings where it has them).
 struct FaceView: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var face: FaceToFace
@@ -50,7 +47,6 @@ struct FaceView: View {
                 }
                 .disabled(face.phase != .idle)
                 .accessibilityLabel(Text("我说和对方说"))
-                // 不用按键, where a spacer balanced the close button.
                 Button { face.setHandsFree(!face.handsFree) } label: {
                     Image(systemName: face.handsFree ? "hand.raised.slash.fill" : "hand.raised.slash")
                         .font(.system(size: 16, weight: .semibold))
@@ -75,7 +71,6 @@ struct FaceView: View {
 
     private func pick(mine l: String) {
         guard let m = FaceToFace.lang(l) else { return }
-        // Picking the other side's language swaps the two.
         face.setLanguages(mine: m, theirs: m == face.theirs ? face.mine : face.theirs)
     }
 
@@ -124,7 +119,6 @@ private struct FaceHalf: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// The big line, the grey one under it, and whether the big one is settled (ink) or not yet.
     private var content: (String, String, Bool) {
         switch face.phase {
         case .hearing(let s) where s == side:
@@ -153,7 +147,6 @@ private struct FaceHalf: View {
         }
     }
 
-    /// The app's strings in this half's language: languages the app isn't translated into get English.
     private var bundle: Bundle { Self.bundle(lang.code) }
 
     static func bundle(_ code: String) -> Bundle {
@@ -167,7 +160,6 @@ private struct FaceHalf: View {
     }
 }
 
-/// The big round button: held, it listens (orange, with rings); let go, it translates and reads out.
 private struct HoldButton: View {
     @ObservedObject var face: FaceToFace
     let side: FaceToFace.Side
@@ -206,7 +198,6 @@ private struct HoldButton: View {
             .accessibilityElement()
             .accessibilityLabel(Text(verbatim: label))
             .accessibilityAddTraits(.isButton)
-            // VoiceOver can't hold: a double tap starts, another one stops.
             .accessibilityAction {
                 if hearing { face.release(side) } else { face.press(side) }
             }
@@ -218,7 +209,6 @@ private struct HoldButton: View {
     }
 }
 
-/// 不用按键: the side being heard shows it (in its own language); a tap on the other gives it the turn.
 private struct TurnButton: View {
     @ObservedObject var face: FaceToFace
     let side: FaceToFace.Side
@@ -248,8 +238,6 @@ private struct TurnButton: View {
     }
 }
 
-/// 面对面 under 开始听, a row of its own as tall as it: the icon and the name at full size, and
-/// the languages and what happens (the phone reads it out), so it doesn't pass for another 开始听.
 struct FaceRow: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject var face: FaceToFace
@@ -264,7 +252,6 @@ struct FaceRow: View {
                     .background(Ink.ground, in: Circle())
                 VStack(alignment: .leading, spacing: 1) {
                     Text("面对面").font(.headline).foregroundStyle(Ink.ink).lineLimit(1)
-                    // Narrow (the iPad sidebar, English): the languages only, never a clipped sentence.
                     let pair = "\(Pref.name(of: face.mine)) ⇄ \(Pref.name(of: face.theirs))"
                     ViewThatFits(in: .horizontal) {
                         Text(verbatim: pair + " · " + L("手机念给对方听"))
