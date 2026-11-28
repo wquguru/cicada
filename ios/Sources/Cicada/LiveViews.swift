@@ -22,7 +22,8 @@ struct HomeTitle: View {
                         .foregroundStyle(room.paused ? Ink.secondary : Ink.accentText)
                     }
                     let pair = Pref.pairText(room.languagePair.source, room.languagePair.target)
-                    Text(pair.isEmpty ? (room.speakerMode ? L("外放") : L("会议室"))
+                    Text(room.cast ? (pair.isEmpty ? L("手机里的声音") : L("手机里的声音 · \(pair)"))
+                         : pair.isEmpty ? (room.speakerMode ? L("外放") : L("会议室"))
                          : (room.speakerMode ? L("外放 · \(pair)") : L("会议室 · \(pair)")))
                         .font(.system(size: titleSize - 4, weight: .bold)).foregroundStyle(Ink.ink)
                         .lineLimit(1).minimumScaleFactor(0.7)
@@ -82,9 +83,12 @@ struct ListenBar: View {
                     Picker(selection: $hear) {
                         Text("会议室").tag("room")
                         Text("手机外放").tag("speaker")
+                        if CastLink.available { Text("手机里的声音").tag("cast") }
                     } label: { Text("声音来源") }
                     .pickerStyle(.inline)
-                    Text(hear == "speaker" ? L("别戴耳机，字幕会浮在小窗里") : L("听不到其他 app 的声音，线上会议请用电脑版"))
+                    Text(hear == "speaker" ? L("别戴耳机，字幕会浮在小窗里")
+                         : hear == "cast" && CastLink.available ? L("X Space、播客、视频 · 听不到你自己说的话")
+                         : CastLink.available ? L("别的 app 里的声音，选“手机里的声音”") : L("听不到其他 app 的声音，线上会议请用电脑版"))
                 }
                 Picker(selection: $source) {
                     Text("自动识别").tag("auto")
@@ -95,7 +99,7 @@ struct ListenBar: View {
                     ForEach(targetLanguages, id: \.code) { Text($0.name).tag($0.code) }
                 } label: { Text("翻译成") }
             } label: {
-                Text(verbatim: (hear == "speaker" ? L("外放") + " · " : "") + "\(Pref.sourceName) → \(targetName(Pref.target(for: Pref.sourceCode)))")
+                Text(verbatim: (hear == "speaker" ? L("外放") + " · " : hear == "cast" && CastLink.available ? L("手机里的声音") + " · " : "") + "\(Pref.sourceName) → \(targetName(Pref.target(for: Pref.sourceCode)))")
                     .font(.subheadline).foregroundStyle(Ink.secondary).lineLimit(1).minimumScaleFactor(0.75)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(minHeight: 44)
@@ -193,6 +197,7 @@ struct LivePhone: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(Text("收起"))))
                 ListenBar()
+                CastCard()
                 PillSwitch(selection: $model.livePage, options: [(.notes, notesTitle), (.subtitles, "字幕")])
                 EndingStrip()
                 ModelWaitCard()
@@ -352,6 +357,7 @@ struct LivePad: View {
         VStack(spacing: 0) {
             EndingStrip().frame(maxWidth: 560).padding(.horizontal, 20).padding(.top, 18)
             ModelWaitCard().frame(maxWidth: 560).padding(.horizontal, 20).padding(.top, 18)
+            CastCard().frame(maxWidth: 560).padding(.horizontal, 20).padding(.top, 12)
             TranslateDownCard().frame(maxWidth: 560).padding(.horizontal, 20).padding(.top, 18)
             NotesStatusLine().frame(maxWidth: 560).padding(.horizontal, 20).padding(.top, 18)
             if let id = room.sessionID {
@@ -425,6 +431,7 @@ struct ModelWaitCard: View {
 }
 
 struct StartProblemCard: View {
+    @EnvironmentObject var model: AppModel
     @EnvironmentObject var room: RoomListen
 
     var body: some View {
@@ -463,12 +470,14 @@ struct StartProblemCard: View {
     private func title(_ p: RoomListen.StartProblem) -> String {
         switch p {
         case .microphone: L("请在设置里允许知了使用麦克风")
+        case .micBusy: L("别的 app 在用麦克风")
         case .model(let m): L("没能下载 \(m.lang.name) 语音模型")
         case .other(let message): message
         }
     }
 
     private func reason(_ p: RoomListen.StartProblem) -> String? {
+        if p == .micBusy { return CastLink.available ? L("可以改听手机放出来的声音，接着出字幕。") : L("比如 X Space、电话") }
         guard case .model(let m) = p else { return nil }
         switch m.cause {
         case .offline: return L("网络连不上，连上后会自动继续")
@@ -483,6 +492,7 @@ struct StartProblemCard: View {
         let settings = { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
         switch p {
         case .microphone: return (L("打开 iPhone 设置"), settings)
+        case .micBusy where CastLink.available: return (L("改听手机里的声音"), { model.startListening(cast: true) })
         case .model(let m) where m.cause == .disk: return (L("打开 iPhone 设置"), settings)
         case .model(let m) where m.cause == .offline: return nil
         default: return (L("再试一次"), { room.retry() })
@@ -540,6 +550,80 @@ struct NotesStatusLine: View {
             return (L("这轮纪要没写好 · 下轮自动补上"), false, nil)
         default:
             return nil
+        }
+    }
+}
+
+struct CastCard: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var room: RoomListen
+
+    var body: some View {
+        Group {
+            if room.isRunning, room.micBusy, !room.cast {
+                card(icon: "mic.slash", title: L("别的 app 在用麦克风"), detail: L("比如 X Space、电话"),
+                     body: L("可以改听手机放出来的声音，接着出字幕。"),
+                     primary: (L("改听手机里的声音"), { room.switchToCast() }), secondary: (L("等它结束再听"), { room.dismissMicBusy() }),
+                     foot: L("听不到你自己说的话"), accent: true)
+            } else if room.isRunning, room.cast, room.castState == .waiting {
+                card(icon: "record.circle", title: L("点“开始直播”后开始听"), detail: L("顶部亮红色就是在听"), body: nil,
+                     primary: (L("打开直播"), { room.showPicker() }), secondary: nil, foot: nil, accent: true)
+            } else if room.isRunning, room.cast, room.castSilent {
+                card(icon: "speaker.slash", title: L("没录到声音"), detail: L("有些通话 app 不让别人录它的声音"),
+                     body: L("换一台手机或电脑放在旁边，用“会议室”听。"),
+                     primary: (L("结束"), { model.stopListening() }), secondary: (L("接着等"), { room.waitOutSilence() }),
+                     foot: nil, accent: false)
+            } else if room.isRunning, room.cast, room.castState == .connected {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle").font(.footnote).foregroundStyle(Ink.secondary)
+                    Text("听不到你自己说的话 · 顶部红色结束后消失").font(.footnote).foregroundStyle(Ink.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: room.micBusy)
+        .animation(.snappy(duration: 0.2), value: room.castState)
+        .animation(.snappy(duration: 0.2), value: room.castSilent)
+    }
+
+    private func card(icon: String, title: String, detail: String, body: String?, primary: (String, () -> Void),
+                      secondary: (String, (() -> Void)?)?, foot: String?, accent: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: icon).font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(accent ? Ink.accentText : Ink.ink)
+                    .frame(width: 44, height: 44)
+                    .background(accent ? Ink.accentWash : Ink.ground, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.headline).foregroundStyle(Ink.ink)
+                    Text(detail).font(.subheadline).foregroundStyle(Ink.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            if let body { Text(body).font(.subheadline).foregroundStyle(Ink.ink).fixedSize(horizontal: false, vertical: true) }
+            Button(action: primary.1) {
+                Text(primary.0).font(.headline).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 50)
+                    .background(Ink.ink, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            if let secondary {
+                Button { secondary.1?() } label: {
+                    Text(secondary.0).font(.subheadline.weight(.semibold)).foregroundStyle(Ink.ink)
+                        .frame(maxWidth: .infinity).frame(height: 44)
+                        .background(Ink.ground, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            if let foot { Text(foot).font(.footnote).foregroundStyle(Ink.secondary) }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Ink.accent.opacity(accent ? 0.35 : 0), lineWidth: 1.5)
         }
     }
 }

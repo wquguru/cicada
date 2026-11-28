@@ -80,10 +80,20 @@ intents_metadata CicadaLive "$APPEX" "$APPEX/CicadaLive" "${LIVE[@]}"
 cp ios/LiveActivity/Info.plist "$APPEX/Info.plist"
 cp "$APP/logo.png" "$APPEX/"
 for d in "$APP"/*.lproj; do cp -R "$d" "$APPEX/"; done
+EXTS=("$APPEX")
+if [[ "${BROADCAST:-1}" == 1 ]]; then
+  CAST="$APP/PlugIns/CicadaBroadcast.appex"
+  mkdir -p "$CAST"
+  xcrun --sdk "$SDK" swiftc -O -swift-version 5 -parse-as-library -application-extension -module-name CicadaBroadcast \
+    -target "$TARGET" -sdk "$SDKPATH" -Xlinker -e -Xlinker _NSExtensionMain ios/Broadcast/*.swift -o "$CAST/CicadaBroadcast"
+  cp ios/Broadcast/Info.plist "$CAST/Info.plist"
+  for d in "$APP"/*.lproj; do cp -R "$d" "$CAST/"; done
+  EXTS+=("$CAST")
+fi
 
 PLIST="$APP/Info.plist"
 BUILD=${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}
-for p in "$PLIST" "$APPEX/Info.plist"; do
+for p in "$PLIST" "${EXTS[@]/%//Info.plist}"; do
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(tr -d '[:space:]' < VERSION)" \
     -c "Set :CFBundleVersion $BUILD" -c "Set :CFBundleSupportedPlatforms:0 $PLATFORM" "$p"
 done
@@ -91,7 +101,7 @@ SDKVER=$(xcrun --sdk "$SDK" --show-sdk-version)
 SDKBUILD=$(xcrun --sdk "$SDK" --show-sdk-build-version)
 XCBUILD=$(xcodebuild -version | awk '/Build version/{print $3}')
 XCVER=$(xcodebuild -version | awk '/^Xcode/{split($2,v,"."); printf "%d%d%d0", v[1], v[2], v[3]}')
-for p in "$PLIST" "$APPEX/Info.plist"; do
+for p in "$PLIST" "${EXTS[@]/%//Info.plist}"; do
   /usr/libexec/PlistBuddy -c "Add :DTPlatformName string $SDK" -c "Add :DTPlatformVersion string $SDKVER" \
     -c "Add :DTPlatformBuild string $SDKBUILD" -c "Add :DTSDKName string $SDK$SDKVER" -c "Add :DTSDKBuild string $SDKBUILD" \
     -c "Add :DTXcode string $XCVER" -c "Add :DTXcodeBuild string $XCBUILD" \
@@ -107,9 +117,10 @@ if [[ "${RELEASE:-}" != 1 ]]; then
     -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string cicada-dev" \
     "$PLIST"
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.indaloop.cicada.dev.live" "$APPEX/Info.plist"
+  [[ -n "${CAST:-}" ]] && /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.indaloop.cicada.dev.broadcast" "$CAST/Info.plist"
 fi
 if [[ "${DEVICE:-}" != 1 ]]; then
-  codesign --force --sign - "$APPEX" 2>/dev/null
+  for e in "${EXTS[@]}"; do codesign --force --sign - "$e" 2>/dev/null; done
   codesign --force --sign - "$APP" 2>/dev/null
 else
   : "${SIGN_IDENTITY:?DEVICE=1 needs SIGN_IDENTITY (and PROFILE, PROFILE_LIVE): see ios/scripts/provision.sh}"
@@ -117,10 +128,19 @@ else
     cp "$2" "$1/embedded.mobileprovision"
     security cms -D -i "$2" > "$WORK/profile.plist"
     /usr/libexec/PlistBuddy -x -c "Print :Entitlements" "$WORK/profile.plist" > "$WORK/entitlements.plist"
+    if [[ -n "${CAST:-}" && $# -gt 2 ]]; then
+      local team; team=$(/usr/libexec/PlistBuddy -c "Print :com.apple.developer.team-identifier" "$WORK/entitlements.plist")
+      local groups="" i=0; for g in "${@:3}"; do groups+=" -c 'Add :keychain-access-groups:$i string $team.$g'"; i=$((i + 1)); done
+      eval /usr/libexec/PlistBuddy -c "'Delete :keychain-access-groups'" -c "'Add :keychain-access-groups array'" $groups '"$WORK/entitlements.plist"' >/dev/null
+    fi
     codesign --force --sign "$SIGN_IDENTITY" --entitlements "$WORK/entitlements.plist" --generate-entitlement-der "$1"
   }
+  TEAM=$(security cms -D -i "${PROFILE:?}" | plutil -extract TeamIdentifier.0 raw -)
+  [[ -n "${CAST:-}" ]] && for p in "$PLIST" "$CAST/Info.plist"; do /usr/libexec/PlistBuddy -c "Add :AppIdentifierPrefix string $TEAM." "$p"; done
   sign "$APPEX" "${PROFILE_LIVE:?}"
-  sign "$APP" "${PROFILE:?}"
+  BUNDLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST")
+  [[ -n "${CAST:-}" ]] && sign "$CAST" "${PROFILE_BROADCAST:?BROADCAST=1 needs PROFILE_BROADCAST: rerun ios/tools/provision.py}" "$BUNDLE.cast"
+  sign "$APP" "${PROFILE:?}" "$BUNDLE" "$BUNDLE.cast"
   codesign --verify --deep --strict "$APP"
 fi
 echo "Built $APP ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST") $(tr -d '[:space:]' < VERSION) ($BUILD))"

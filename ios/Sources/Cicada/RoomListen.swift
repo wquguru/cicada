@@ -22,17 +22,23 @@ final class RoomListen: ObservableObject {
     @Published private(set) var sessionID: String?
     @Published private(set) var speakerMode = false
     @Published private(set) var paused = false
+    @Published private(set) var cast = false
+    @Published private(set) var castState: CastLink.State?
+    @Published private(set) var castSilent = false
+    @Published private(set) var micBusy = false
     private var userPaused = false
+    var onWantsPicker: (() -> Void)?
 
     enum StartProblem: Equatable {
         case microphone
+        case micBusy
         case model(ModelProblem)
         case other(String)
     }
     @Published private(set) var problem: StartProblem?
     @Published private(set) var downloading: (name: String, since: Date)?
     static var simulatedModelFailure: String?
-    private var lastStart: (source: String, target: String, voices: Bool, speaker: Bool)?
+    private var lastStart: (source: String, target: String, voices: Bool, speaker: Bool, cast: Bool)?
     private let path = NWPathMonitor()
     private var online = true
 
@@ -114,7 +120,7 @@ final class RoomListen: ObservableObject {
     func retry() {
         guard !isRunning, let s = lastStart else { return }
         debugLog("room: start again after \(String(describing: problem))")
-        start(source: s.source, target: s.target, voices: s.voices, speaker: s.speaker)
+        start(source: s.source, target: s.target, voices: s.voices, speaker: s.speaker, cast: s.cast)
     }
 
     func dismissProblem() { problem = nil }
@@ -128,11 +134,15 @@ final class RoomListen: ObservableObject {
     var elapsed: TimeInterval { startedAt.map { Date().timeIntervalSince($0) } ?? 0 }
     var languagePair: (source: String, target: String) { (lang.code, target) }
 
-    func start(source: String, target: String, voices: Bool, speaker: Bool = false) {
+    func start(source: String, target: String, voices: Bool, speaker: Bool = false, cast: Bool = false) {
         guard !isRunning else { return }
-        lastStart = (source, target, voices, speaker)
+        lastStart = (source, target, voices, speaker, cast)
         problem = nil
-        speakerMode = speaker
+        speakerMode = speaker && !cast
+        self.cast = cast
+        castState = nil
+        castSilent = false
+        micBusy = false
         paused = false
         userPaused = false
         auto = source == "auto"
@@ -168,7 +178,8 @@ final class RoomListen: ObservableObject {
             onStateChange?()
             return
         }
-        guard await AVAudioApplication.requestRecordPermission() else {
+        let allowed = cast ? true : await AVAudioApplication.requestRecordPermission()
+        guard allowed else {
             problem = .microphone
             fail(L("请在设置里允许知了使用麦克风"))
             return
@@ -195,15 +206,24 @@ final class RoomListen: ObservableObject {
             guard isRunning else { await stream.cancel(); return }
             self.stream = stream
             let s = store.begin()
-            if !speakerMode { store.markLiveInRoom() }
+            if !speakerMode && !cast { store.markLiveInRoom() }
             sessionID = s.id
             startedAt = s.startedAt
             notes.begin(s.id)
             audio.voices = voices
             audio.onInterruption = { [weak self] began in self?.interrupted(began) }
+            audio.onCast = { [weak self] state in self?.castChanged(state) }
             let keep = UserDefaults.standard.bool(forKey: Pref.recordAudio)
-            try audio.start(recognizer: stream, recording: keep ? AudioFileWriter.partial(store.systemAudioURL(s.id)) : nil,
-                            keep: !settled)
+            do {
+                try audio.start(recognizer: stream, recording: keep ? AudioFileWriter.partial(store.systemAudioURL(s.id)) : nil,
+                                keep: !settled, cast: cast)
+            } catch where Self.micTaken(error) && !cast {
+                debugLog("room: microphone taken by another app: \(error)")
+                stop()
+                problem = .micBusy
+                status = L("别的 app 在用麦克风")
+                return
+            }
             heardVoice = false
             audio.onLevel = { [weak self] v in
                 guard let self, !self.paused else { return }
@@ -216,11 +236,12 @@ final class RoomListen: ObservableObject {
                 }
             }
             read(stream)
-            status = ""
+            status = cast ? L("点“开始直播”后开始听") : ""
+            if cast { castState = .waiting; onWantsPicker?() }
             onMeeting?(true)
             if speakerMode { watchSilence(s.id) }
             if !settled { watchLanguage() }
-            debugLog("room: listening locale=\(lang.locale) target=\(target) speaker=\(speakerMode) format=\(stream.format) session=\(s.id)")
+            debugLog("room: listening locale=\(lang.locale) target=\(target) speaker=\(speakerMode) cast=\(cast) format=\(stream.format) session=\(s.id)")
             onStateChange?()
         } catch let failure as ModelFailure {
             problem = .model(failure.problem)
@@ -339,7 +360,8 @@ final class RoomListen: ObservableObject {
     }
 
     private func interrupted(_ began: Bool) {
-        guard isRunning else { return }
+        guard isRunning, !cast else { return }
+        micBusy = began && CastLink.available
         if began {
             guard !paused else { return }
             paused = true
@@ -408,6 +430,76 @@ final class RoomListen: ObservableObject {
 
     func debugInterrupt(_ began: Bool) { audio.debugInterrupt(began) }
 
+    // MARK: 手机里的声音
+
+    static func micTaken(_ error: Error) -> Bool {
+        let code = (error as NSError).code
+        return [AVAudioSession.ErrorCode.insufficientPriority.rawValue, AVAudioSession.ErrorCode.cannotStartRecording.rawValue,
+                AVAudioSession.ErrorCode.isBusy.rawValue].contains(code)
+    }
+
+    func switchToCast() {
+        guard isRunning, !cast, sessionID != nil else { return }
+        do {
+            try audio.switchToCast()
+        } catch {
+            debugLog("room: can't switch to the phone's sound: \(error)")
+            status = L("没能开始听，再试一次")
+            return
+        }
+        cast = true
+        speakerMode = false
+        micBusy = false
+        paused = false
+        userPaused = false
+        resumeWhenActive = false
+        castSilent = false
+        castState = .waiting
+        status = L("点“开始直播”后开始听")
+        debugLog("room: switched to the phone's sound")
+        onWantsPicker?()
+        onStateChange?()
+    }
+
+    func showPicker() { onWantsPicker?() }
+
+    func dismissMicBusy() { micBusy = false }
+
+    func waitOutSilence() { castSilent = false; castWaited = true }
+
+    private var castWaited = false
+
+    private func castChanged(_ state: CastLink.State) {
+        guard isRunning, cast else { return }
+        castState = state
+        switch state {
+        case .connected:
+            if status == L("点“开始直播”后开始听") { status = "" }
+            castWaited = false
+            watchCastSilence(sessionID)
+        case .ended:
+            debugLog("room: the broadcast stopped, ending")
+            stop()
+        case .waiting:
+            break
+        }
+        onStateChange?()
+    }
+
+    private func watchCastSilence(_ id: String?) {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard let self, self.isRunning, self.cast, self.sessionID == id, self.castState == .connected else { return }
+            let heard = self.audio.castHeard
+            debugLog("cast: after 15 s heard=\(heard)")
+            if !heard && !self.castWaited && self.lines.isEmpty { self.castSilent = true }
+            while !heard, self.isRunning, self.cast, self.sessionID == id {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if self.audio.castHeard { self.castSilent = false; return }
+            }
+        }
+    }
+
     struct ModelFailure: Error { let problem: ModelProblem }
 
     private func fetch(_ lang: Lang) async throws {
@@ -468,6 +560,9 @@ final class RoomListen: ObservableObject {
         isRunning = false
         paused = false
         userPaused = false
+        micBusy = false
+        castSilent = false
+        castState = nil
         resumeWhenActive = false
         if !Self.silent { audio.stop() }
         let stream = self.stream, reader = self.reader, recordTask = self.recordTask
@@ -715,8 +810,13 @@ final class RoomAudio: @unchecked Sendable {
     var voices = true
     var onLevel: (@MainActor (Float) -> Void)?
     var onInterruption: (@MainActor (Bool) -> Void)?
+    var onCast: (@MainActor (CastLink.State) -> Void)?
     private var observers: [NSObjectProtocol] = []
     private var held = false
+    private var link: CastLink?
+    private var silence: AVAudioEngine?
+    private var castHold = false
+    private var castSound = false
 
     private var engine = AVAudioEngine()
     private let queue = DispatchQueue(label: "com.indaloop.cicada.room", qos: .userInitiated)
@@ -736,6 +836,8 @@ final class RoomAudio: @unchecked Sendable {
     private var keptFrames = 0
 
     var fedSeconds: Double { queue.sync { fed } }
+    var casting: Bool { link != nil }
+    var castHeard: Bool { queue.sync { castSound } }
     var keptSeconds: Double { queue.sync { Double(keptFrames) / 16_000 } }
 
     func keptClip(last seconds: Double) -> [AVAudioPCMBuffer] {
@@ -774,11 +876,70 @@ final class RoomAudio: @unchecked Sendable {
         }
     }
 
-    func start(recognizer: RecognitionStream, recording: URL?, keep: Bool = false) throws {
+    func start(recognizer: RecognitionStream, recording: URL?, keep: Bool = false, cast: Bool = false) throws {
         let session = AVAudioSession.sharedInstance()
+        if cast {
+            reset(recognizer: recognizer, recording: recording, keep: keep)
+            try beginCast()
+            observe(session)
+            return
+        }
         try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .mixWithOthers])
         try session.setActive(true)
         engine = AVAudioEngine()
+        reset(recognizer: recognizer, recording: recording, keep: keep)
+        try tapAndStart()
+        observe(session)
+    }
+
+    func switchToCast() throws {
+        guard link == nil else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        held = false
+        try beginCast()
+    }
+
+    private func beginCast() throws {
+        queue.sync {
+            castHold = false
+            castSound = false
+            toRecognizer = PCMConverter()
+        }
+        keepAwake()
+        let link = CastLink()
+        link.onAudio = { [weak self] b in
+            guard let self else { return }
+            self.queue.async {
+                guard !self.castHold else { return }
+                if !self.castSound, let p = b.floatChannelData?[0] {
+                    for i in 0..<Int(b.frameLength) where abs(p[i]) > 0.0001 { self.castSound = true; break }
+                }
+                self.feed(b)
+            }
+        }
+        link.onState = onCast
+        try link.start()
+        self.link = link
+    }
+
+    private func keepAwake() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+            let e = silence ?? AVAudioEngine()
+            _ = e.mainMixerNode
+            e.mainMixerNode.outputVolume = 0
+            if !e.isRunning { try e.start() }
+            silence = e
+            debugLog("cast: keeping awake with a silent mixable output")
+        } catch {
+            debugLog("cast: keep awake failed: \(error)")
+        }
+    }
+
+    private func reset(recognizer: RecognitionStream, recording: URL?, keep: Bool) {
         queue.sync {
             stream = recognizer
             recordingURL = recording
@@ -790,8 +951,6 @@ final class RoomAudio: @unchecked Sendable {
             kept = []
             keptFrames = 0
         }
-        try tapAndStart()
-        observe(session)
     }
 
     private func tapAndStart() throws {
@@ -809,11 +968,13 @@ final class RoomAudio: @unchecked Sendable {
 
     func pause() {
         held = true
+        if link != nil { queue.sync { castHold = true }; return }
         engine.pause()
     }
 
     func resume() throws {
         held = false
+        if link != nil { queue.sync { castHold = false }; return }
         try AVAudioSession.sharedInstance().setActive(true)
         if !engine.isRunning { try tapAndStart() }
     }
@@ -825,6 +986,11 @@ final class RoomAudio: @unchecked Sendable {
                 guard let raw = n.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                       let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
                 let began = type == .began
+                if let self, self.link != nil {
+                    debugLog("cast: own session interrupted=\(began)")
+                    if !began { self.keepAwake() }
+                    return
+                }
                 self?.held = began
                 if began { self?.engine.pause() }
                 let cb = self?.onInterruption
@@ -846,8 +1012,15 @@ final class RoomAudio: @unchecked Sendable {
     func stop() {
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
-        engine.inputNode.removeTap(onBus: 0)
-        engine.stop()
+        if let link {
+            link.stop()
+            self.link = nil
+            silence?.stop()
+            silence = nil
+        } else {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
         queue.sync {
             stream = nil
             recorder = nil

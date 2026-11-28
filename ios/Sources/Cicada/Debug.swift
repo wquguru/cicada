@@ -67,6 +67,10 @@ extension AppModel {
             playSample()
         case "sampleStop":
             stopSample()
+        case "castPick":
+            CastPicker.show()
+        case "castSwitch":
+            room.switchToCast()
         case "import":
             importFiles(arg.split(separator: "|").map {
                 $0.hasPrefix("/") ? URL(fileURLWithPath: String($0)) : URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(String($0))
@@ -79,7 +83,7 @@ extension AppModel {
         case "importExpire":
             importer.cancelAll()
         case "hear":
-            UserDefaults.standard.set(arg == "speaker" ? "speaker" : "room", forKey: Pref.hear)
+            UserDefaults.standard.set(["speaker", "cast"].contains(arg) ? arg : "room", forKey: Pref.hear)
         case "interrupt":
             room.debugInterrupt(arg != "ended")
         case "quickStart":
@@ -366,7 +370,7 @@ extension AppModel {
         case "state":
             debugLog("memory \(DeviceLoad.line)")
             debugLog("room problem=\(room.problem.map { "\($0)" } ?? "-") downloading=\(room.downloading?.name ?? "-")")
-            debugLog("room running=\(room.isRunning) lines=\(room.lines.count) draft=\(room.draft.count) level=\(room.level) status=\(room.status) speaker=\(room.speakerMode) paused=\(room.paused) pip=\(pip.isActive) session=\(room.sessionID ?? "-")")
+            debugLog("room running=\(room.isRunning) lines=\(room.lines.count) draft=\(room.draft.count) level=\(room.level) status=\(room.status) speaker=\(room.speakerMode) cast=\(room.cast) castState=\(room.castState.map { "\($0)" } ?? "-") micBusy=\(room.micBusy) castSilent=\(room.castSilent) paused=\(room.paused) pip=\(pip.isActive) session=\(room.sessionID ?? "-")")
             debugLog("state tab=\(tab.rawValue) selection=\(selection ?? "-") page=\(recordPage) sessions=\(store.sessions.count) query=\(query) notesLang=\(notesLanguageCode(selection ?? store.sessions.first?.id ?? "")) undo=\(speakerUndo?.text ?? "-")")
         default:
             debugLog("debug command unknown: \(cmd)")

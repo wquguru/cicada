@@ -34,7 +34,7 @@ def code_keys():
 
 
 PORTS = {"Windows": ["windows/src/**/*.cs"], "Android": ["android/app/src/**/*.kt", "android/core/src/**/*.kt"],
-         "Linux": ["linux/cicada/**/*.py"]}
+         "Linux": ["linux/cicada/**/*.py"], "iOS broadcast": ["ios/Broadcast/*.swift"]}
 PORT_CALL = re.compile(r'\bLF?\("((?:[^"\\]|\\.)*)"')
 
 

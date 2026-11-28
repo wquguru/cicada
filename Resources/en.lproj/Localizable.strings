@@ -1658,3 +1658,26 @@
 /* iOS: playback */
 "播放进度" = "Playback position";
 "本场 %lld / %lld" = "This meeting %lld / %lld";
+
+/* iOS: phone's sound */
+"正在听手机里的声音…" = "Listening to the phone's sound…";
+"手机里的声音" = "Phone's sound";
+"手机里的声音 · %@" = "Phone's sound · %@";
+"X Space、播客、视频 · 听不到你自己说的话" = "X Spaces, podcasts, videos · Not your own voice";
+"别的 app 里的声音，选“手机里的声音”" = "For sound from other apps, pick Phone's sound";
+"别的 app 在用麦克风" = "Another app is using the mic";
+"可以改听手机放出来的声音，接着出字幕。" = "Listen to what the phone plays instead, and subtitles carry on.";
+"比如 X Space、电话" = "Like an X Space or a call";
+"改听手机里的声音" = "Listen to the phone's sound";
+"等它结束再听" = "Wait until it's done";
+"听不到你自己说的话" = "Your own voice isn't included";
+"点“开始直播”后开始听" = "Tap Start Broadcast to begin";
+"顶部亮红色就是在听" = "Red at the top means it's listening";
+"打开直播" = "Open broadcast";
+"没录到声音" = "No sound coming through";
+"有些通话 app 不让别人录它的声音" = "Some call apps block recording their sound";
+"换一台手机或电脑放在旁边，用“会议室”听。" = "Put another phone or computer nearby and listen with Room.";
+"接着等" = "Keep waiting";
+"听不到你自己说的话 · 顶部红色结束后消失" = "Your own voice isn't included · The red at the top goes when it ends";
+"先在知了里点开始听" = "Start listening in Cicada first";
+"知了已结束收听" = "Cicada stopped listening";

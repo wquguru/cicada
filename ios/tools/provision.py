@@ -7,7 +7,8 @@ HOME = os.path.expanduser("~/.cicada-signing")
 KIND = sys.argv[1] if len(sys.argv) > 1 else "development"
 DEV = KIND == "development"
 APP_ID = "com.indaloop.cicada.dev" if DEV else "com.indaloop.cicada"
-IDS = {APP_ID: "Cicada Dev" if DEV else "Cicada", APP_ID + ".live": "Cicada Dev Live" if DEV else "Cicada Live"}
+IDS = {APP_ID: "Cicada Dev" if DEV else "Cicada", APP_ID + ".live": "Cicada Dev Live" if DEV else "Cicada Live",
+       APP_ID + ".broadcast": "Cicada Dev Broadcast" if DEV else "Cicada Broadcast"}
 CERT_TYPE = "DEVELOPMENT" if DEV else "DISTRIBUTION"
 PROFILE_TYPE = "IOS_APP_DEVELOPMENT" if DEV else "IOS_APP_STORE"
 
@@ -120,3 +121,4 @@ paths = {i: profile(i, b, cert, device_ids) for i, b in bundles.items()}
 print(f"export SIGN_IDENTITY={fingerprint}")
 print(f"export PROFILE='{paths[APP_ID]}'")
 print(f"export PROFILE_LIVE='{paths[APP_ID + '.live']}'")
+print(f"export PROFILE_BROADCAST='{paths[APP_ID + '.broadcast']}'")

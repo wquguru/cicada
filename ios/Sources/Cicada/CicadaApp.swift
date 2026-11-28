@@ -40,6 +40,7 @@ enum Pref {
     static let silenceEnd = "silenceEnd"
     static let silenceMinutes = "silenceMinutes"
     static var speakerMode: Bool { UserDefaults.standard.string(forKey: hear) == "speaker" }
+    static var castMode: Bool { UserDefaults.standard.string(forKey: hear) == "cast" && CastLink.available }
 
     static var sourceAuto: Bool { (UserDefaults.standard.string(forKey: source) ?? "auto") == "auto" }
 
@@ -181,6 +182,7 @@ final class AppModel: ObservableObject {
         notes.finalDone = { [weak self] id in self?.folderExport.settled(id) }
         room.onEnded = { [weak self] id in self?.folderExport.ended(id) }
         room.profiles = profiles
+        room.onWantsPicker = { CastPicker.show() }
         speakerProfiles = profiles.all()
         folderExport.retry()
         wireFixes()
@@ -195,7 +197,7 @@ final class AppModel: ObservableObject {
 
     // MARK: 听会议室
 
-    func startListening() {
+    func startListening(cast: Bool? = nil) {
         guard !room.isRunning else { return }
         selection = nil
         liveHidden = false
@@ -204,19 +206,20 @@ final class AppModel: ObservableObject {
         livePage = ling.hasKey ? .notes : .subtitles
         fixes.meetingStarted()
         room.start(source: Pref.sourceAuto ? "auto" : Pref.sourceLang.locale, target: Pref.target(for: Pref.sourceCode), voices: UserDefaults.standard.bool(forKey: Pref.voices),
-                   speaker: Pref.speakerMode)
+                   speaker: Pref.speakerMode, cast: (cast ?? Pref.castMode) && CastLink.available)
     }
 
     private func showInPiP() {
-        guard room.isRunning, room.speakerMode else { return }
+        guard room.isRunning, room.speakerMode || room.cast else { return }
+        let waiting = room.cast ? L("正在听手机里的声音…") : L("正在听外放…")
         let last = room.lines.last
         let shown = last.flatMap { l in store.session(room.sessionID)?.lines.first { $0.id == l.id }?.shown } ?? last?.src
         if room.paused || !room.status.isEmpty {
             pip.show(src: "", dst: "", note: room.paused ? L("已暂停，结束后接着听") : room.status)
         } else if !room.draft.isEmpty {
-            pip.show(src: room.draft, dst: room.draftTranslation, note: L("正在听外放…"))
+            pip.show(src: room.draft, dst: room.draftTranslation, note: waiting)
         } else {
-            pip.show(src: shown ?? "", dst: last?.dst ?? "", note: shown == nil ? L("正在听外放…") : "")
+            pip.show(src: shown ?? "", dst: last?.dst ?? "", note: shown == nil ? waiting : "")
         }
     }
 
@@ -243,7 +246,7 @@ final class AppModel: ObservableObject {
     private func listeningChanged() {
         objectWillChange.send()
         liveActivity.setPaused(room.paused)
-        pip.setEnabled(room.isRunning && room.speakerMode)
+        pip.setEnabled(room.isRunning && (room.speakerMode || room.cast))
         if room.isRunning, let start = room.startedAt {
             liveActivity.start(startedAt: start, pair: Pref.pairText(room.languagePair.source, room.languagePair.target))
             watchEnd()
