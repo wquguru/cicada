@@ -7,7 +7,7 @@ files=()
 while IFS= read -r line; do [[ -z $line || $line == \#* ]] || files+=("$line"); done < ios/shared-sources.txt
 shared=("${files[@]}")
 while IFS= read -r f; do files+=("$f"); done < <(find ios/Sources -name '*.swift' | sort)
-bad=$(awk '/^#if (os\(macOS\)|canImport\(AppKit\)|!CICADA_IOS)/{g=1} /^#endif/{g=0} !g && /^import (AppKit|CoreAudio|Carbon|SwiftUI|ServiceManagement|IOKit)$/{print FILENAME": "$0}' "${shared[@]}")
+bad=$(awk '/^#if (os\(macOS\)|canImport\(AppKit\)|!CICADA_IOS)/{g=1} /^#endif/{g=0} !g && /^import (AppKit|CoreAudio|Carbon|ServiceManagement|IOKit)$/{print FILENAME": "$0}' "${shared[@]}")
 if [[ -n $bad ]]; then echo "Mac-only imports in shared sources:"; echo "$bad"; exit 1; fi
 xcrun swiftc -typecheck -swift-version 5 -module-name Cicada -sdk "$(xcrun --show-sdk-path --sdk "$SDK")" "${TARGET[@]}" \
   -D CICADA_IOS "${files[@]}"
