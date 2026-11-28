@@ -13,6 +13,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 scripts/lint.py
+      - run: ios/scripts/typecheck.sh
+      - run: python3 scripts/strings.py
       - run: scripts/test.sh
       - run: scripts/package.sh
       - uses: actions/upload-artifact@v4
