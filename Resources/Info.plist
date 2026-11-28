@@ -33,7 +33,6 @@
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>zh-Hans</string>
-		<string>zh-Hant</string>
 		<string>en</string>
 		<string>ja</string>
 		<string>ko</string>
