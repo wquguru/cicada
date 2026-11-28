@@ -25,8 +25,6 @@ import cicada.Strings
 import cicada.TranscriptExport
 import cicada.TranscriptSearch
 
-/// 会议记录: every meeting, newest first, grouped by day; search covers titles, notes and what
-/// was said; chips narrow to meetings with notes or to-dos.
 class RecordsActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var list: FrameLayout
@@ -69,16 +67,13 @@ class RecordsActivity : Activity() {
         val body = ui.stack(12, searchBox, HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) }, list)
             .apply { setPadding(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(32)) }
         setContentView(ui.screen(this, null, back = true, ground = Palette.ground, body = body))
-        // Opened from the floating search button: straight to typing.
         if (savedInstanceState == null) { search.requestFocus(); window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE) }
-        // Debug `search <text>`: typed in, as a person would.
         if (savedInstanceState == null) intent.getStringExtra("query")?.let { search.setText(it) }
     }
 
     override fun onResume() { super.onResume(); current = this; unobserve = cicada.observe(::render); shown = null; render() }
     override fun onPause() { super.onPause(); if (current === this) current = null; unobserve?.invoke(); unobserve = null }
 
-    /// For `cicadactl search`: the meetings the search finds (ids), and opening one as a tap does.
     fun debugFound(): List<String> = cicada.store.all().filter(::matches).map { it.id }
     fun debugOpen(index: Int): String? {
         val id = debugFound().getOrNull(index) ?: return null
@@ -88,10 +83,8 @@ class RecordsActivity : Activity() {
     }
 
     companion object {
-        /// 会议记录 in front, for the debug commands.
         var current: RecordsActivity? = null; private set
     }
-    // The search text is kept by the field itself (it has an id); the filter by us.
     override fun onSaveInstanceState(out: Bundle) { super.onSaveInstanceState(out); out.putString("filter", filter) }
 
     private fun matches(s: Session): Boolean {
@@ -99,7 +92,6 @@ class RecordsActivity : Activity() {
         if (filter == "todo" && (s.notes?.todos?.isEmpty() != false)) return false
         if (query.isEmpty()) return true
         val q = query.lowercase()
-        // What was said is searched as the record will mark it: misheard names too (TranscriptSearch).
         val terms = TranscriptSearch.terms(query, s.notes?.terms.orEmpty())
         return SessionStore.displayTitle(s).lowercase().contains(q) ||
             s.notes?.let { n -> (n.summary + n.topics.joinToString { it.title + it.points.joinToString() } + n.terms.joinToString { it.name }).lowercase().contains(q) } == true ||
@@ -133,20 +125,13 @@ class RecordsActivity : Activity() {
     }
 }
 
-/// One meeting on one white sheet: who spoke (tap a name to change it), 纪要 or the bilingual
-/// 文字记录, and the recording when it was kept (tap a line to hear it there). Export and the
-/// rest are in the sheet behind 更多.
 class RecordActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var id: String
-    // A ListView, so a two-hour meeting's 1,500 lines are drawn as they scroll into view
-    // rather than all at once (that froze the screen for over a second).
     private lateinit var list: android.widget.ListView
     private lateinit var header: FrameLayout
     private lateinit var footer: FrameLayout
     private lateinit var playerHost: FrameLayout
-    // Once the big title scrolls away: the title in the top bar (a tap goes back up) and the
-    // tabs pinned under it, as the Mac's pinned bar.
     private lateinit var barTitle: TextView
     private lateinit var pinnedTabs: FrameLayout
     private var headTitle: View? = null
@@ -163,18 +148,13 @@ class RecordActivity : Activity() {
     private var speedLabel: TextView? = null
     private var scrubber: Scrubber? = null
     private var speed = 1f
-    // The file is there but MediaPlayer can't open it: said as 找不到录音 instead of a dead bar.
     private var broken = false
-    private var playing: String? = null // the line at the playhead, for the highlight
-    private var playingOn = false // and whether it is sounding (its bars bounce)
-    /// The transcript keeps the playing line centred. Scrolling it by finger stops that until a
-    /// line is tapped, the bar is used or 回到正在播放 is pressed: following would yank the page away.
+    private var playing: String? = null
+    private var playingOn = false
     private var following = true
     private lateinit var backToPlaying: LinearLayout
     private lateinit var backToPlayingText: TextView
     private var toast: FixViews.Toast? = null
-    /// Opened from 会议记录's search (#33): what was searched, the lines it finds here (misheard
-    /// names too), which one is being looked at, and whether the page still has to go to it.
     private var query = ""
     private var terms: List<String> = emptyList()
     private var found: List<String> = emptyList()
@@ -205,14 +185,11 @@ class RecordActivity : Activity() {
             addFooterView(footer, null, false)
             adapter = this@RecordActivity.adapter
             setOnItemClickListener { _, _, pos, _ -> (pos - headerViewsCount).takeIf { it in 0 until this@RecordActivity.adapter.count }?.let { playFrom(this@RecordActivity.adapter.getItem(it).t) } }
-            // 改正听错的词: a long press shows what a line's fixed words were heard as (改回) and 改这句….
             setOnItemLongClickListener { _, _, pos, _ -> (pos - headerViewsCount).takeIf { it in 0 until this@RecordActivity.adapter.count }?.let { FixViews.lineSheet(this@RecordActivity, ui, cicada, this@RecordActivity.id, this@RecordActivity.adapter.getItem(it)) } != null }
             setOnScrollListener(object : android.widget.AbsListView.OnScrollListener {
                 override fun onScrollStateChanged(v: android.widget.AbsListView, state: Int) {}
                 override fun onScroll(v: android.widget.AbsListView, first: Int, visible: Int, total: Int) = pin()
             })
-            // A finger dragging the list stops following. Not the scroll state: a touch that only
-            // catches following's own centring (or a tap during it) reports TOUCH_SCROLL too.
             val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
             var downY = 0f
             setOnTouchListener { _, e ->
@@ -233,12 +210,9 @@ class RecordActivity : Activity() {
             setBackgroundColor(Palette.card)
             setPadding(ui.dp(20), ui.dp(6), ui.dp(20), ui.dp(10))
             visibility = View.GONE
-            isClickable = true // taps on its edges don't reach the lines under it
+            isClickable = true
         }
-        // The player floats over the bottom of the page (not screen()'s bottom bar), so render()
-        // can show it once a live meeting ends and its recording is in place.
         playerHost.visibility = View.GONE
-        // Scrolled away from what is playing: one way back, just above the player.
         backToPlayingText = ui.text("", 13f, android.graphics.Color.WHITE, bold = true, lines = 1).apply { fontFeatureSettings = "tnum" }
         backToPlaying = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -251,13 +225,11 @@ class RecordActivity : Activity() {
             elevation = ui.dp(4).toFloat()
             visibility = View.GONE
         }
-        // Where the search is in this meeting: 本场 2 / 7, and the previous and next line found.
-        // Under the pinned tabs, so it stays while the transcript scrolls.
         matchLabel = ui.text("", 13f, Palette.secondary, lines = 1).apply { fontFeatureSettings = "tnum" }
         matchBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Palette.card)
-            isClickable = true // taps on it don't reach the lines under it
+            isClickable = true
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
@@ -270,8 +242,6 @@ class RecordActivity : Activity() {
             addView(View(context).apply { setBackgroundColor(Palette.divider) }, LinearLayout.LayoutParams(-1, 1))
             visibility = View.GONE
         }
-        // Moved, not laid out, under the tabs: pin() runs inside the list's layout, where a
-        // relayout of its neighbours would be missed.
         pinnedTabs.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeMatchBar() }
         val body = FrameLayout(this).apply {
             addView(list, FrameLayout.LayoutParams(-1, -1))
@@ -284,14 +254,12 @@ class RecordActivity : Activity() {
             ui.roundButton(R.drawable.i_share, L("分享"), onWhite = true) { cicada.store.get(id)?.let(::share) },
             ui.roundButton(R.drawable.i_more, L("更多"), onWhite = true) { more() })))
         toast = FixViews.Toast(this, ui, cicada, above = 140)
-        // Debug `shareSheet <id>`: the 分享… sheet opens over the record.
         if (savedInstanceState == null && intent.getBooleanExtra("share", false))
             list.post { cicada.store.get(id)?.takeIf { ShareSheet.canShare(cicada, it) }?.let { ShareSheet(this, ui, id).show() } }
     }
 
     private fun audio() = cicada.store.audioFile(id)
 
-    /// The banner's line, in view: the transcript tab, scrolled to it.
     private fun show(lineId: String) {
         val i = adapter.indexOf(lineId)
         if (i >= 0) list.post { list.setSelectionFromTop(i + list.headerViewsCount, ui.dp(160)) }
@@ -301,14 +269,11 @@ class RecordActivity : Activity() {
 
     private fun currentMatch(): String? = found.getOrNull(matchIndex.coerceIn(0, maxOf(0, found.size - 1)))
 
-    /// To the previous (-1) or next (1) line found, round the ends, on the transcript.
     fun step(d: Int) {
         val n = found.size
         if (n == 0) return
         matchIndex = (matchIndex.coerceIn(0, n - 1) + d + n) % n
         if (tab != 1) { tab = 1; render() }
-        // While the recording plays, going to a line found stops following it, as a finger does:
-        // otherwise the next line heard yanks the page back within seconds.
         if (following && player?.isPlaying == true) { following = false; showBackToPlaying() }
         showMatchBar()
         adapter.notifyDataSetChanged()
@@ -316,8 +281,6 @@ class RecordActivity : Activity() {
         Log.d("record search: ${matchIndex + 1}/$n at ${currentMatch()}")
     }
 
-    /// The line found, in the middle of the page. A jump from far away lands by a guessed row
-    /// height and before the tabs pin, so once laid out it is centred again, exactly.
     private fun goToMatch() {
         val i = adapter.indexOf(currentMatch())
         if (i < 0) return
@@ -338,7 +301,6 @@ class RecordActivity : Activity() {
         if (n > 0) matchLabel.text = LF("本场 %lld / %lld", matchIndex.coerceIn(0, n - 1) + 1, n)
     }
 
-    /// Every term in a line marked in place; the line being looked at stands out from the rest.
     private fun marked(text: CharSequence, current: Boolean): CharSequence {
         val ranges = TranscriptSearch.ranges(text.toString(), terms)
         if (ranges.isEmpty()) return text
@@ -350,14 +312,10 @@ class RecordActivity : Activity() {
         return s
     }
 
-    /// The title moves into the top bar once the big one is out of sight, and the tabs pin once
-    /// theirs scroll under the top edge (the header leaves the list entirely far down a transcript).
     private fun pin() {
-        // The list reports a scroll as soon as the listener is set, before the views below exist.
         if (!::list.isInitialized || !::barTitle.isInitialized || !::pinnedTabs.isInitialized || !::matchBar.isInitialized) return
         val gone = list.firstVisiblePosition > 0
         val top = header.top
-        // Under the search's bar the tabs are already out of sight.
         val inset = if (matchBar.visibility == View.VISIBLE) matchBar.height else 0
         fun above(v: View?, by: Int = 0) = gone || (v != null && top + (v.parent as View).top + v.bottom <= by)
         val titleAway = above(headTitle)
@@ -373,9 +331,6 @@ class RecordActivity : Activity() {
     }
 
     override fun onResume() { super.onResume(); current = this; unobserve = cicada.observe(::render); shown = null; render() }
-    // Leaving the record (back, another screen, the phone locked) stops what it was playing.
-    // Only a playing player is paused: pause() on one that never started puts MediaPlayer in its
-    // error state (the bar came back with a length of 00:00).
     override fun onPause() { super.onPause(); if (current === this) current = null; unobserve?.invoke(); unobserve = null; player?.takeIf { it.isPlaying }?.pause(); if (isFinishing) releasePlayer() else updatePlayer() }
     override fun onDestroy() { super.onDestroy(); releasePlayer() }
 
@@ -390,7 +345,6 @@ class RecordActivity : Activity() {
         val playable = file && !broken
         terms = TranscriptSearch.terms(query, s.notes?.terms.orEmpty())
         found = TranscriptSearch.matches(app.store.lines(id), terms)
-        // Opened by a search that finds lines here: their transcript, at the first one.
         if (landing && app.store.lines(id).isNotEmpty()) {
             landing = false
             if (found.isNotEmpty()) { tab = 1; matchIndex = 0; list.post { goToMatch() } }
@@ -401,7 +355,6 @@ class RecordActivity : Activity() {
         if (key == shown) return
         shown = key
         showMatchBar()
-        // The search's bar sits over the top of the page: the title starts under it.
         val top = ui.stack(0).apply { setPadding(ui.dp(20), ui.dp(if (found.isEmpty()) 4 else 52), ui.dp(20), ui.dp(6)) }
         val title = ui.title(SessionStore.displayTitle(s), 28f).apply { leading(1.2f) }
         top.addView(title)
@@ -413,13 +366,11 @@ class RecordActivity : Activity() {
                                  s.sourceFile?.let { L("导入") }).joinToString(" · ")
         top.addView(ui.text(meta, 13f, Palette.secondary), ui.lp(top = 6))
         recordingNote(s, live, file, playable)?.let { top.addView(it, ui.lp(top = 6)) }
-        // 存到文件夹: where its file is, or why it isn't there yet.
         if (!live) FolderExportViews.recordLine(this, ui, s)?.let { top.addView(it, ui.lp(top = 2)) }
         speakerChips(s)?.let { top.addView(it, ui.lp(top = 14)) }
         val tabLabels = listOf(L("纪要"), "${L("文字记录")} · ${LF("%lld 句", s.lines.size)}")
         val tabs = ui.tabs(tabLabels, tab) { tab = it; render() }
         top.addView(tabs, ui.lp(top = 18))
-        // Over a finished meeting's transcript: the words fixed, and those waiting for the user.
         if (tab == 1 && !live) FixViews.reviewBanner(ui, app.fixes, s, onShow = { show(it) }, onEdit = { l, start -> FixViews.edit(this, ui, app, id, l, start) })
             ?.let { top.addView(it, ui.lp(top = 14)) }
         headTabs = tabs
@@ -443,7 +394,6 @@ class RecordActivity : Activity() {
         footer.removeAllViews(); footer.addView(bottom)
         if (playable && playerHost.childCount == 0) buildPlayer()
         playerHost.visibility = if (playable) View.VISIBLE else View.GONE
-        // The last lines end above the floating player, but scroll under it.
         list.setPadding(0, 0, 0, ui.dp(if (playable) 124 else 40))
         val lines = if (tab == 1) app.store.lines(id) else emptyList()
         val numbers = SpeakerLabels.numbers(lines)
@@ -451,13 +401,11 @@ class RecordActivity : Activity() {
         updatePlayer()
     }
 
-    /// One grey line under the date when there is nothing to play: why, and where to change it.
     private fun recordingNote(s: Session, live: Boolean, file: Boolean, playable: Boolean): View? {
         fun note(text: String) = ui.text(text, 12f, Palette.secondary)
         return when {
             playable -> null
             live -> if (cicada.settings.recordAudio) note(L("会议结束后可以回放录音")) else null
-            // Just ended: the recorder is still closing the file (the page updates once it's in place).
             java.io.File(audio().path + ".partial").isFile -> null
             file || s.hasAudio -> note(L("找不到录音，没法播放"))
             s.lines.isEmpty() -> null
@@ -473,7 +421,6 @@ class RecordActivity : Activity() {
         }
     }
 
-    /// The voices told apart (in records from the Mac or Windows): a chip each; a tap names it.
     private fun speakerChips(s: Session): View? {
         val numbers = SpeakerLabels.numbers(s.lines)
         if (numbers.isEmpty()) return null
@@ -493,7 +440,6 @@ class RecordActivity : Activity() {
         return HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) }
     }
 
-    /// The Mac's 改说话人: the name goes on the voice, so every line, the notes and exports follow.
     private fun nameVoice(s: Session, number: Int, shownName: String) {
         val voice = SpeakerLabels.voiceOf(s.lines, number) ?: return
         ui.input(this, LF("%@ 是谁？", shownName), SpeakerLabels.names(s)[number] ?: "", helper = L("只改这场会议，前面的字幕和纪要一起改"),
@@ -502,7 +448,6 @@ class RecordActivity : Activity() {
         }
     }
 
-    /// One transcript line per row: time, who, what was said, its translation. Rows are reused.
     private inner class LinesAdapter : android.widget.BaseAdapter() {
         private var lines: List<cicada.TranscriptLine> = emptyList()
         private var numbers: Map<String, Int> = emptyMap()
@@ -530,14 +475,9 @@ class RecordActivity : Activity() {
             }
             val l = lines[i]
             val now = l.id == playing
-            // With a recording the whole row plays from its line (the list's item click): the line
-            // at the playhead on the pale accent, a grey press on the others; the fill reaches 10dp
-            // past the text, as the Mac's.
             row.background = if (!playable) null else android.graphics.drawable.InsetDrawable(
                 ui.ripple(if (now) ui.rounded(PLAYING_LINE, 10) else null, 10), ui.dp(10), 0, ui.dp(10), 0)
-            // A background with insets brings its own padding: the row's goes back on after it.
             row.setPadding(ui.dp(20), ui.dp(14), ui.dp(20), ui.dp(14))
-            // On the time, not the row: a row with a description hides its texts from TalkBack.
             (row.getChildAt(0) as TextView).apply {
                 text = Languages.clock(l.t)
                 contentDescription = if (playable) "${L("从这里播放")} ${text}" else null
@@ -560,8 +500,6 @@ class RecordActivity : Activity() {
         }
     }
 
-    /// Three bars that bounce beside the line the recording is playing; nothing while paused
-    /// (still bars when the system's animations are off).
     private inner class PlayingBars : View(this@RecordActivity) {
         var on = false; set(v) { if (field != v) { field = v; invalidate() } }
         private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = Palette.accent }
@@ -584,8 +522,6 @@ class RecordActivity : Activity() {
 
     // MARK: The recording (保存会议录音)
 
-    /// The floating player (iOS's PlayerBar on a white card): play / pause, the progress line
-    /// (drag it to seek), the time and the length under it, and the speed.
     private fun buildPlayer() {
         val play = android.widget.ImageView(this).apply { setImageDrawable(ui.drawable(R.drawable.i_play, android.graphics.Color.WHITE)); importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         val button = FrameLayout(this).apply {
@@ -609,12 +545,10 @@ class RecordActivity : Activity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
-            // On the white page a shadow alone doesn't separate it: a hairline too.
             background = ui.rounded(Palette.card, 32, Palette.line, 1)
             ui.lift(this, 6)
             setPadding(ui.dp(8), ui.dp(4), ui.dp(4), ui.dp(4))
             addView(button, LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)))
-            // The line's touch area is taller than the line (scrub.height), the times tucked under it.
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(scrub, LinearLayout.LayoutParams(-1, ui.dp(24)))
@@ -630,7 +564,6 @@ class RecordActivity : Activity() {
         })
     }
 
-    /// The progress line: the track grey, what has played in the accent; a tap or a drag seeks.
     private inner class Scrubber : View(this@RecordActivity) {
         var fraction = 0f; set(v) { field = v; invalidate() }
         var dragging = false; private set
@@ -658,7 +591,6 @@ class RecordActivity : Activity() {
             return true
         }
 
-        // While dragging the time follows the finger; the player moves on release.
         private fun showTime() { playTime?.text = Languages.clock(fraction * length()) }
     }
 
@@ -686,7 +618,6 @@ class RecordActivity : Activity() {
 
     private fun start(p: android.media.MediaPlayer) {
         p.start()
-        // Setting the speed on a paused player starts it on some versions: only ever while playing.
         if (speed != 1f) try { p.playbackParams = p.playbackParams.setSpeed(speed) } catch (_: Exception) {}
         list.removeCallbacks(tickPlayer); list.post(tickPlayer)
     }
@@ -697,7 +628,6 @@ class RecordActivity : Activity() {
         updatePlayer()
     }
 
-    /// A line's time (or the line): plays the recording from where it was said.
     private fun playFrom(t: Double) {
         if (playerHost.visibility != View.VISIBLE) return
         val p = ensurePlayer() ?: return
@@ -714,7 +644,6 @@ class RecordActivity : Activity() {
         follow()
     }
 
-    /// 1× → 1.5× → 2× → 1×.
     private fun cycleSpeed() {
         speed = when (speed) { 1f -> 1.5f; 1.5f -> 2f; else -> 1f }
         speedLabel?.text = if (speed == 1.5f) "1.5×" else "${speed.toInt()}×"
@@ -734,8 +663,6 @@ class RecordActivity : Activity() {
             scrubber?.fraction = if (dur > 0) (pos / dur).toFloat().coerceIn(0f, 1f) else 0f
         }
         playLength?.text = Languages.clock(dur)
-        // The line being heard: the last one that started at or before the playhead, once
-        // playing has begun (iOS's lineID).
         val lines = if (p != null && (on || pos > 0)) cicada.store.get(id)?.lines.orEmpty() else emptyList()
         val line = lines.lastOrNull { it.t <= pos + 0.2 }
         val now = line?.id
@@ -748,7 +675,6 @@ class RecordActivity : Activity() {
         if (on && moved && following) centre(adapter.indexOf(now))
     }
 
-    /// Back to following the recording: the 回到正在播放 capsule, a tapped line, the bar.
     private fun follow() {
         backToPlaying.visibility = View.GONE
         if (following) return
@@ -763,8 +689,6 @@ class RecordActivity : Activity() {
         backToPlaying.animate().alpha(1f).translationY(0f).setDuration(200).start()
     }
 
-    /// Scrolls the line being heard to the middle of what shows between the pinned tabs and the
-    /// player (the Mac's anchor: .center): smoothly when it is on screen, a jump from far away.
     private fun centre(index: Int) {
         if (index < 0) return
         val pos = index + list.headerViewsCount
@@ -775,14 +699,12 @@ class RecordActivity : Activity() {
         if (row != null) list.smoothScrollBy(row.top - y, 300) else list.setSelectionFromTop(pos, y)
     }
 
-    /// For `cicadactl state`: the open record's player (never what was said).
     fun debugState(): Map<String, Any?> {
         val p = player
         return mapOf("id" to id, "tab" to tab, "playable" to (playerHost.visibility == View.VISIBLE), "playing" to (p?.isPlaying == true),
                      "position" to ((p?.currentPosition ?: 0) / 1000.0), "line" to playing, "lineIndex" to adapter.indexOf(playing),
                      "following" to following, "backToPlaying" to (backToPlaying.visibility == View.VISIBLE),
                      "firstVisible" to (list.firstVisiblePosition - list.headerViewsCount), "lastVisible" to (list.lastVisiblePosition - list.headerViewsCount),
-                     // Opened from a search: lines found, the one looked at (1-based), its id and row (never the words).
                      "search" to if (query.isEmpty()) null else mapOf("matches" to found.size, "at" to (if (found.isEmpty()) 0 else matchIndex + 1),
                          "line" to currentMatch(), "lineIndex" to adapter.indexOf(currentMatch()), "bar" to (matchBar.visibility == View.VISIBLE)))
     }
@@ -793,7 +715,6 @@ class RecordActivity : Activity() {
         val s = cicada.store.get(id) ?: return
         lateinit var d: android.app.Dialog
         fun act(res: Int, label: String, helper: String? = null, red: Boolean = false, run: () -> Unit) = ui.sheetAction(res, label, helper, red) { d.dismiss(); run() }
-        // 分享…: a link on cicada.indaloop.app (the round 分享 above sends the Markdown).
         val link = act(R.drawable.i_external, L("分享…"), L("生成链接")) { ShareSheet(this, ui, s.id).show() }
         if (!ShareSheet.canShare(cicada, s)) { link.alpha = 0.4f; link.isEnabled = false; link.isClickable = false }
         val box = ui.stack(0, link,
@@ -803,15 +724,12 @@ class RecordActivity : Activity() {
             act(R.drawable.i_captions, L("导出字幕 SRT…"), L("配回原视频用")) { export(s, "srt") })
         box.addView(View(this).apply { setBackgroundColor(Palette.divider) }, LinearLayout.LayoutParams(-1, 1).apply { setMargins(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8)) })
         box.addView(act(R.drawable.i_edit, L("重命名")) { rename(s) })
-        // As on the Mac: back to the notes' name once the user named it themselves.
         if ((s.renamed ?: !s.title.startsWith("会议 ")) && s.notes?.title != null) box.addView(act(R.drawable.i_restore, L("恢复自动标题")) { cicada.store.rename(s.id, "") })
-        // The meeting being listened to can't be deleted (its next lines would vanish).
         if (cicada.store.liveId != s.id) box.addView(act(R.drawable.i_trash, L("删除"), red = true) { delete(s) })
         d = ui.sheet(this, null, box)
         d.show()
     }
 
-    /// The Markdown through the share sheet (chat apps, notes apps, Files…).
     private fun share(s: Session) {
         val send = Intent(Intent.ACTION_SEND).setType("text/plain")
             .putExtra(Intent.EXTRA_SUBJECT, SessionStore.displayTitle(s))
@@ -821,13 +739,11 @@ class RecordActivity : Activity() {
 
     private fun copy(s: Session) {
         getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText(SessionStore.displayTitle(s), TranscriptExport.markdown(s)))
-        // Android 13+ confirms a copy itself; older versions get a toast.
         if (android.os.Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(this, L("已复制"), android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private var exportKind = "md"
 
-    /// Saves a file where the user picks (the system file picker), in the Mac's formats.
     private fun export(s: Session, kind: String) {
         exportKind = kind
         val type = when (kind) { "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; "srt" -> "application/x-subrip"; else -> "text/markdown" }
@@ -848,7 +764,6 @@ class RecordActivity : Activity() {
 
     private fun rename(s: Session) {
         val shown = MainActivity.name(s)
-        // Untouched changes nothing; emptied goes back to the automatic title (the store's rule).
         ui.input(this, L("重命名"), shown) { if (it != shown) cicada.store.rename(s.id, it) }
     }
 
@@ -857,9 +772,7 @@ class RecordActivity : Activity() {
     }
 
     companion object {
-        /// The record in front, for the debug state.
         var current: RecordActivity? = null; private set
-        /// The line being heard (the Mac's Palette.accentPale) and the player's unplayed track.
         private val PLAYING_LINE = android.graphics.Color.parseColor("#FCEDE7")
         private val TRACK = android.graphics.Color.parseColor("#E1E3E8")
     }

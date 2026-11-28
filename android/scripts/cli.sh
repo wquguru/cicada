@@ -1,6 +1,4 @@
 #!/bin/bash
-# Runs cicada-cli (the engines on the Mac): scripts/cli.sh test | listen <wav> | hear | segments | roundtrip.
-# Builds it first; a proxy in the environment is passed to Java, which ignores http(s)_proxy.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 scripts/gradle.sh :cli:installDist >/dev/null

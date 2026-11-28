@@ -16,14 +16,9 @@ import cicada.Strings.L
 import cicada.Strings.LF
 import cicada.UpdateChecker
 
-/// 检查更新 (the Windows App's Updates part): finds a newer APK on GitHub Releases and says so on
-/// 首页 (below the start card, not while listening), in 设置 › 其他, and once per version in a
-/// notification. 更新 hands the APK link to the browser; the system installer does the rest.
 class AppUpdates(private val app: CicadaApp) {
     val checker = UpdateChecker(app.packageManager.getPackageInfo(app.packageName, 0).versionName ?: "0", app.settings.updateLastChecked)
-    /// Release builds check; the dev build only once `updatefeed` points it somewhere.
     @Volatile var enabled = !BuildConfig.DEBUG; private set
-    /// 检查更新 in 设置: null, or the answer to the last manual check for a few seconds.
     @Volatile var manual: String? = null; private set
     private val clearManual = Runnable { manual = null; app.changed() }
 
@@ -38,7 +33,6 @@ class AppUpdates(private val app: CicadaApp) {
                 app.changed()
             }
         }
-        // Updated since the last notification: it is about this version or an older one.
         app.settings.updateNotified?.let { if (!UpdateChecker.isNewer(it, checker.current)) cancelNotification() }
         if (!enabled) return
         schedule()
@@ -47,7 +41,6 @@ class AppUpdates(private val app: CicadaApp) {
 
     fun checkIfDue(age: Long) { if (enabled) app.background.execute { checker.checkIfDue(age) } }
 
-    /// The debug command `updatefeed`: another release JSON, checked now.
     fun setFeed(feed: String) {
         checker.feed = feed.ifEmpty { UpdateChecker.FEED }
         enabled = true
@@ -55,7 +48,6 @@ class AppUpdates(private val app: CicadaApp) {
         Log.d("update: feed set")
     }
 
-    /// 检查更新: says 正在检查… / 已是最新版本 / 连不上 GitHub for a few seconds.
     fun checkNow() {
         if (manual == L("正在检查…")) return
         enabled = true
@@ -71,7 +63,6 @@ class AppUpdates(private val app: CicadaApp) {
         }
     }
 
-    /// 更新: the browser downloads the APK (or shows the release page when there is none).
     fun download() { available?.let { open(it.apk ?: it.page); Log.d("update: download ${it.version}") } }
 
     fun openNotes() { available?.let { open(it.page) } }
@@ -83,7 +74,6 @@ class AppUpdates(private val app: CicadaApp) {
 
     // MARK: In the background
 
-    /// About once a day while the phone has a network; the job survives a restart.
     private fun schedule() {
         try {
             val js = app.getSystemService(JobScheduler::class.java)
@@ -97,8 +87,6 @@ class AppUpdates(private val app: CicadaApp) {
         } catch (e: Exception) { Log.d("update: job not scheduled ${e.javaClass.simpleName}") }
     }
 
-    /// The job's check: a new version gets one notification, unless Cicada is in front (首页 says
-    /// it) or a meeting is going on (the next run tells, the version not yet marked as told).
     fun checkInBackground() {
         if (!enabled) return
         checker.check()

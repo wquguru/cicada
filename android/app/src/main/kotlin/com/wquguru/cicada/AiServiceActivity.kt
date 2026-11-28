@@ -17,16 +17,11 @@ import cicada.Strings
 import cicada.Strings.L
 import cicada.Strings.LF
 
-/// 设置 › AI 服务 (AISettings.swift, the design's Android page): which service, its key and how
-/// the check went, what works with it (现在能用的, with 听对方 first: on the ports the service
-/// hears), and the models, each a row that opens its choices. The recommended ones are already
-/// chosen, so most people never open those.
 class AiServiceActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var page: LinearLayout
     private var unobserve: (() -> Unit)? = null
     private var shown: String? = null
-    /// A custom service's rows that are open (翻译和纪要, 听对方, 同传声音); null until the page first decides.
     private var open: MutableSet<String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,7 +50,6 @@ class AiServiceActivity : Activity() {
         val name = name(p)
         if (p.id == "custom") { customPage(app, c); return }
 
-        // The service, its key (and a custom service's address).
         page.addView(ui.sectionLabel(L("服务")))
         val rows = mutableListOf<View>(choiceRow(L("服务"), Providers.ALL.map { it.id to label(it) }, p.id) { app.setAiProvider(it) })
         val k = ling.currentKey()
@@ -70,11 +64,9 @@ class AiServiceActivity : Activity() {
         if (k == null && p.site != null) rows.add(ui.listRow(LF("打开 %@", name), null, trailing = ui.icon(R.drawable.i_external, 18, Palette.link), chevron = false) {
             try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(p.site))) } catch (_: Exception) {}
         })
-        // Where it broke and the one thing that fixes it; all passed folds into the key's line.
         val check = ling.aiCheck
         if (k != null && AiCheckViews.showSteps(check)) rows.add(AiCheckViews.steps(this, ui, recheck = false) { editKey(this, ui) })
         check.balanceLine(name)?.let { low ->
-            // Wraps: English runs two lines.
             rows.add(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -101,11 +93,8 @@ class AiServiceActivity : Activity() {
         page.addView(ui.helper(foot).apply { setPadding(ui.dp(16), ui.dp(12), ui.dp(16), 0) })
     }
 
-    /// 现在能用的 (AISettings.swift › usage): what each part of the app uses with this service.
     private fun usesRows(app: CicadaApp, c: AIConfig, name: String): List<View> {
         val ling = app.ling
-        // Only what the last result supports: when the service can't be reached (or the key
-        // fails) nothing says "用 ZenMux"; a deaf hear model greys only what hears.
         val reason = ling.aiCheck.failure?.reason
         val down = ling.hasKey && reason in listOf(AICheck.Reason.Unreachable, AICheck.Reason.BadAddress, AICheck.Reason.InvalidKey,
                                                    AICheck.Reason.MgmtKey, AICheck.Reason.NoCredit)
@@ -136,7 +125,6 @@ class AiServiceActivity : Activity() {
             voice != null && ling.lastVoice?.first == true -> Triple(uses, 1, LF("%@ 的声音读给对方", voice) + " · " + L("上次同传时正常"))
             else -> Triple(uses, 1, if (voice != null) LF("%@ 的声音读给对方", voice) else L("手机的声音读给对方"))
         }
-        // 改正听错的词 (AISettings.swift's row): a text request per finished line, switched in 词表.
         val fix = when {
             !on -> notReady
             !app.settings.fixMisheard -> Triple(L("已关"), 0, L("在“词表”里打开"))
@@ -151,7 +139,6 @@ class AiServiceActivity : Activity() {
         }
     }
 
-    /// 自己选模型: the hear, text and voice models; Ling's hear model is Ming, always.
     private fun modelRows(app: CicadaApp, c: AIConfig): List<View> {
         val p = c.provider
         val s = app.settings
@@ -167,14 +154,9 @@ class AiServiceActivity : Activity() {
 
     // MARK: Own service
 
-    /// 其他（兼容 OpenAI）(AISettings.swift › customPage): one row per use, each at its own address if
-    /// need be (a text model, an audio model and a speech model often run as separate servers),
-    /// each opening to its fields and saying whether it works and how fast. On a phone the hear
-    /// model is what listens: there is no on-device recognition to fall back to.
     private fun customPage(app: CicadaApp, c: AIConfig) {
         val ling = app.ling
         val check = ling.aiCheck
-        // A service that isn't set up yet, or doesn't work, opens where it needs filling in.
         val opened = open ?: mutableSetOf<String>().also {
             if (check.failure?.step == AICheck.StepID.Hear) it.add("hear") else if (!check.passed || check.slow) it.add("text")
             open = it
@@ -193,7 +175,6 @@ class AiServiceActivity : Activity() {
         })
         val host = c.base?.let { Uri.parse(it).host } ?: L("你填的地址")
         page.addView(ui.helper(LF("加密存在这台手机上，只发给 %@", keyHosts(app, c))).apply { setPadding(ui.dp(16), ui.dp(8), ui.dp(16), 0) })
-        // Never "按所选模型计费" here: the user runs it, or their provider bills it its own way.
         val nearby = c.base?.let(Providers::isNearby) ?: false
         val foot = (if (nearby) L("跑在你自己的机器上，不按量计费。") else L("费用以这个服务为准。")) +
             if (app.settings.aiCustomOnly) LF("会议的语音和文字只发给 %@，不经过 Google 等外部服务。", customHosts(c))
@@ -201,9 +182,6 @@ class AiServiceActivity : Activity() {
         page.addView(ui.helper(foot).apply { setPadding(ui.dp(16), ui.dp(12), ui.dp(16), 0) })
     }
 
-    /// 语音和文字只发给你的服务 (AISettings.swift › onlyRow): Google is never asked. The grey line says
-    /// what it costs, and while the service can't be reached, that new subtitles are the original
-    /// only (a phone has no on-device translation to stand in).
     private fun onlyRow(app: CicadaApp): View {
         val on = app.settings.aiCustomOnly
         val check = app.ling.aiCheck
@@ -213,17 +191,13 @@ class AiServiceActivity : Activity() {
         return ui.switchRow(L("语音和文字只发给你的服务"), detail, on) { app.setCustomOnly(it) }
     }
 
-    /// Where the custom service's audio and text go: one host when every use shares it. On a phone
-    /// the hear model always listens, so its address always counts.
     private fun customHosts(c: AIConfig): String =
         hostsLine(listOfNotNull(c.base, c.forNotes.base?.takeIf { c.notesApart }, c.hearBase, c.voiceBase?.takeIf { c.hasVoices }))
 
-    /// Where the custom service's key is sent: every use's address, the notes' only while they share it.
     private fun keyHosts(app: CicadaApp, c: AIConfig): String =
         hostsLine(listOfNotNull(c.base, c.forNotes.base?.takeIf { c.notesApart && !app.ling.notesHasOwnKey }, c.hearBase,
                                 c.voiceBase?.takeIf { c.hasVoices }))
 
-    /// One host, "a 和 b", or 你填的地址 for more.
     private fun hostsLine(bases: List<String>): String {
         val hosts = bases.mapNotNull { Uri.parse(it).host }.distinct()
         return when (hosts.size) {
@@ -233,7 +207,6 @@ class AiServiceActivity : Activity() {
         }
     }
 
-    /// A row that opens to its fields: a state dot, the use, what it runs on, and how it's doing.
     private fun useRow(id: String, open: MutableSet<String>, title: String, detail: String, dot: Int, trailing: String?,
                        trailingColor: Int = Palette.tertiary): View {
         val row = ui.listRow(title, detail, leading = ui.dot(dot), trailing = trailing?.let { ui.text(it, 13f, trailingColor, lines = 1).apply { fontFeatureSettings = "tnum" } }) {
@@ -244,7 +217,6 @@ class AiServiceActivity : Activity() {
         return row
     }
 
-    /// The fields under an open row, indented under its title.
     private fun panel(vararg views: View?) = ui.stack(0).apply {
         setPadding(ui.dp(18), 0, 0, ui.dp(8))
         views.filterNotNull().forEach { addView(it) }
@@ -255,7 +227,6 @@ class AiServiceActivity : Activity() {
     private fun badAddress(raw: String) =
         if (raw.isNotBlank() && Providers.customBase(raw) == null) note(L("地址要用 https；这台手机和局域网里的服务可以用 http。"), Palette.link) else null
 
-    /// An address as the row shows it: host and port ("192.168.1.20:8000").
     private fun where(raw: String): String {
         val u = Uri.parse(Providers.customBase(raw) ?: return raw)
         return (u.host ?: raw) + if (u.port > 0) ":${u.port}" else ""
@@ -263,7 +234,6 @@ class AiServiceActivity : Activity() {
 
     private val grey = android.graphics.Color.parseColor("#C4C7CE")
 
-    /// "192.168.1.20 · qwen-mt-turbo", then the notes' model, or their own server after a bar.
     private fun textDetail(c: AIConfig, host: String): String {
         if (host.isEmpty() || c.textModel.isEmpty()) return L("填上地址和模型")
         val line = "$host · ${short(c.textModel)}"
@@ -274,17 +244,13 @@ class AiServiceActivity : Activity() {
         return if (n.textModel == c.textModel) line else line + " · ${short(n.textModel)}"
     }
 
-    /// 翻译和纪要 (AISettings.swift › textSection): 翻译's address, key and model, then 纪要 on the
-    /// same service (another model at most) or another one with its own address and key.
     private fun textSection(app: CicadaApp, c: AIConfig, open: MutableSet<String>, rows: MutableList<View>) {
         val ling = app.ling
         val s = app.settings
         val check = ling.aiCheck
         val host = c.base?.let { Uri.parse(it).host }.orEmpty()
         val secs = check.translate?.let { "%.1f".format(Strings.locale, it.seconds) }
-        // The hear model's own failure shows on its row: the text model may be fine.
         val failed = check.textFailure != null
-        // Translation works but the notes' own model or server doesn't.
         val notesDown = !failed && check.notesFailed
         val trailing = when {
             check.running -> L("正在检查…")
@@ -341,8 +307,6 @@ class AiServiceActivity : Activity() {
         isAccessibilityHeading = true
     }
 
-    /// 纪要: the same service as translation (another model at most), or another one with its own
-    /// address and key. Switching back keeps what was typed.
     private fun notesGroup(app: CicadaApp, c: AIConfig, host: String): List<View?> {
         val ling = app.ling
         val s = app.settings
@@ -372,7 +336,6 @@ class AiServiceActivity : Activity() {
         return views
     }
 
-    /// After a check with notes apart: one row each, what it runs and how it did.
     private fun checkRows(c: AIConfig, check: AICheck): View {
         val t = check.translate!!
         val notes = check.notes
@@ -391,8 +354,6 @@ class AiServiceActivity : Activity() {
             row(L("纪要"), c.forNotes.textModel, notes?.ok ?: true, notesText))
     }
 
-    /// The notes' own key (另一个服务): paste, save, or remove it (back to the key above). It goes
-    /// only to the notes' address.
     private fun editNotesKey(app: CicadaApp, host: String) {
         lateinit var dialog: android.app.Dialog
         lateinit var submit: () -> Unit
@@ -425,10 +386,6 @@ class AiServiceActivity : Activity() {
         box.requestFocus()
     }
 
-    /// A custom service's model (AISettings.swift › ModelPicker): the row shows it; tapping opens
-    /// the names its `/models` lists, searchable, and takes a name it doesn't list (an alias, a
-    /// model it hides). Without a list the sheet is a plain field. `sameLabel`: a first choice
-    /// that clears the value (和翻译模型一样).
     private fun modelPicker(label: String, current: String, placeholder: String, sameLabel: String?, host: String,
                             catalog: () -> List<String>, refetch: () -> Unit, pick: (String) -> Unit) =
         ui.listRow(label, null, trailing = value(if (current.isEmpty()) sameLabel ?: L("未填") else short(current))) {
@@ -441,7 +398,6 @@ class AiServiceActivity : Activity() {
         fun choose(id: String) { d.dismiss(); if (id != current) pick(id) }
         val search = android.widget.EditText(this).apply {
             setSingleLine()
-            // Model ids: ASCII, no autocorrect, the URL keyboard.
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
             imeHintLocales = android.os.LocaleList(java.util.Locale.US)
             imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_DONE or android.view.inputmethod.EditorInfo.IME_FLAG_FORCE_ASCII
@@ -476,7 +432,6 @@ class AiServiceActivity : Activity() {
             val q = search.text.toString().trim()
             listed = all.isNotEmpty()
             if (shape != listed) {
-                // No list: a plain field, saved with 保存; a list: search it, or use what was typed.
                 shape = listed
                 search.hint = if (listed) L("搜索或输入模型") else placeholder
                 scroll.visibility = if (listed) View.VISIBLE else View.GONE
@@ -492,7 +447,6 @@ class AiServiceActivity : Activity() {
         }
         search.setOnEditorActionListener { _, a, _ ->
             if (a != android.view.inputmethod.EditorInfo.IME_ACTION_DONE) return@setOnEditorActionListener false
-            // Done: the only match, else exactly what was typed.
             val q = search.text.toString().trim()
             val matches = catalog().filter { it.contains(q, ignoreCase = true) }
             if (listed && q.isNotEmpty() && matches.size == 1) choose(matches[0]) else if (q.isNotEmpty() || !listed) choose(q)
@@ -514,7 +468,6 @@ class AiServiceActivity : Activity() {
             addView(foot, ui.weight())
             addView(again)
         }
-        // Without a list the field holds the name to edit; with one it searches.
         if (catalog().isEmpty()) search.setText(current)
         render()
         val body = ui.stack(10, search, scroll, footer, buttons)
@@ -525,7 +478,6 @@ class AiServiceActivity : Activity() {
         search.requestFocus()
     }
 
-    /// 听对方: the hear model, which may run on its own server; its state is the check's hear step.
     private fun hearSection(app: CicadaApp, c: AIConfig, open: MutableSet<String>, rows: MutableList<View>) {
         val ling = app.ling
         val s = app.settings
@@ -550,7 +502,6 @@ class AiServiceActivity : Activity() {
         ))
     }
 
-    /// 同传声音: the speech model that reads 我说 to the other side; empty is the phone's voice.
     private fun voiceSection(app: CicadaApp, c: AIConfig, open: MutableSet<String>, rows: MutableList<View>) {
         val ling = app.ling
         val s = app.settings
@@ -570,7 +521,6 @@ class AiServiceActivity : Activity() {
         ))
     }
 
-    /// Recommended models first, with why, then everything else the service lists.
     private fun modelRow(label: String, helper: String?, recommended: List<Model>, listed: List<String>, current: String, pick: (String) -> Unit): View {
         val options = recommended.map { it.id to (it.id + if (it.note.isNotEmpty()) " · " + L(it.note) else "") }.toMutableList()
         for (id in listed) if (options.none { it.first == id }) options.add(id to id)
@@ -585,11 +535,9 @@ class AiServiceActivity : Activity() {
             ui.choose(this, label, options, selected) { changed(it) }
         }
 
-    /// A typed value (a custom service's address and models): the row shows it, tapping edits it.
     private fun fieldRow(label: String, current: String, hint: String, helper: String?, empty: String = L("未填"),
                          shown: (String) -> String = ::short, save: (String) -> Unit) =
         ui.listRow(label, helper, trailing = value(if (current.isEmpty()) empty else shown(current))) {
-            // Addresses, model ids and voice names: ASCII, no autocorrect, the URL keyboard.
             ui.input(this, label, current, helper = helper, hint = hint,
                      type = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI) { if (it != current) save(it) }
         }
@@ -598,11 +546,8 @@ class AiServiceActivity : Activity() {
         fun name(p: Provider) = if (p.id == "custom") L(p.name) else p.name
         fun label(p: Provider) = if (p.id == "ling") "Ling" + L("（推荐）") else name(p)
 
-        /// A model id without its vendor ("qwen3.8-omni-flash"): the rows are narrow.
         fun short(id: String) = id.substringAfterLast('/')
 
-        /// The service's own voice for 我说 (Ming on Ling, Gemini on OpenRouter and ZenMux), or null:
-        /// the phone's. Which of its voices is 读出来的声音's choice.
         fun cloudVoice(app: CicadaApp): String? {
             val c = app.ling.config()
             if (!app.ling.speaks) return null
@@ -611,13 +556,11 @@ class AiServiceActivity : Activity() {
             return if ("gemini" in m.lowercase()) "Gemini" else short(m)
         }
 
-        /// How the service is doing, under its key; null when there's nothing to say.
         fun status(app: CicadaApp): String? {
             val ling = app.ling
             val check = ling.aiCheck
             if (!ling.hasKey) return null
             if (check.running) return L("正在检查…")
-            // Named after the step that failed: a missing model is not a connection problem.
             check.failure?.takeIf { it.reason != AICheck.Reason.Busy }?.let {
                 return when (it.step) {
                     AICheck.StepID.Reach -> L("暂时连不上")
@@ -629,7 +572,6 @@ class AiServiceActivity : Activity() {
             return AiCheckViews.summary(check)
         }
 
-        /// The 设置 row's line: connected (and what that costs in delay), or what's wrong.
         fun summary(app: CicadaApp): String {
             val ling = app.ling
             val k = ling.currentKey() ?: return L("还没填 API key")
@@ -639,9 +581,6 @@ class AiServiceActivity : Activity() {
             return status(app) ?: L("已连接")
         }
 
-        /// The prefix says whose key it is: a management key can't call models, and another
-        /// service's key goes there with one tap (改用 %@ into `into`), never a silent switch.
-        /// True when the key isn't for `service`: don't save it here.
         fun keyHint(ui: Ui, key: String, service: String, status: android.widget.TextView, into: LinearLayout, switched: () -> Unit): Boolean {
             val (owner, management) = AICheck.owner(key) ?: return false
             if (management) {
@@ -661,7 +600,6 @@ class AiServiceActivity : Activity() {
             return true
         }
 
-        /// Change or remove the key of the service in use: a sheet with the field, 粘贴, and 删除.
         fun editKey(activity: Activity, ui: Ui) {
             val app = activity.cicada
             val p = app.ling.provider
@@ -670,7 +608,6 @@ class AiServiceActivity : Activity() {
             lateinit var dialog: android.app.Dialog
             lateinit var submit: () -> Unit
             val box = ui.keyField { submit() }
-            // A service on this phone or the local network may need none (the key is optional there).
             val base = app.ling.config().base
             if (p.id == "custom" && base != null && Providers.isNearby(base)) box.hint = L("本机和局域网服务可不填")
             val field = LinearLayout(activity).apply {

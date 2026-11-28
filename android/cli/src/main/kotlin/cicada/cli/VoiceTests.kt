@@ -1,5 +1,3 @@
-// 读出来的声音 (Voices.kt): the Mac's catalog, default and fallback rules, and what goes to Ling.
-// No network: LingClient runs against a fake transport.
 package cicada.cli
 
 import cicada.*
@@ -23,7 +21,6 @@ object VoiceTests {
 
     fun trimmed() {
         val rate = Segmenter.RATE
-        // 1 s before, 12 s of reading, 1.5 s after (the pause before 读完了).
         val clip = tone(12.0, pad = 0.0).let { ShortArray(rate) + it + ShortArray(rate * 3 / 2) }
         val t = VoiceReference.trim(clip)
         check(kotlin.math.abs(t.size / rate.toDouble() - 12.4) < 0.05, "12 s and 0.2 s each side, got ${t.size / rate.toDouble()}")
@@ -54,7 +51,6 @@ object VoiceTests {
         return LingClient(k, fake, config = s::aiConfig)
     }
 
-    /// A tone at 16 kHz: `seconds` long, silence before and after.
     private fun tone(seconds: Double, pad: Double = 0.5): ShortArray {
         val rate = Segmenter.RATE
         val out = ShortArray(((seconds + 2 * pad) * rate).toInt())
@@ -130,13 +126,11 @@ object VoiceTests {
             "message" to mapOf("content" to "LANG: zh-CN\nORIGINAL: $original\nTRANSLATION: Hello everyone."), "finish_reason" to "stop"))), pretty = false))
         val short = VoiceReference.check(Translator(client(heard("大家好"), AppSettings())), tone(8.0, pad = 0.0), "zh-CN")
         equal(VoiceReference.Check.Again("录音太短了，请至少朗读 %lld 秒", listOf(10)), short, "under 10 s")
-        // 12 s read as 12 characters: one a second, too slow for a meeting.
         val slow = VoiceReference.check(Translator(client(heard("大家好我是这次会议的主持人"), AppSettings())), tone(12.0), "zh-CN")
         equal(VoiceReference.Check.Again("读得有点慢，克隆的声音也会这么慢。请用平时说话的语速再录一次"), slow, "slow")
         val passage = "大家好，我是这次会议的主持人。今天我们主要讨论新产品的上线计划，包括时间安排、测试范围和市场推广。"
         val ok = VoiceReference.check(Translator(client(heard(passage), AppSettings())), tone(11.0), "zh-CN")
         equal(VoiceReference.Check.Ok(passage, VoiceReference.trim(tone(11.0))), ok, "heard at an ordinary pace, the trimmed clip kept")
-        // 9.5 s of reading padded to 15 s by pauses: the reading is what counts.
         val padded = VoiceReference.check(Translator(client(heard(passage), AppSettings())), tone(9.5, pad = 2.75), "zh-CN")
         equal(VoiceReference.Check.Again("录音太短了，请至少朗读 %lld 秒", listOf(10)), padded, "pauses don't count")
         val none = VoiceReference.check(Translator(client(heard("嗯"), AppSettings())), tone(11.0), "zh-CN")

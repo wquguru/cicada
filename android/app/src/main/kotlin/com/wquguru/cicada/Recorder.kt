@@ -9,9 +9,6 @@ import cicada.Segmenter
 import java.io.File
 import java.util.concurrent.Executors
 
-/// 保存会议录音: what was heard, as the Mac keeps it (system.m4a beside session.json, AAC mono).
-/// Written to a .partial file and renamed when the meeting ends, so a record never points at a
-/// half-written file. The audio thread only hands buffers over; encoding has its own thread.
 class Recorder(private val target: File) {
     private val partial = File(target.path + ".partial")
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "Recorder").apply { isDaemon = true } }
@@ -38,7 +35,6 @@ class Recorder(private val target: File) {
 
     fun write(pcm: ShortArray) { if (!failed) worker.execute { feed(pcm, false) } }
 
-    /// Ends the file; `done(true)` once system.m4a is in place. Called off the main thread is fine.
     fun finish(done: (Boolean) -> Unit) {
         worker.execute {
             if (!failed) feed(ShortArray(0), true)

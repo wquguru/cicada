@@ -12,14 +12,10 @@ import cicada.Languages
 import cicada.Strings.L
 import cicada.Strings.LF
 
-/// 导入录音或视频 (the Mac's FileImport): pick a file, or share one to 知了 from another app, and it
-/// becomes a meeting record: transcribed, translated and summarised like one that was heard. It
-/// runs in the foreground service, so it goes on with another app in front.
 class ImportActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var content: FrameLayout
     private var shown: String? = null
-    /// The meeting this screen started or watched, to open once it's done.
     private var watching: String? = null
     private var unobserve: (() -> Unit)? = null
 
@@ -35,7 +31,6 @@ class ImportActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); shared(intent)?.let(::start) }
 
-    /// The file another app shared (分享到知了).
     private fun shared(intent: Intent?): Uri? {
         if (intent?.action != Intent.ACTION_SEND) return null
         return if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)

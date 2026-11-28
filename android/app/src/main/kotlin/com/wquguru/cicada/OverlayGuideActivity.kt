@@ -15,21 +15,12 @@ import android.widget.LinearLayout
 import cicada.Log
 import cicada.Strings.L
 
-/// 显示在其他应用上层: asked for, and when Android holds it back, unlocked step by step.
-///
-/// Android 15+ holds this switch back from apps installed from a file (downloaded by a browser or
-/// chat app, or opened in a file manager): it shows 已停用 and refuses once with 系统已拒绝…, and
-/// only after that refusal does app info's ⋮ menu offer 允许受限制的设置. Checked in the emulator:
-/// Android 15 and 16 hold it back; 14 (where 13's restriction covers accessibility and
-/// notification access only) and 10 don't. Store and USB installs aren't held back. Android
-/// doesn't tell an app whether it is held back, so the guide judges by the version, how it was
-/// installed and the switch still being off when the person comes back.
 class OverlayGuideActivity : Activity() {
     private enum class Stage { Ask, Retry, Unlock, LastStep, Xiaomi, Done }
 
     private lateinit var ui: Ui
-    private var tried = false        // the overlay switch's page has been opened
-    private var unlockOpened = false // app info (for ⋮ › 允许受限制的设置) has been opened
+    private var tried = false
+    private var unlockOpened = false
     private var shown: Stage? = null
     private val watch get() = intent.getBooleanExtra("watch", false)
     private val direct get() = intent.getBooleanExtra("direct", false)
@@ -39,7 +30,6 @@ class OverlayGuideActivity : Activity() {
         ui = Ui(this)
         tried = savedInstanceState?.getBoolean("tried") ?: false
         unlockOpened = savedInstanceState?.getBoolean("unlockOpened") ?: false
-        // From a row that already says what it's for (onboarding, settings): straight to the switch.
         if (savedInstanceState == null && direct && !cicada.canOverlay) openSwitch()
     }
 
@@ -74,7 +64,6 @@ class OverlayGuideActivity : Activity() {
         start(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
     }
 
-    /// Xiaomi's own permission page (其他权限), else app info.
     private fun openXiaomi() {
         tried = true
         val miui = Intent("miui.intent.action.APP_PERM_EDITOR").putExtra("extra_pkgname", packageName)
@@ -154,7 +143,6 @@ class OverlayGuideActivity : Activity() {
         setContentView(ui.screen(this, null, back = true, ground = Palette.ground, bottom = bottom, body = body))
     }
 
-    /// A video with the subtitle card over it: what the switch is for.
     private fun preview() = FrameLayout(this).apply {
         background = ui.rounded(Palette.ink, 20)
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -174,7 +162,6 @@ class OverlayGuideActivity : Activity() {
         }
     }
 
-    /// One numbered step: a ✓ once done, filled while it's the one to do now.
     private fun step(n: Int, text: String, done: Boolean = false, current: Boolean = false, extra: View? = null) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         setPadding(0, ui.dp(14), 0, ui.dp(14))
@@ -191,7 +178,6 @@ class OverlayGuideActivity : Activity() {
         contentDescription = (if (done) L("已完成") + "：" else "") + text
     }
 
-    /// App info's top bar with ⋮ ringed and the item it opens.
     private fun menuSketch() = ui.stack(8).apply {
         background = ui.rounded(Palette.ground, 14)
         setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10))
@@ -216,12 +202,10 @@ class OverlayGuideActivity : Activity() {
 
         private val xiaomi get() = Build.MANUFACTURER.lowercase() in setOf("xiaomi", "redmi", "poco")
 
-        /// How this copy was installed (Android 13+): 3 a local file, 4 a downloaded file, 2 a store, 0 USB / unknown.
         fun installSource(context: Context): Int = if (Build.VERSION.SDK_INT < 33) -1 else try {
             context.packageManager.getInstallSourceInfo(context.packageName).packageSource
         } catch (_: Exception) { -1 }
 
-        /// Android 15+ holds the switch back from a copy installed from a file.
         fun restrictedLikely(context: Context) = Build.VERSION.SDK_INT >= 35 &&
             installSource(context).let { it == PackageInstaller.PACKAGE_SOURCE_LOCAL_FILE || it == PackageInstaller.PACKAGE_SOURCE_DOWNLOADED_FILE }
     }

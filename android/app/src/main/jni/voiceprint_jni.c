@@ -1,5 +1,3 @@
-/* NativeVoiceprints (Voiceprints.kt) → linux/native/voiceprint.c, the voiceprint model the Linux app
- * runs; the same C, so an Android voiceprint is the Mac's. Only the calls, no logic of its own. */
 #include <jni.h>
 #include <stdint.h>
 
@@ -14,12 +12,9 @@ Java_com_wquguru_cicada_NativeVoiceprints_nativeLoad(JNIEnv *env, jobject self, 
     if (!p) return 0;
     void *m = cvp_load(p);
     (*env)->ReleaseStringUTFChars(env, path, p);
-    /* Voiceprints.kt reads 256 numbers: a model of another size is no model. */
     return m && cvp_dims(m) == 256 ? (jlong)(intptr_t)m : 0;
 }
 
-/* 0 with a unit-length voiceprint in `out`, -1 when too short or it failed. Threads 0: one per
- * core, at most four (voiceprint.c). */
 JNIEXPORT jint JNICALL
 Java_com_wquguru_cicada_NativeVoiceprints_nativeEmbed(JNIEnv *env, jobject self, jlong model, jshortArray samples,
                                                     jint n, jfloatArray out) {

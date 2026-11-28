@@ -24,12 +24,7 @@ import cicada.Strings.L
 import cicada.Strings.LF
 import cicada.TranscriptLine
 
-/// 改正听错的词 on screen (the Mac's FixViews.swift and the fixing parts of NotesViews.swift): the
-/// fixed words dotted, what each was heard as with 改回, the 这样改对吗？ card, the banner over a
-/// finished meeting, 改这句… and the 撤销 message. A phone has no pointer to hover with: a line's
-/// fixed words open with a long press (the record) or show under the newest line (正在听).
 object FixViews {
-    /// A fixed word: drawn as it is, with a dotted line under it (Android has no dotted underline).
     class Dotted(private val color: Int, private val dp: Float) : ReplacementSpan() {
         override fun getSize(paint: Paint, text: CharSequence, start: Int, end: Int, fm: Paint.FontMetricsInt?): Int {
             if (fm != null) paint.getFontMetricsInt(fm)
@@ -47,7 +42,6 @@ object FixViews {
         }
     }
 
-    /// The line as shown, each fixed word dotted, words waiting for the user (这样改对吗？) washed pale.
     fun text(ui: Ui, line: TranscriptLine, prefix: String = ""): CharSequence {
         val fixes = line.fixes ?: return prefix + line.src
         val a = Correction.apply(fixes, line.src)
@@ -61,7 +55,6 @@ object FixViews {
         return s
     }
 
-    /// "听成 莫拉 → Morpho" with the grey parts grey.
     private fun heardAs(from: String, to: String): CharSequence {
         val head = L("听成") + " "
         val arrow = " → "
@@ -71,7 +64,6 @@ object FixViews {
         return s
     }
 
-    /// Under a line: each applied fix, what it was heard as, and 改回.
     fun fixedWords(ui: Ui, lineId: String, fixes: List<LineFix>, onRevert: (String, LineFix) -> Unit): View? {
         val applied = fixes.filter { it.applied }
         if (applied.isEmpty()) return null
@@ -95,8 +87,6 @@ object FixViews {
         return box
     }
 
-    /// 这样改对吗？: a name sound can't check, asked about once. 对 fixes every line waiting on it and
-    /// adds it to the word list; × (稍后再看) asks again after the meeting.
     fun confirmCard(ui: Ui, a: LiveFixes.Asking, onAnswer: (Boolean) -> Unit, onLater: (() -> Unit)?): View {
         val (from, to) = Correction.label(a.fix)
         val card = ui.stack(0)
@@ -127,8 +117,6 @@ object FixViews {
         return card
     }
 
-    /// Above a finished meeting's transcript: how many words were fixed, and the ones waiting for the
-    /// user, one at a time (对 / 不对 / 改成…). Nothing when there was nothing to fix.
     fun reviewBanner(ui: Ui, fixes: LiveFixes, s: Session, onShow: (String) -> Unit, onEdit: (TranscriptLine, String) -> Unit): View? {
         val waiting = fixes.pending(s.id)
         val fixed = fixes.store.lines(s.id).sumOf { l -> (l.fixes ?: emptyList()).count { it.applied } }
@@ -154,7 +142,6 @@ object FixViews {
         return box
     }
 
-    /// A long press on a line in the record: its fixed words with 改回, and 改这句….
     fun lineSheet(activity: Activity, ui: Ui, app: CicadaApp, sessionId: String, line: TranscriptLine) {
         lateinit var d: android.app.Dialog
         val box = ui.stack(10)
@@ -166,8 +153,6 @@ object FixViews {
         d.show()
     }
 
-    /// 改这句…: the line as shown, to rewrite. What changed becomes the user's own fix, on every line
-    /// heard the same way or only this one, and (made everywhere) joins the word list.
     fun edit(activity: Activity, ui: Ui, app: CicadaApp, sessionId: String, line: TranscriptLine, start: String) {
         lateinit var d: android.app.Dialog
         val field = android.widget.EditText(activity).apply {
@@ -186,14 +171,12 @@ object FixViews {
         fun update() {
             val same = app.fixes.sameHeard(line.id, sessionId, field.text.toString())
             heard.visibility = if (same == null) View.GONE else View.VISIBLE
-            // Only a word for a word can teach the list: an added or dropped word can't.
             keep.visibility = if (same != null && same.swap) View.VISIBLE else View.GONE
             scope.visibility = if (same != null && same.count > 1) View.VISIBLE else View.GONE
             if (same != null) {
                 heard.text = LF("听成 %@", same.heard)
                 everywhere.text = LF("整场听成 %@ 的 %lld 处都改", same.heard, same.count)
             }
-            // Only a change made everywhere teaches the word list.
             keep.isEnabled = same == null || same.count <= 1 || everywhere.isChecked
         }
         field.addTextChangedListener(object : android.text.TextWatcher {
@@ -220,8 +203,6 @@ object FixViews {
         field.requestFocus()
     }
 
-    /// The last fix decision said back for a few seconds, with 撤销, over the bottom of a screen
-    /// (Android's own toast can't carry a button).
     class Toast(private val activity: Activity, private val ui: Ui, private val app: CicadaApp, private val above: Int = 24) {
         private var view: View? = null
         private var shownAt = 0L

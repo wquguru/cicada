@@ -7,17 +7,11 @@ import java.time.format.FormatStyle
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/// What the transcript shows for the other side's lines (the Mac's SpeakerLabels, SpeakerID.swift).
-/// A voice gets a number only once it has `SHOWN_AFTER` substantive lines, and only when at least
-/// two voices have, so a one-to-one call stays 对方. Numbers follow the order voices got there.
-/// The voices come from SpeakerTagger (Speakers.kt) or records made on another platform.
 object SpeakerLabels {
     const val SHOWN_AFTER = 5
 
-    /// Speaker numbers on (设置 › 说话人识别), kept in step by the app.
     @Volatile var voices = true
 
-    /// Long enough to say whose voice it is: three words, or four characters of CJK.
     fun substantive(text: String): Boolean {
         val words = text.split(Regex("\\s+")).filter { w -> w.any { it.isLetter() } }
         if (words.size >= 3) return true
@@ -26,7 +20,6 @@ object SpeakerLabels {
         }.count() >= 4
     }
 
-    /// Voice id → 1-based speaker number, for the voices on show.
     fun voiceNumbers(lines: List<TranscriptLine>): Map<Int, Int> {
         val count = HashMap<Int, Int>(); val reached = HashMap<Int, Int>()
         lines.forEachIndexed { i, l ->
@@ -40,7 +33,6 @@ object SpeakerLabels {
         return shown.mapIndexed { i, v -> v to i + 1 }.toMap()
     }
 
-    /// Line id → 1-based speaker number; lines without one show as 对方.
     fun numbers(lines: List<TranscriptLine>): Map<String, Int> {
         if (!voices) return emptyMap()
         val number = voiceNumbers(lines)
@@ -49,7 +41,6 @@ object SpeakerLabels {
         return out
     }
 
-    /// Speaker number → name: the user's, else Ling's guess (unless the user turned it down).
     fun names(s: Session): Map<Int, String> {
         if (s.voiceNames == null && s.voiceGuesses == null) return emptyMap()
         val out = HashMap<Int, String>()
@@ -61,20 +52,17 @@ object SpeakerLabels {
         return out
     }
 
-    /// Speaker number → its voice id (to store a name under the voice).
     fun voiceOf(lines: List<TranscriptLine>, number: Int): Int? = voiceNumbers(lines).entries.firstOrNull { it.value == number }?.key
 
     fun label(number: Int, names: Map<Int, String>): String = names[number] ?: Strings.LF("说话人 %lld", number)
 
-    /// The notes with names: Ling wrote "说话人 6" before anyone named them (SpeakerLabels.named on
-    /// the Mac). A copy; the record keeps what Ling wrote.
     fun named(notes: MeetingNotes, names: Map<Int, String>): MeetingNotes {
         val n = MeetingNotes.from(notes.toJson())
         if (names.isEmpty()) return n
         fun swap(text: String): String {
             if (!text.contains("说话人") && !text.contains("Speaker")) return text
             var out = text
-            for ((k, name) in names.entries.sortedByDescending { it.key }) // 说话人 12 before 说话人 1
+            for ((k, name) in names.entries.sortedByDescending { it.key })
                 for (form in listOf("说话人 $k", "说话人$k", "Speaker $k")) out = out.replace(form, name)
             return out
         }
@@ -84,12 +72,8 @@ object SpeakerLabels {
         return n
     }
 
-    /// Whether lines say who spoke. An imported file has no "other side" to call 对方: its lines
-    /// are named only once its voices are told apart.
     fun saysWho(s: Session, numbers: Map<String, Int>): Boolean = s.sourceFile == null || numbers.isNotEmpty()
 
-    /// Who said a line: 你 · 同传 (said with 我说, so the other side heard its translation), a
-    /// speaker's name or number, else 对方 (未识别 once others have numbers).
     fun speakerName(l: TranscriptLine, numbers: Map<String, Int>, names: Map<Int, String>): String {
         if (l.speaker == "me") return Strings.L("你 · 同传")
         numbers[l.id]?.let { return label(it, names) }
@@ -97,8 +81,6 @@ object SpeakerLabels {
     }
 }
 
-/// Exports, as the Mac writes them (TranscriptExport, SessionStore.swift): Markdown, SRT subtitles
-/// and a Word document. Plain JVM, so the CLI tests them.
 object TranscriptExport {
     fun header(s: Session): String {
         val mins = (s.durationSeconds / 60).toInt()
@@ -149,7 +131,6 @@ object TranscriptExport {
         s.lines.forEachIndexed { i, l ->
             val next = if (i + 1 < s.lines.size) s.lines[i + 1].t else l.t + 4
             val end = maxOf(l.t + 1, minOf(next, l.t + 8))
-            // Your own lines (我说) say so, as the record does.
             val tag = if (l.speaker == "me") "[${Strings.L("同传")}] " else ""
             b.append("${i + 1}\n${ts(l.t)} --> ${ts(end)}\n$tag${l.shown}\n")
             l.dst?.takeIf { it != l.shown && it.isNotEmpty() }?.let { b.append("$it\n") }
@@ -158,8 +139,6 @@ object TranscriptExport {
         return b.toString()
     }
 
-    /// A .docx with the Mac's layout: title, header, notes, then the transcript. Written as
-    /// WordprocessingML by hand (a zip of three XML files): no library.
     fun docx(s: Session): ByteArray {
         val body = StringBuilder()
         fun add(text: String, size: Double, bold: Boolean = false, color: String = "000000", after: Double = 4.0) {
@@ -214,6 +193,5 @@ object TranscriptExport {
         return out.toByteArray()
     }
 
-    /// A file name for an export: the title without the characters file systems refuse.
     fun fileName(s: Session, ext: String) = SessionStore.displayTitle(s).replace(Regex("[\\\\/:*?\"<>|]"), "-") + "." + ext
 }

@@ -1,8 +1,4 @@
 #!/bin/bash
-# Makes the release signing key, once ever: ~/.cicada-android/release.jks (PKCS12, RSA 4096, 30
-# years), its random password in the login Keychain (cicada-android-release). Every release must be
-# signed with this same key, or phones can't update to it: back up the file and the password.
-# --github also puts both in the repo's Actions secrets, for the release workflow.
 set -euo pipefail
 ks="${CICADA_KEYSTORE:-$HOME/.cicada-android/release.jks}"
 keytool="$HOME/.cicada-android/jdk/Contents/Home/bin/keytool"

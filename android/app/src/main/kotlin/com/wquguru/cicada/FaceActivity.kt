@@ -13,10 +13,6 @@ import android.widget.TextView
 import cicada.Strings.L
 import cicada.TranscriptLine
 
-/// 面对面翻译: the phone flat between two people. The top half is turned to the other side and
-/// shows the newest line in their language (what I said, translated; or what they said, so they
-/// see it was heard); the bottom half shows it in mine. Hold the button to speak: on release the
-/// phone reads my words aloud in their language (only ever a translation: ListenEngine.speakable).
 class FaceActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var theirLabel: TextView
@@ -65,7 +61,6 @@ class FaceActivity : Activity() {
                 else -> true
             }
         }
-        // TalkBack's double tap is a click: once to start, again to finish.
         hold.setOnClickListener { if (cicada.listen.holding) cicada.releaseToSay() else cicada.holdToSay(); update() }
         val close = ui.roundButton(R.drawable.i_close, L("收起")) { finish() }
         val middle = FrameLayout(this).apply {
@@ -88,7 +83,6 @@ class FaceActivity : Activity() {
             }, LinearLayout.LayoutParams(-1, -2))
             clipChildren = false
         }
-        // The system bars' insets go on the outer frame: fitsSystemWindows replaces a view's own padding.
         setContentView(FrameLayout(this).apply {
             setBackgroundColor(Palette.ground)
             fitsSystemWindows = true
@@ -116,12 +110,10 @@ class FaceActivity : Activity() {
         val key = listOf(line?.id, line?.shown, line?.dst, l.holding, l.saying, app.voice.speaking, l.sayProblem, their).joinToString("|")
         if (key == shown) return
         shown = key
-        // What each side reads, in their own language.
         val mine = line?.speaker == "me"
         val translated = line?.dst?.takeIf { it.isNotEmpty() && it != line.shown }
         theirLabel.text = NotesViews.languageName(their)
         theirText.text = when { line == null -> "…"; mine -> translated ?: "…"; else -> line.shown }
-        // My line was said with 我说: the other side heard its translation (同传, as on the Mac).
         myLabel.text = (if (mine) L("你 · 同传") else if (line == null) L("你") else L("对方")) + " · " + NotesViews.languageName(mineLang)
         myText.text = when { line == null -> L("按住下面的按钮说话，松开后对方会听到译文"); mine -> line.shown; else -> translated ?: line.shown }
         myText.setTextColor(if (line == null) Palette.secondary else Palette.ink)
@@ -136,7 +128,6 @@ class FaceActivity : Activity() {
         hint.text = if (l.holding) L("松开，说给对方") else L("松开后用 {lang} 读出来").replace("{lang}", NotesViews.languageName(their))
         hold.background = ui.ripple(ui.rounded(if (live) Palette.accent else Palette.ink, 52), 52, dark = true)
         holdIcon.setColorFilter(if (live) Palette.ink else android.graphics.Color.WHITE)
-        // The ring says "I'm listening to you" while held.
         hold.foreground = if (l.holding) ui.rounded(0, 52, 0x40E8552B, 10) else null
     }
 }

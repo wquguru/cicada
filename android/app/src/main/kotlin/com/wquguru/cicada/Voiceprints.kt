@@ -6,9 +6,6 @@ import cicada.Voiceprinter
 import java.io.File
 
 /// 说话人识别's voiceprints on the phone: the Mac's model (WeSpeaker ResNet34-LM, VoxCeleb, CC BY
-/// 4.0) run by linux/native/voiceprint.c, built with the NDK into libcicada-voice.so (src/main/jni).
-/// The weights are linux/models/voiceprint.bin, an asset copied out once (the C reads a file).
-/// Should the library not load, `create` gives null and listening carries on unlabelled.
 class NativeVoiceprints private constructor(private val context: Context) : Voiceprinter {
     private var model = 0L
     private var tried = false
@@ -20,7 +17,6 @@ class NativeVoiceprints private constructor(private val context: Context) : Voic
         }
         if (m == 0L) return null
         val out = FloatArray(DIMS)
-        // One at a time: each already uses up to four cores.
         return synchronized(this) { if (nativeEmbed(m, samples, samples.size, out) == 0) out else null }
     }
 

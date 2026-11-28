@@ -9,9 +9,6 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/// A segment as AAC-LC in ADTS frames ("audio/aac"), which Ming hears as well as WAV at ~1/10 the
-/// size. ADTS needs no muxer or temp file: each encoded frame gets a 7-byte header. Null when the
-/// device has no usable encoder; the caller then sends WAV.
 object AacEncoder {
     private const val BITRATE = 24_000
     private const val TIMEOUT_US = 10_000L
@@ -34,7 +31,6 @@ object AacEncoder {
             val info = MediaCodec.BufferInfo()
             var fed = 0L
             var inputDone = false
-            // Bounded so a stuck codec can't hold a segment forever (~2 s without output).
             var idle = 0
             while (idle < 200) {
                 if (!inputDone) {
@@ -51,8 +47,6 @@ object AacEncoder {
                         codec.queueInputBuffer(i, 0, n, timeUs, if (inputDone) MediaCodec.BUFFER_FLAG_END_OF_STREAM else 0)
                     }
                 }
-                // Drain everything ready without waiting while there is input left to feed:
-                // waiting on each frame here made a 7 s segment take a second to encode.
                 while (true) {
                     val o = codec.dequeueOutputBuffer(info, if (inputDone) TIMEOUT_US else 0)
                     if (o < 0) { if (inputDone) idle++; break }
@@ -78,10 +72,9 @@ object AacEncoder {
 
     private val FREQ_INDEX = mapOf(48000 to 3, 44100 to 4, 32000 to 5, 24000 to 6, 22050 to 7, 16000 to 8, 12000 to 9, 11025 to 10, 8000 to 11)
 
-    /// ADTS header for one AAC-LC mono frame of `size` bytes.
     private fun adts(size: Int, freq: Int): ByteArray {
         val len = size + 7
-        val profile = 1 // AAC LC (object type 2) minus one
+        val profile = 1
         val channels = 1
         return byteArrayOf(
             0xFF.toByte(), 0xF1.toByte(),

@@ -1,5 +1,3 @@
-// AI 服务: the services other than Ling (Providers.kt), the same cases as the Linux port's
-// tests/test_providers.py. No network: LingClient runs against a fake transport.
 package cicada.cli
 
 import cicada.*
@@ -54,13 +52,11 @@ object ProviderTests {
     private fun check(ok: Boolean, what: String) { if (!ok) throw AssertionError(what) }
     private fun <T> equal(expected: T, actual: T, what: String) { if (expected != actual) throw AssertionError("$what: expected «$expected», got «$actual»") }
 
-    /// Answers by URL and body; records what was sent and streamed.
     private class Fake(
         val respond: (String, String) -> Transport.Response,
         val streams: ((String, String) -> Transport.Stream)? = null,
     ) : Transport {
         val sent = mutableListOf<Pair<String, String>>()
-        /// The Authorization header of each request in `sent`.
         val auths = mutableListOf<String?>()
         val streamed = mutableListOf<Pair<String, String>>()
         override fun send(url: String, method: String, body: String?, headers: Map<String, String>, timeoutMs: Int): Transport.Response {
@@ -94,7 +90,6 @@ object ProviderTests {
         equal("google/gemini-3.8-flash-tts", c.voiceModel, "voice")
         val ling = AppSettings().aiConfig()
         equal("Ming-3.0-audio-flash" to "Ling-3.1-flash", ling.hearModel to ling.textModel, "Ling")
-        // Ling keeps its own key ("model"); a service never named falls back to Ling.
         equal("Ling-3.0-flash", AppSettings(model = "Ling-3.0-flash").aiConfig().textModel, "Ling's model")
         equal("ling", Providers.named("openai").id, "no OpenAI")
     }
@@ -131,7 +126,6 @@ object ProviderTests {
         equal("http://192.168.1.20:8000/v1/", Providers.customBase("192.168.1.20:8000/v1"), "http added for a nearby host")
         equal("https://10.0.0.5.evil.com/v1/", Providers.customBase("10.0.0.5.evil.com/v1"), "https added for a lookalike")
         check(Providers.isNearby("http://192.168.1.20:8000/v1/") && !Providers.isLocal("http://192.168.1.20:8000/v1/"), "nearby, not local")
-        // A service on the local network needs no key either.
         val s = AppSettings(aiProvider = "custom", aiCustomBase = "192.168.1.20:8000/v1", aiModels = mutableMapOf("custom" to "qwen3:14b"))
         equal("", client(Fake({ _, _ -> reply("ok") }), s, key = null).currentKey(), "no key on the LAN")
     }
@@ -156,7 +150,6 @@ object ProviderTests {
             mapOf("choices" to listOf(mapOf("message" to message))) + (usage?.let { mapOf("usage" to it) } ?: emptyMap())
         check(!AIConfig.thought(r(mapOf("content" to "周五发布。"))), "a plain answer")
         check(AIConfig.thought(r(mapOf("content" to "周五发布。", "reasoning_content" to "The user wants…"))), "reasoning_content")
-        // A reasoning parser on the server: the answer itself sits in reasoning_content.
         check(AIConfig.thought(r(mapOf("content" to "", "reasoning_content" to "周五发布。"))), "answer in reasoning_content")
         check(AIConfig.thought(r(mapOf("content" to "周五发布。", "reasoning" to "hmm"))), "reasoning (OpenRouter's name)")
         check(AIConfig.thought(r(mapOf("content" to "<think>hmm</think>周五发布。"))), "<think>")
@@ -191,7 +184,6 @@ object ProviderTests {
         ling.keyChanged()
         ling.chat("c", "i", Priority.Translate)
         check("chat_template_kwargs" in fake.sent[3].second, "back after settings change")
-        // A second refusal is about something else: the field isn't given up.
         val deaf = Fake({ _, _ -> Transport.Response(400, "{}") })
         val other = client(deaf, s, key = null)
         try { other.chat("c", "i", Priority.Translate); throw AssertionError("accepted") } catch (e: LingException) { equal(400, e.status, "the refusal") }
@@ -201,8 +193,6 @@ object ProviderTests {
     }
 
     fun jsonModeRefused() {
-        // No JSON mode on this server (OpenRouter's Novita for Ling 3.1 Flash): 400 with or without
-        // the kwargs. Asked again without JSON mode.
         val s = AppSettings(aiProvider = "custom", aiCustomBase = "http://192.168.1.20:8000/v1", aiModels = mutableMapOf("custom" to "m"))
         val fake = Fake({ _, b -> if ("response_format" in b) Transport.Response(400, "{}") else reply("好") })
         val ling = client(fake, s, key = null)
@@ -221,7 +211,6 @@ object ProviderTests {
         val ling = client(fake, s, key = null)
         ling.check()
         check(ling.aiCheck.failure == null, "passes: ${ling.aiCheck.summary}")
-        // One that can't answer JSON at all still fails.
         val plain = Fake({ url, b -> if (url.endsWith("models")) Transport.Response(404, "") else if ("response_format" in b) Transport.Response(400, "{}") else reply("ok") })
         val other = client(plain, s, key = null)
         other.check()
@@ -250,7 +239,6 @@ object ProviderTests {
         val t = ling.aiCheck.translate
         check(t != null && t.thinks, "thinking found: ${ling.aiCheck.summary}")
         check(ling.aiCheck.slow && ling.aiCheck.failure == null, "works, but slow")
-        // All 120 tokens spent thinking, no answer: still a thinking model, not a silent pass.
         val noAnswer = Transport.Response(200, Json.write(mapOf("choices" to listOf(mapOf(
             "message" to mapOf("content" to null, "reasoning" to "Okay, the user wants…"), "finish_reason" to "length"))), pretty = false))
         val spent = client(Fake({ url, b -> if (url.endsWith("models")) Transport.Response(404, "") else if ("Translate the text" in b) noAnswer else reply("{\"ok\": true}") }), s, key = null)
@@ -301,7 +289,6 @@ object ProviderTests {
         equal(AICheck.StepID.Hear to AICheck.Reason.Unreachable, f?.step to f?.reason, "the hear step: ${ling.aiCheck.summary}")
         check(ling.checkMessage()!!.contains("192.168.1.21"), "names the hear server: ${ling.checkMessage()}")
         equal(null, ling.aiCheck.proxy, "no proxy hint for a server on the local network")
-        // A bad hear address stops at hearing, not at the text model's.
         s.aiCustomHearBase = "http://hear.example.com/v1"
         ling.keyChanged()
         ling.check()
@@ -340,7 +327,6 @@ object ProviderTests {
         t.googleOff = true
         for (i in 0 until 3) equal(null, t.translate("We ship on Friday", "en", "zh-CN", Translator.Kind.Draft), "draft $i shows the original")
         equal(0, fake.sent.size, "partial text goes nowhere: not Google, never the AI service")
-        // Off, partial text still never reaches the AI service: only Google.
         t.googleOff = false
         equal("我们周五发布", t.translate("We ship on Friday", "en", "zh-CN", Translator.Kind.Draft), "draft via Google when off")
         check(fake.sent.all { google(it.first) }, "a draft never goes to the AI service")
@@ -357,7 +343,6 @@ object ProviderTests {
         equal(null, t.translate("We ship on Friday", "en", "zh-CN", Translator.Kind.Sentence), "service down: the original only")
         check(t.sentencesUntranslated, "says the sentence went untranslated")
         check(fake.sent.none { google(it.first) }, "Google is never asked")
-        // Off again, Google stands in as before.
         t.googleOff = false
         check(!t.sentencesUntranslated, "flipping forgets the last sentence")
         equal("我们周五发布", t.translate("We ship on Friday", "en", "zh-CN", Translator.Kind.Sentence), "Google stands in when off")
@@ -444,7 +429,6 @@ object ProviderTests {
     fun requestShape() {
         val fake = Fake({ _, _ -> reply("LANG: en\nORIGINAL: Hi.\nTRANSLATION: 嗨。", finish = null) })
         val ling = client(fake, AppSettings(aiProvider = "zenmux"))
-        // No finish reason: Ling's search essays come without one, other services may just omit it.
         val r = ling.chat("c", "i", Priority.Translate, model = "qwen/qwen3.8-omni-flash", audio = byteArrayOf(1))
         check(r.contains("ORIGINAL: Hi."), "accepted without a finish reason")
         equal("https://zenmux.ai/api/v1/chat/completions", fake.sent[0].first, "url")
@@ -452,7 +436,6 @@ object ProviderTests {
         equal(mapOf("enabled" to false), b["reasoning"], "reasoning off")
         check("thinking" !in b, "no Ling field")
         equal("input_audio", b["messages"].arr()[1].obj()!!["content"].arr()[0].obj()!!["type"], "input_audio")
-        // Text calls use the service's text model.
         ling.chat("c", "i", Priority.Translate)
         equal("inclusionai/ling-3.0-flash", body(fake.sent[1].second)["model"], "text model")
     }
@@ -509,17 +492,14 @@ object ProviderTests {
         equal("https://zenmux.ai/api/v1/audio/speech", fake.streamed[0].first, "url")
         equal(Triple("google/gemini-3.8-flash-tts", "Puck", true), Triple(b["model"], b["voice"], b["stream"]), "body")
         check("language_id" !in b, "language_id is Ling's")
-        // A voice that isn't this service's (a Ming name) becomes its first one.
         ling.speech("Hello", voice = "US_Emma") {}
         equal("Kore", body(fake.streamed[1].second)["voice"], "first voice")
-        // OpenRouter streams the PCM bytes themselves, without `stream`.
         val raw = Fake({ _, _ -> reply("ok") }, { _, _ -> Transport.Stream(200, "audio/pcm", ByteArrayInputStream(byteArrayOf(5, 0, 6, 0))) })
         ling = client(raw, AppSettings(aiProvider = "openrouter"))
         val pcm = java.io.ByteArrayOutputStream()
         ling.speech("Hi") { pcm.write(it) }
         equal(listOf<Byte>(5, 0, 6, 0), pcm.toByteArray().toList(), "raw PCM")
         check("stream" !in body(raw.streamed[0].second), "no stream for OpenRouter")
-        // One JSON with a WAV in it.
         val wav = Wav.bytes(shortArrayOf(7, 8), 24000)
         val one = Fake({ _, _ -> reply("ok") }, { _, _ ->
             Transport.Stream(200, "application/json", ByteArrayInputStream(Json.write(mapOf("audio" to b64.encodeToString(wav))).toByteArray())) })
@@ -550,7 +530,6 @@ object ProviderTests {
         check(ListenEngine.problem(LingException(LingException.Kind.Network), "ZenMux").second!!.contains("ZenMux"), "named")
         equal("network" to "字幕和纪要等 Ling 恢复 · 连上后自动继续", ListenEngine.problem(LingException(LingException.Kind.Timeout), "Ling"), "what waits and that it goes on")
         equal(null, ListenEngine.problem(LingException(LingException.Kind.Http, 400), "Ling").first, "Ling's 400 is not the model")
-        // A gateway's 502 in front of the server: the service erring, not the network or the key.
         equal("busy" to "ZenMux 暂时出错（HTTP 502），稍后再试。", ListenEngine.problem(LingException(LingException.Kind.Http, 502), "ZenMux"), "a 5xx is the service's trouble")
         equal("busy" to "Ling 暂时出错（HTTP 503），稍后再试。", ListenEngine.problem(LingException(LingException.Kind.Http, 503), "Ling"), "Ling's too")
     }
@@ -573,7 +552,6 @@ object ProviderTests {
 
     private val notesKeys = AIKey(PlainProtector, service = { LingClient.NOTES_KEY })
 
-    /// A custom service at main.example translating with "mt"; notes on "big", at notes.example with `own`.
     private fun notesSettings(own: Boolean) = AppSettings(aiProvider = "custom", aiCustomBase = "https://main.example/v1",
         aiModels = mutableMapOf("custom" to "mt", Providers.NOTES_MODEL to "big"), aiCustomNotesOwn = own,
         aiCustomNotesBase = if (own) "https://notes.example/v1" else "")
@@ -602,7 +580,6 @@ object ProviderTests {
             ling.chat("x", "Notes.", Priority.Notes)
             equal("https://notes.example/v1/chat/completions", fake.sent[0].first, "their server")
             equal("Bearer sk-main-1111111111", fake.auths[0], "no key of their own: the translation key")
-            // The same service, another model: same address and key, even with a notes key file left over.
             notesKeys.save("sk-notes-222222222")
             val same = Fake({ _, _ -> reply("{}") })
             val other = client(same, notesSettings(own = false), key = "sk-main-1111111111")
@@ -610,7 +587,6 @@ object ProviderTests {
             equal("https://main.example/v1/chat/completions", same.sent[0].first, "translation's server")
             equal("Bearer sk-main-1111111111", same.auths[0], "translation's key")
             equal("big", model(same.sent[0].second), "notes' model")
-            // Removing it brings the translation key back.
             val own = client(Fake({ _, _ -> reply("{}") }), notesSettings(own = true), key = "sk-main-1111111111")
             check(own.notesHasOwnKey, "has its own")
             own.removeNotesKey()
@@ -630,7 +606,6 @@ object ProviderTests {
         equal(null, ling.aiCheck.failure, "translation's steps untouched")
         check(ling.aiCheck.notesFailed, "notes failed")
         check(ling.aiCheck.notesLine("notes.example", "big", sharedKey = true)!!.contains("notes.example"), "names the notes server")
-        // Refused once: the next notes ask isn't sent.
         val n = fake.sent.size
         try { ling.chat("x", "Notes.", Priority.Notes) } catch (_: LingException) {}
         equal(n, fake.sent.size, "not sent again until settings change")
@@ -648,13 +623,11 @@ object ProviderTests {
         val sameName = AppSettings(aiProvider = "custom", aiCustomBase = "https://main.example/v1",
                                    aiModels = mutableMapOf("custom" to "mt", Providers.NOTES_MODEL to "mt")).aiConfig()
         check(!sameName.notesApart, "the translation model named again is no split")
-        // 同一个服务 keeps the typed address, unused.
         val off = notesSettings(own = true).apply { aiCustomNotesOwn = false }.aiConfig()
         equal("https://main.example/v1/", off.forNotes.base, "off: translation's address")
         equal(null, off.notesBase, "off: not used")
         val on = notesSettings(own = true).aiConfig()
         equal("https://notes.example/v1/", on.forNotes.base, "on: their own")
-        // Only the custom service splits.
         val ling = AppSettings(aiProvider = "ling", aiModels = mutableMapOf(Providers.NOTES_MODEL to "big")).aiConfig()
         check(!ling.notesApart && ling.forNotes.textModel == ling.textModel, "Ling never splits")
         try {
@@ -679,7 +652,6 @@ object ProviderTests {
 
     fun notesCheck() {
         try {
-            // Notes' server takes no JSON and answers none: their row fails, translation passes.
             val fake = Fake({ url, b ->
                 when {
                     url.endsWith("models") -> if ("notes.example" in url) Transport.Response(200, """{"data":[{"id":"big"},{"id":"bigger"}]}""")
@@ -699,12 +671,10 @@ object ProviderTests {
             equal(KeyState.Ok, ling.keyState, "the key works")
             equal(listOf("big", "bigger"), ling.notesCatalog, "notes' own list for their menu")
             check(fake.sent.none { "notes.example" in it.first && it.second.contains("Translate the text") }, "the sentence went to translation only")
-            // Fixed: notes pass.
             val good = Fake({ url, _ -> if (url.endsWith("models")) Transport.Response(404, "") else reply("{\"ok\": true}") })
             val ok = client(good, s, key = "sk-main-1111111111")
             ok.check()
             check(ok.aiCheck.notes is AICheck.Notes.Ok && !ok.aiCheck.notesFailed, "notes ok: ${ok.aiCheck.summary}")
-            // Notes on the same service: no row of their own; the JSON check is translation's.
             val same = client(Fake({ url, _ -> if (url.endsWith("models")) Transport.Response(404, "") else reply("{\"ok\": true}") }),
                               AppSettings(aiProvider = "custom", aiCustomBase = "https://main.example/v1", aiModels = mutableMapOf("custom" to "mt"),
                                           aiHearModels = mutableMapOf("custom" to "omni")), key = "sk-main-1111111111")
@@ -713,7 +683,6 @@ object ProviderTests {
         } finally { notesKeys.remove() }
     }
 
-    /// The start gate's time, moved on by each wait instead of waiting.
     private class StepClock : GateClock() {
         var t = 1_000_000L
         override fun now() = t
@@ -721,17 +690,14 @@ object ProviderTests {
     }
 
     fun gatePerServer() {
-        // Notes' server is out of requests: its 429s pause it, not translation's server.
         val fake = Fake({ url, _ -> if ("notes.example" in url) Transport.Response(429, "", "20") else reply("好") })
         val s = notesSettings(own = true)
         val k = AIKey(PlainProtector, service = { s.aiProvider }).apply { save("sk-main-1111111111") }
         val ling = LingClient(k, fake, config = s::aiConfig, clock = StepClock())
         try { ling.chat("x", "Notes.", Priority.Notes); throw AssertionError("answered") }
         catch (e: LingException) { equal(LingException.Kind.RateLimited, e.kind, "notes gave up") }
-        // A translation fails at once while its own server is cooling down; this one isn't.
         equal("好", ling.chat("y", "Translate.", Priority.Translate), "translation starts at once")
         check(ling.keyState != KeyState.Invalid, "key fine")
-        // chat_template_kwargs refused by the notes' server only: translation keeps sending it.
         val kw = Fake({ url, b -> if ("notes.example" in url && "chat_template_kwargs" in b) Transport.Response(422, "{}") else reply("{}") })
         val two = client(kw, s, key = "sk-main-1111111111")
         two.chat("x", "Notes.", Priority.Notes)

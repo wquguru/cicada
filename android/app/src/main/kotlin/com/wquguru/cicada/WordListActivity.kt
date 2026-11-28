@@ -13,10 +13,6 @@ import cicada.Strings.L
 import cicada.Strings.LF
 import cicada.Vocabulary
 
-/// 设置 › 词表 (the Mac's WordListSettings.swift): the two switches of 改正听错的词, and the word list
-/// itself: each word (tap to change its spelling), what it has been heard as (× takes one off, +
-/// adds one), where it came from and how often it fixed a line. A deleted word comes back with
-/// 撤销; 粘贴导入… takes many at once and says what it will do first.
 class WordListActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var page: LinearLayout
@@ -24,7 +20,6 @@ class WordListActivity : Activity() {
     private var shown: String? = null
     private var query = ""
     private var search: EditText? = null
-    /// A deleted word, shown in its place with 撤销 for a few seconds.
     private var deleted: Pair<Vocabulary.Term, Int>? = null
     private var deletedAt = 0L
 
@@ -47,7 +42,6 @@ class WordListActivity : Activity() {
         shown = key
         page.removeAllViews()
 
-        // The switches; without an AI service the first gives way to a way to set one up.
         val usable = app.ling.usable
         val fixRow = if (usable) ui.switchRow(L("会中改正听错的词"), LF("走 %@，只发文字", AiServiceActivity.name(app.ling.provider)), s.fixMisheard) {
             s.fixMisheard = it; app.saveSettings()
@@ -58,7 +52,6 @@ class WordListActivity : Activity() {
         if (!s.fixMisheard || !usable) { askRow.alpha = 0.45f; askRow.isEnabled = false; disable(askRow) }
         page.addView(ui.group(listOf(fixRow, askRow)), ui.lp(top = 8))
 
-        // 词 · N, and 粘贴导入….
         page.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -108,7 +101,6 @@ class WordListActivity : Activity() {
         v.setOnClickListener(null)
     }
 
-    /// Most recently useful first, then the rest newest first; the search keeps words or heard forms that match.
     private fun shownTerms(terms: List<Vocabulary.Term>): List<Vocabulary.Term> {
         val all = terms.reversed().sortedByDescending { it.used ?: java.time.Instant.EPOCH }
         val q = Vocabulary.key(query)
@@ -124,7 +116,6 @@ class WordListActivity : Activity() {
         row.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            // The word: a tap changes its spelling; what it was heard as stays with it.
             addView(ui.text(t.word, 17f, Palette.ink, bold = true, lines = 1).apply {
                 contentDescription = "${t.word}，${L("点一下改写法")}"
                 minHeight = ui.dp(40); gravity = Gravity.CENTER_VERTICAL
@@ -132,7 +123,6 @@ class WordListActivity : Activity() {
             }, ui.weight())
             addView(ui.iconButton(R.drawable.i_trash, L("从词表里删掉"), Palette.tertiary, 20) { remove(t) })
         })
-        // What it has been heard as: × takes one off; + adds one (asking whose it is when another word has it).
         val chips = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         var line = LinearLayout(this)
         var used = 0
@@ -175,7 +165,6 @@ class WordListActivity : Activity() {
             if (h.isEmpty() || h.length > 40) return@input
             val owner = v.owners(h, t.word).firstOrNull()
             if (owner == null) { v.confirm(h, t.word, t.source); return@input }
-            // Already another word's: whose should it be? Both kept is asked about each time, never fixed silently.
             lateinit var d: android.app.Dialog
             val body = ui.stack(10,
                 ui.button(LF("改给 %@", t.word), "primary") { d.dismiss(); v.forget(h, owner); v.confirm(h, t.word, t.source) },
@@ -196,8 +185,6 @@ class WordListActivity : Activity() {
         build()
     }
 
-    /// 粘贴导入: one per line, heard forms after "="; the counts follow what is pasted, and the
-    /// button says how many go in.
     private fun importSheet() {
         val v = cicada.vocabulary
         lateinit var d: android.app.Dialog

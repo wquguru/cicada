@@ -9,15 +9,10 @@ import cicada.AudioSource
 import cicada.Log
 import cicada.Segmenter
 
-/// 导入录音或视频: a file's sound, decoded by the phone's own codecs (anything Android plays: m4a,
-/// mp3, wav, mp4, mov…), mixed to mono and resampled to 16 kHz, handed on as it decodes. Paced at
-/// `speed` × real time: faster than a meeting, slow enough that Ming keeps up (each segment takes
-/// ~2 s whatever its length, so several are in flight). Streams, so an hour never sits in memory.
 class FileSource(private val context: Context, private val uri: Uri, private val speed: Double = 2.5) : AudioSource {
     override var onSamples: ((ShortArray) -> Unit)? = null
     override var onEnded: ((String?) -> Unit)? = null
     @Volatile private var stopped = false
-    /// Seconds handed on so far, and the file's length (0 until known).
     @Volatile var done = 0.0; private set
     @Volatile var total = 0.0; private set
 
@@ -27,7 +22,7 @@ class FileSource(private val context: Context, private val uri: Uri, private val
             val reason = try { decode(); null } catch (e: Exception) {
                 Log.d("import: decode failed ${e.javaClass.simpleName}: ${e.message}"); "unreadable"
             }
-            if (!stopped && reason == null) onSamples?.invoke(ShortArray(Segmenter.RATE)) // the last sentence's pause
+            if (!stopped && reason == null) onSamples?.invoke(ShortArray(Segmenter.RATE))
             onEnded?.invoke(reason)
         }, "FileSource").apply { isDaemon = true }.start()
     }
@@ -47,7 +42,7 @@ class FileSource(private val context: Context, private val uri: Uri, private val
         codec.start()
         var rate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
         var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
-        var pos = 0.0 // the resampler's place in the input, in input samples
+        var pos = 0.0
         var carry = 0.0f; var hasCarry = false
         val started = System.nanoTime()
         var handed = 0L
@@ -74,13 +69,11 @@ class FileSource(private val context: Context, private val uri: Uri, private val
                 buf.position(info.offset); buf.limit(info.offset + info.size)
                 val shorts = buf.asShortBuffer()
                 val frames = shorts.remaining() / channels
-                // Mono, then linear resampling to 16 kHz.
                 val mono = FloatArray(frames)
                 for (f in 0 until frames) { var sum = 0f; for (c in 0 until channels) sum += shorts.get(f * channels + c); mono[f] = sum / channels }
                 codec.releaseOutputBuffer(o, false)
                 val step = rate.toDouble() / Segmenter.RATE
                 val out = ArrayList<Short>(((frames / step) + 2).toInt())
-                // `pos` runs from -1 (the previous buffer's last sample, `carry`) to frames-1.
                 while (pos < frames - 1 || (pos < frames && frames == 1)) {
                     val i0 = Math.floor(pos).toInt()
                     val a = if (i0 < 0) (if (hasCarry) carry else mono[0]) else mono[i0]
@@ -92,7 +85,6 @@ class FileSource(private val context: Context, private val uri: Uri, private val
                 pos -= frames
                 if (frames > 0) { carry = mono[frames - 1]; hasCarry = true }
                 if (out.isNotEmpty()) {
-                    // In 100 ms pieces, like a capture callback, paced at `speed`.
                     val all = out.toShortArray()
                     var k = 0
                     val chunk = Segmenter.RATE / 10
@@ -117,7 +109,6 @@ class FileSource(private val context: Context, private val uri: Uri, private val
     }
 
     companion object {
-        /// The file's name as the picker or the sharing app gives it ("访谈录像.mp4").
         fun name(context: Context, uri: Uri): String {
             try {
                 context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->

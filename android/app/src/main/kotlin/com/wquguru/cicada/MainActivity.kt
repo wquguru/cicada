@@ -22,9 +22,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/// 首页 is 会议记录 (as on iOS): the large title, the card that starts listening (what the phone
-/// plays, or 面对面) or shows the meeting going on, then the meetings by day. 会议记录 / 设置 and
-/// search float at the bottom; 导入 is the round button by the title.
 class MainActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var top: FrameLayout
@@ -50,7 +47,6 @@ class MainActivity : Activity() {
     }
 
     private var builtTitle = ""
-    /// The Quick Settings tile's 开始听, held back by a known AI service failure: say why here.
     private var startFromTile: String? = null
 
     override fun onNewIntent(intent: Intent) {
@@ -60,8 +56,6 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // The nav brings this screen back to the front rather than making a new one, so a language
-        // changed in 设置 meanwhile would leave the title and nav in the old one.
         if (L("会议记录") != builtTitle) { recreate(); return }
         unobserve = cicada.observe(::render)
         shownTop = null; shownRecent = null
@@ -96,14 +90,11 @@ class MainActivity : Activity() {
             else -> startCard()
         })
         if (app.settings.overlay && !app.canOverlay && file == null) column.addView(tipCard())
-        // The AI service needs the user (a phone has no tray): where the update card goes.
         if (file == null && !app.listen.listening) AiCheckViews.card(this, ui)?.let { column.addView(it) }
-        // A new version, under the start card; never while a meeting or a file is going on.
         app.updates.available?.takeIf { file == null && !app.listen.listening }?.let { column.addView(updateCard(it)) }
         top.addView(column)
     }
 
-    /// A meeting is going on: where it is and a way back to it.
     private fun liveCard(): LinearLayout {
         val app = cicada
         val status = ui.text(NotesViews.status(app), 15f, Palette.link, bold = true)
@@ -115,7 +106,6 @@ class MainActivity : Activity() {
         return card
     }
 
-    /// A file being transcribed: its name and how far it is.
     private fun importCard(file: FileSource): LinearLayout {
         clockText = null
         val app = cicada
@@ -132,7 +122,6 @@ class MainActivity : Activity() {
         val pb = app.settings.source != "mic"
         clockText = null
         val card = ui.card(gap = 16)
-        // The last meeting ended by itself (as the Mac's menu says 会议已自动结束, not 已暂停).
         if (app.autoEnded) card.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -154,7 +143,6 @@ class MainActivity : Activity() {
                 ui.helper(if (pb) L("通话和会议 app 的声音系统不让录，改用“面对面”") else L("线下开会；有人在线上就把会议 app 开外放"))), ui.weight().apply { leftMargin = ui.dp(12) })
         }
         card.addView(desc, ui.lp(top = 16))
-        // The language pair: what is heard (found by itself) → what subtitles read in.
         val lang = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -188,14 +176,12 @@ class MainActivity : Activity() {
         addView(ui.textButton(L("去开启")) { OverlayGuideActivity.open(this@MainActivity, direct = true) })
     }
 
-    /// 有新版本: 更新 downloads the APK in the browser, the words open the release notes.
     private fun updateCard(u: UpdateChecker.Update) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         background = ui.rounded(Palette.card, 22)
         setPadding(ui.dp(16), ui.dp(12), ui.dp(8), ui.dp(12))
         addView(ui.tile(R.drawable.i_update, 40, Palette.accentPale, Palette.link).apply { background = ui.rounded(Palette.accentPale, 20) })
-        // The words open the release notes (a bigger target than the grey line alone).
         val texts = ui.stack(2, ui.text(LF("有新版本 %@", u.version), 15f, Palette.ink, medium = true), ui.helper(L("更新说明"))).apply {
             setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4))
             contentDescription = LF("有新版本 %@", u.version) + "，" + L("更新说明")
@@ -205,7 +191,6 @@ class MainActivity : Activity() {
         addView(ui.textButton(L("更新")) { cicada.updates.download() })
     }
 
-    /// The meetings, newest first, under 今天 / 昨天 / the date (the last 60; search finds the rest).
     private fun renderRecent() {
         val app = cicada
         val sessions = app.store.all().take(60)
@@ -233,7 +218,6 @@ class MainActivity : Activity() {
     }
 
     companion object {
-        /// "今天 20:54" / "昨天 09:02" / "11月1日 15:30".
         fun day(at: Instant): String {
             val local = at.atZone(ZoneId.systemDefault())
             val d = local.toLocalDate()
@@ -248,14 +232,10 @@ class MainActivity : Activity() {
 
         fun time(at: Instant): String = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(at)
 
-        /// The meeting's name without its date (lists and rename show the date apart).
         fun name(s: Session): String =
             if (s.renamed ?: !s.title.startsWith("会议 ")) s.title else s.notes?.title?.takeIf { it.isNotEmpty() } ?: SessionStore.displayTitle(s)
 
-        /// One meeting in a list: title (and 正在听), when, how long, how many lines, to-dos.
-        /// `query`: found by 会议记录's search, the record opens at the lines found (#33).
         fun recordRow(activity: Activity, ui: Ui, s: Session, live: Boolean, query: String = ""): LinearLayout {
-            // The line under it says when: the title is just the meeting's name.
             val title = name(s)
             val titleView = LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -263,7 +243,6 @@ class MainActivity : Activity() {
                 if (live) addView(ui.badge(if (activity.cicada.importing != null) L("正在转写") else L("正在听"), dot = true), LinearLayout.LayoutParams(-2, -2).apply { rightMargin = ui.dp(8) })
                 addView(ui.text(title, 16f, Palette.ink, bold = true, lines = 1), ui.weight())
             }
-            // Under a day's heading: the time, how long, how many lines, and where it came from.
             val from = s.sourceFile?.let { L("导入") }
             val meta = if (live) "${time(s.startedAt)} · ${Languages.clock(s.durationSeconds)}"
                        else listOfNotNull("${time(s.startedAt)}", Languages.clock(s.durationSeconds), LF("%lld 句", s.lines.size), from).joinToString(" · ")

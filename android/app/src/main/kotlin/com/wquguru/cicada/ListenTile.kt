@@ -9,11 +9,7 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import cicada.Strings.L
 
-/// The 知了 tile in Quick Settings: one tap starts listening (from the source chosen last time) or
-/// ends it, without opening the app first. Lit while listening, with the time as its subtitle.
 class ListenTile : TileService() {
-    // While Quick Settings is open the tile is updated directly (a refresh request is ignored for a
-    // tile already showing), and its clock ticks.
     private val tick = object : Runnable {
         override fun run() { update(); if (cicada.listen.listening) cicada.main.postDelayed(this, 1000) }
     }
@@ -26,7 +22,6 @@ class ListenTile : TileService() {
         val app = cicada
         if (app.listen.listening) { app.stopListening { update() }; return }
         val intent = app.startIntent(this, app.settings.source) ?: return
-        // A tile may only open an activity by collapsing the panel; Android 14+ takes a PendingIntent.
         if (Build.VERSION.SDK_INT >= 34) {
             startActivityAndCollapse(PendingIntent.getActivity(this, 3, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         } else {
@@ -54,7 +49,6 @@ class ListenTile : TileService() {
     companion object {
         @Volatile private var visible: ListenTile? = null
 
-        /// Listening started or ended: update the tile now if it is showing, else ask the system to.
         fun refresh(context: Context) {
             visible?.let { it.cicada.main.post(it.tick); return }
             try { requestListeningState(context, ComponentName(context, ListenTile::class.java)) } catch (_: Exception) {}

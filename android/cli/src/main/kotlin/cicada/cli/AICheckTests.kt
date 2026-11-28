@@ -1,5 +1,3 @@
-// AI 服务检查 (AICheck.kt): the Mac's AICheckTests, plus the port's fourth step (hearing) and the
-// client's check and passive results against a fake transport. No network.
 package cicada.cli
 
 import cicada.*
@@ -43,7 +41,6 @@ object AICheckTests {
         equal(AICheck.Failure(StepID.Text, Reason.Busy, null), AICheck.classify(LingException(LingException.Kind.RateLimited), StepID.Text), "429")
         equal(AICheck.Failure(StepID.Key, Reason.ServerError, 503), AICheck.classify(http(503), StepID.Key), "5xx")
         equal(null, AICheck.classify(LingException(LingException.Kind.Hijacked), StepID.Text), "hijacked")
-        // The hear model: the same codes mean it takes no audio, not that it is missing.
         for (code in listOf(400, 404, 415, 422)) equal(AICheck.Failure(StepID.Hear, Reason.Deaf, code), AICheck.classify(http(code), StepID.Hear), "hear $code")
         equal(AICheck.Failure(StepID.Text, Reason.ServerError, 415), AICheck.classify(http(415), StepID.Text), "text 415")
         equal(AICheck.Failure(StepID.Hear, Reason.Busy, null), AICheck.classify(LingException(LingException.Kind.RateLimited), StepID.Hear), "hear 429")
@@ -68,11 +65,9 @@ object AICheckTests {
     }
 
     fun hearIsNotText() {
-        // Heard audio proves the address, the key and the hear model, never the text model.
         val c = AICheck().fail(StepID.Reach, Reason.Unreachable).pass(StepID.Hear, 0.9)
         equal(State.Untested, c[StepID.Text], "text unproven")
         equal(State.Ok(0.9), c[StepID.Hear], "hear")
-        // A deaf reply doesn't make the text model look fine either, nor clear its own failure.
         val d = AICheck().fail(StepID.Hear, Reason.Deaf, 400)
         equal(State.Untested, d[StepID.Text], "text still unproven")
         val m = AICheck().fail(StepID.Text, Reason.NoModel, 404).pass(StepID.Hear, 1.0)
@@ -80,8 +75,6 @@ object AICheckTests {
     }
 
     fun blocking() {
-        // The Mac's AIServiceStrip.blocking, plus the port's deaf hear model: a key, the credit, a
-        // model or the settings. The network, a busy service and a server error fix themselves.
         val needs = setOf(Reason.InvalidKey, Reason.MgmtKey, Reason.NoCredit, Reason.NoModel, Reason.NoJSON, Reason.BadAddress, Reason.Deaf)
         for (r in Reason.values()) {
             val b = AICheck.simulated(r).blocking("Ling", "openai/gpt-x", "google/omni-y")
@@ -91,7 +84,6 @@ object AICheckTests {
         equal("Ling 的 key 用不了" to "修好之前听不了", AICheck.simulated(Reason.InvalidKey).blocking("Ling", "t", "h"), "key")
         equal("ZenMux 上找不到 gpt-x 这个模型。" to "字幕照常，纪要先停下", AICheck.simulated(Reason.NoModel).blocking("ZenMux", "openai/gpt-x", "h"), "short model, notes only")
         equal("omni-y 听不了声音。", AICheck.simulated(Reason.Deaf).blocking("ZenMux", "t", "google/omni-y")?.first, "deaf")
-        // A heard segment after a bad key clears it: back to normal.
         equal(null, AICheck.simulated(Reason.InvalidKey).pass(StepID.Hear, 1.0).blocking("Ling", "t", "h"), "fixed")
     }
 
@@ -192,13 +184,11 @@ object AICheckTests {
     }
 
     fun clientHearCatalog() {
-        // Answers the silent clip, but the service says it takes no audio in.
         val s = AppSettings(aiProvider = "zenmux", aiHearModels = mutableMapOf("zenmux" to "x/text-only"))
         val ling = client(Fake(::service), s)
         ling.check()
         equal(Reason.Deaf, ling.aiCheck.failure?.reason, "deaf by the catalog")
         equal(false, ling.hears, "can't hear")
-        // A custom service that lists models without saying what they take: the probe decides.
         val custom = AppSettings(aiProvider = "custom", aiCustomBase = "https://x.example/v1", aiModels = mutableMapOf("custom" to "qwen3:14b"),
                                  aiHearModels = mutableMapOf("custom" to "qwen3-omni"))
         val plain = client(Fake { url, body -> if (url.endsWith("models")) Transport.Response(200, """{"data":[{"id":"qwen3:14b"},{"id":"qwen3-omni"}]}""") else service(url, body) }, custom, key = "sk-x-0000")
@@ -240,7 +230,6 @@ object AICheckTests {
         down = false
         ling.networkChanged()
         check(ling.aiCheck.passed, "looked again: ${ling.aiCheck.summary}")
-        // Only after an unreachable result: a good service isn't checked on every network change.
         val calls = (ling.aiCheck.at)
         ling.networkChanged()
         equal(calls, ling.aiCheck.at, "no check")
@@ -250,22 +239,18 @@ object AICheckTests {
         var answer: (String) -> Transport.Response = { reply("OK") }
         val ling = client(Fake { url, body -> if (url.endsWith("models")) Transport.Response(200, MODELS) else answer(body) }, AppSettings(aiProvider = "zenmux"))
         ling.check()
-        // Heard audio in a meeting: the hear step, from a real request.
         answer = { Transport.Response(400, "{}") }
         try { ling.chat("c", "i", Priority.Translate, model = "qwen/qwen3.8-omni-flash", audio = byteArrayOf(1)) } catch (_: LingException) {}
         equal(Reason.Deaf, ling.aiCheck.failure?.reason, "deaf from a meeting")
         check(ling.aiCheck.passive, "passive")
-        // The notes: a 429 is busy, not a failure; then a good reply clears it.
         answer = { Transport.Response(429, "{}") }
         try { ling.chat("c", "i", Priority.Translate) } catch (_: LingException) {}
         answer = { reply("fine") }
-        ling.chat("c", "i", Priority.Notes) // waits out the pause after the 429
+        ling.chat("c", "i", Priority.Notes)
         equal(State.Ok::class, ling.aiCheck[StepID.Text]::class, "text proven")
-        // The network goes in the middle of a meeting.
         answer = { throw java.io.IOException("down") }
         try { ling.chat("c", "i", Priority.Translate) } catch (_: LingException) {}
         equal(Reason.Unreachable, ling.aiCheck.failure?.reason, "unreachable")
-        // A server error once isn't worth repainting the settings for.
         answer = { reply("back") }
         ling.chat("c", "i", Priority.Translate)
         answer = { Transport.Response(503, "{}") }

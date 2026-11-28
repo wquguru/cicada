@@ -1,5 +1,3 @@
-// 改正听错的词: the Mac's CorrectionTests, VocabularyTests and LiveFixesTests (cases from a
-// 21-minute meeting recording), and records with fixes read and written as the Mac does.
 package cicada.cli
 
 import cicada.*
@@ -51,8 +49,6 @@ object FixTests {
         "aLineMingTranslatedIsFixedByOneMoreRequest" to ::aLineMingTranslatedIsFixed,
     )
 
-    /// The Mac's own transform for each character (generated with CFStringTransform, as
-    /// Correction.swift reads it); the phone's ICU "Han-Latin; Latin-ASCII" gives the same syllables.
     private val table: Map<Char, String> by lazy {
         FixTests::class.java.getResourceAsStream("/pinyin.tsv")!!.bufferedReader().readLines()
             .mapNotNull { l -> l.split('\t').takeIf { it.size == 2 && it[0].length == 1 }?.let { it[0][0] to it[1] } }.toMap()
@@ -65,7 +61,6 @@ object FixTests {
 
     // MARK: Records
 
-    /// As the Mac writes a line with fixes (JSONEncoder, sorted keys, nil left out).
     val MAC_WITH_FIXES = """
 {
   "endedAt" : "2026-11-07T08:24:12Z",
@@ -121,7 +116,6 @@ object FixTests {
         equal("解释这个Morpho的，质压和开布特", l.shown, "shown: applied fixes only")
         equal(null, s.lines[1].fixes, "a line without fixes has none")
         equal(MAC_WITH_FIXES, Json.write(s.toJson()), "written back byte for byte")
-        // A copy (what the screens read) keeps them, apart from the record's own.
         val c = l.copy(); c.fixes!![0].off = true
         equal(null, l.fixes!![0].off, "copies are deep")
     }
@@ -173,7 +167,6 @@ object FixTests {
         equal(A, verdict("两个代笔", "两个代币", 0.9), "代笔")
         equal(A, verdict("管理房", "管理方", 0.9), "管理房")
         equal(A, verdict("追压", "质押", 0.85), "追压")
-        // Only the changed part is compared: 花/概 share nothing, though the phrase around them does.
         equal(D, verdict("花了大花", "花了大概", 0.85), "花了大花")
         equal(A, verdict("FFT制押", "FFT质押", 0.9), "FFT制押")
     }
@@ -199,7 +192,6 @@ object FixTests {
         equal(D, verdict("莫纳", "Morpho", 0.7), "莫纳")
     }
 
-    /// A learned "S平 → X平" never reaches into "iOS平台"; on its own it still applies.
     fun learnedWordsStayWhole() {
         equal(null, Correction.word("S平", "iOS平台很好"), "inside iOS")
         equal(null, Correction.word("A工", "DATA工具"), "inside DATA")
@@ -209,7 +201,6 @@ object FixTests {
         equal("iOS平台和X平台", Correction.apply(listOf(LineFix("S平", "X平")), "iOS平台和S平台").text, "apply")
     }
 
-    /// A translation isn't a misheard name: one 对 to "X平台 → X platform" taught 平台 → platform.
     fun translationsAreNotAsked() {
         equal(D, verdict("X平台", "X platform", 0.9), "X平台")
         equal(D, verdict("平台", "platform", 0.95), "平台")
@@ -345,7 +336,6 @@ object FixTests {
         equal("in" to "in now", Correction.label(LineFix("in", "in now", user = true)), "added at the end")
         equal("Great" to "OK Great", Correction.label(LineFix("Great", "OK Great", user = true)), "added at the start")
         equal("质压" to "质押", Correction.label(LineFix("解除质压", "解除质押")), "a swap names the changed words")
-        // 改回 says the whole span too.
         val t = setup("lock that in.")
         t.fx.edit("l0", t.id, "lock that in now.", everywhere = false, keep = false)
         t.fx.revert(t.line("l0").fixes!!.first(), "l0", t.id)
@@ -354,23 +344,18 @@ object FixTests {
 
     fun addedWordStaysOnItsLineAndNeverMatchesPunctuation() {
         val line = "Great, let's lock that in."
-        // "now" added before the full stop: the fix is the last word, unique in the line, not ".".
         val e = Correction.userEdit(line, "Great, let's lock that in now.", line, emptyList())!!
         equal("in", e.fix.from, "from"); equal("in now", e.fix.to, "to"); equal(false, e.swap, "not a swap")
         equal("Great, let's lock that in now.", Correction.apply(listOf(e.fix), line).text, "applied")
-        // A word added at the start.
         val s = Correction.userEdit(line, "OK Great, let's lock that in.", line, emptyList())!!
         equal("Great", s.fix.from, "start from"); equal("OK Great", s.fix.to, "start to"); equal(false, s.swap, "start not a swap")
         equal("OK Great, let's lock that in.", Correction.apply(listOf(s.fix), line).text, "start applied")
-        // A word that appears twice: grown until the span is unique.
         val r = "in the room in the hall"
         val t = Correction.userEdit(r, "in the room inside the hall", r, emptyList())!!
         equal("in the room inside the hall", Correction.apply(listOf(t.fix), r).text, "unique span")
-        // Chinese: an inserted word takes its neighbour.
         val c = Correction.userEdit("好的我来看一下", "好的OK我来看一下", "好的我来看一下", emptyList())!!
         equal("好的OK我来看一下", Correction.apply(listOf(c.fix), "好的我来看一下").text, "Chinese applied")
         equal(false, c.swap, "Chinese not a swap")
-        // A real swap is still a swap.
         equal(true, Correction.userEdit("我木娜找了", "我Monad找了", "我木娜找了", emptyList())?.swap, "swap")
     }
 
@@ -509,8 +494,6 @@ object FixTests {
         equal("但质压这种", t.line("l0").shown, "stays reverted")
     }
 
-    /// The sentence's translation request carries the word list and the lines before it, and the
-    /// fixes in its reply reach the line (Translator → LiveFixes), with no JSON mode.
     fun fixesRideOnTheSentenceTranslation() {
         val t = setup("我们先看这个", "解释这个莫拉的，质压很高")
         t.fx.vocabulary.importText("Morpho = 莫法")
@@ -529,9 +512,6 @@ object FixTests {
         equal(1, t.fx.pending(t.id).size, "the name asked about")
     }
 
-    /// The path a real meeting takes: Ming hears and translates a stretch, then (fixing on) the text
-    /// model translates the line again with the misheard words pointed out. Its translation replaces
-    /// Ming's and its fixes reach the record; with fixing off, no second request.
     fun aLineMingTranslatedIsFixed() {
         usePinyinTable()
         for (on in listOf(true, false)) {
@@ -560,7 +540,6 @@ object FixTests {
                 src.onEnded = { ended.countDown() }
                 engine.start(src, "file")
                 ended.await()
-                // No wait: stop() itself waits for the line's fixing request.
                 engine.stop()
                 val l = store.get(engine.sessionId!!)!!.lines.single()
                 if (on) {

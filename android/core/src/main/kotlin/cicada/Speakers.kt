@@ -2,31 +2,19 @@ package cicada
 
 import kotlin.math.sqrt
 
-/// 说话人识别: telling the other side's voices apart (SpeakerID.swift; linux/cicada/core/speakers.py).
 /// Each heard line's audio becomes a voiceprint (WeSpeaker ResNet34-LM, VoxCeleb, CC BY 4.0),
-/// voiceprints are grouped as they arrive, and a voice is only shown once it has a few lines
-/// (SpeakerLabels). The thresholds are the Mac's, tuned on AMI meetings.
-///
-/// The model runs in linux/native/voiceprint.c, built into the app with the NDK: the app gives a
-/// `Voiceprinter`; this plain-JVM side only groups. Without one the feature is unavailable and
-/// listening carries on as before.
 interface Voiceprinter {
-    /// A unit-length voiceprint of 16 kHz mono samples, or null (too short, or it failed).
     fun embed(samples: ShortArray): FloatArray?
 }
 
-/// Groups voiceprints as lines arrive, never revising a line already labelled. A line joins the
-/// closest voice when similar enough; a long line unlike every voice starts a new one; anything
-/// else stays unlabelled (对方). (VoiceClusterer, SpeakerID.swift.)
 class VoiceClusterer {
     private val sums = ArrayList<FloatArray>()
 
-    /// The user said two voices are one: later lines like either go to `into`.
     fun merge(from: Int, into: Int) {
         if (from !in sums.indices || into !in sums.indices || from == into) return
         val a = sums[into]; val b = sums[from]
         for (i in a.indices) a[i] += b[i]
-        b.fill(0f) // never the closest again
+        b.fill(0f)
     }
 
     fun label(v: FloatArray, seconds: Double): Int? {
@@ -56,15 +44,12 @@ class VoiceClusterer {
     }
 }
 
-/// Voiceprints for listening: `embed` runs on the engine's voice thread while Ming hears the same
-/// segment; `label` is called in segment order.
 open class SpeakerTagger(private val voiceprints: Voiceprinter?) {
     private val gate = Any()
     private var clusterer = VoiceClusterer()
 
     val available: Boolean get() = voiceprints != null
 
-    /// A new meeting: forget the voices of the last one.
     fun reset() = synchronized(gate) { clusterer = VoiceClusterer() }
 
     fun merge(from: Int, into: Int) = synchronized(gate) { clusterer.merge(from, into) }
@@ -82,9 +67,6 @@ open class SpeakerTagger(private val voiceprints: Voiceprinter?) {
     companion object { const val MIN_SECONDS = 0.5 }
 }
 
-/// Names from the conversation (SpeakerNameGuess, SpeakerNamer): asks Ling on its own once two
-/// voices are on show, again every 20 lines, and once more when the meeting ends. Guesses go
-/// straight into the meeting (voiceGuesses); the user corrects them.
 class SpeakerNamer(private val ling: LingClient, private val store: SessionStore) {
     private val gate = Any()
     private val busy = HashSet<String>()
@@ -100,7 +82,7 @@ class SpeakerNamer(private val ling: LingClient, private val store: SessionStore
             if (id in busy || !(force || lines.size >= (asked[id] ?: -1000) + 20)) return
             text = content(lines) ?: return
             val numbers = SpeakerLabels.voiceNumbers(lines)
-            if (numbers.keys.all { s.voiceNames?.get(it.toString()) != null }) return // everyone already has the user's name
+            if (numbers.keys.all { s.voiceNames?.get(it.toString()) != null }) return
             busy.add(id)
             asked[id] = lines.size
         }
@@ -125,7 +107,6 @@ class SpeakerNamer(private val ling: LingClient, private val store: SessionStore
     }
 
     companion object {
-        /// Ling's prompt, word for word the Mac's.
         const val INSTRUCTION = "Who are the people labelled 说话人N? Name one only when the transcript makes it clear: they " +
             "introduce themselves on a line labelled with their own 说话人N; someone addresses them by name just " +
             "before or after they speak (\"Thanks, George\" right after 说话人1's answer: 说话人1 is George); " +
@@ -137,10 +118,8 @@ class SpeakerNamer(private val ling: LingClient, private val store: SessionStore
             "you are unsure of. Reply as JSON: {\"speakers\": [{\"speaker\": 2, \"name\": \"George\", \"evidence\": \"L12\"}]}, " +
             "the evidence being the line with the name; an empty list if none. Check each name's spelling before replying."
 
-        /// "Okay, Amos, thank you" comes right after Amos's last words.
         const val EVIDENCE_REACH = 2
 
-        /// The transcript as Ling sees it, newest 400 lines, with speaker labels; null when no voices are shown.
         fun content(lines: List<TranscriptLine>): String? {
             val numbers = SpeakerLabels.voiceNumbers(lines)
             if (numbers.isEmpty()) return null
@@ -154,11 +133,8 @@ class SpeakerNamer(private val ling: LingClient, private val store: SessionStore
             return sb.toString()
         }
 
-        /// (found: voice → guess, refuted: voice → name). A name given on a line the voice neither
-        /// said nor spoke next to is refuted; a name Ling gives two voices goes to the one with more lines.
         fun read(reply: String, all: List<TranscriptLine>): Pair<MutableMap<Int, VoiceGuess>, MutableMap<Int, String>> {
             val found = LinkedHashMap<Int, VoiceGuess>(); val refuted = LinkedHashMap<Int, String>()
-            // Without JSON mode (a host that refuses it) the object may come in a fence or a sentence.
             val a = reply.indexOf('{'); val z = reply.lastIndexOf('}')
             val list = (if (a in 0 until z) Json.parseObject(reply.substring(a, z + 1)) else null)?.get("speakers").arr() ?: return found to refuted
             val voiceOf = SpeakerLabels.voiceNumbers(all).entries.associate { (v, n) -> n to v }
@@ -186,7 +162,6 @@ class SpeakerNamer(private val ling: LingClient, private val store: SessionStore
             return found to refuted
         }
 
-        /// Whether a stored guess still stands: its evidence line is found again and the voice speaks there.
         fun holds(g: VoiceGuess, v: Int, lines: List<TranscriptLine>): Boolean {
             if (!g.evidence.contains("“")) return true
             val at = g.evidence.substringBefore("“").trim()

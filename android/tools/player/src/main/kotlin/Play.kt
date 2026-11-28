@@ -6,7 +6,6 @@ import android.media.MediaPlayer
 import android.os.Bundle
 import android.widget.TextView
 
-/// Plays the intent's file or URL once as media, the way a video or podcast app does.
 class Play : Activity() {
     private var player: MediaPlayer? = null
 

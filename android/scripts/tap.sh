@@ -1,7 +1,4 @@
 #!/bin/bash
-# Taps the first on-screen element whose text (or description) is one of the given labels,
-# waiting up to 10 s for it: scripts/tap.sh "开始听" "Start listening". For driving the real UI in
-# tests (system dialogs too). Exits 1 if none shows up. TAP_EXACT=0 matches substrings.
 set -euo pipefail
 adb="$HOME/.cicada-android/sdk/platform-tools/adb"
 xml=$(mktemp); trap 'rm -f "$xml"' EXIT

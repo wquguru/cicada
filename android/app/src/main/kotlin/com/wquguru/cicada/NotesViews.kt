@@ -12,31 +12,24 @@ import cicada.Strings.LF
 import cicada.TranscriptLine
 import java.time.Instant
 
-/// What the live screens show, built the same way for 正在听 and the floating window.
 object NotesViews {
-    /// This meeting's lines while it runs (or until its last reply lands).
     fun currentLines(app: CicadaApp): List<TranscriptLine> {
         val listen = app.listen
         if (!listen.listening && listen.pending == 0) return emptyList()
         return listen.sessionId?.let { app.store.lines(it) } ?: emptyList()
     }
 
-    /// No sound for 20 s from what the phone plays: most likely an app that can't be captured.
     fun silent(app: CicadaApp) = app.listen.let { it.listening && it.sourceKind == "playback" && it.heardSeconds > 20 && it.peak < 0.002 }
 
-    /// Everything the live views show, so they are rebuilt only when it changes: a view replaced
-    /// under a finger loses the tap.
     fun liveKey(app: CicadaApp): String {
         val listen = app.listen
         val line = listen.sessionId?.let { app.store.lines(it).lastOrNull() }
         return listOf(listen.listening, listen.sourceKind, listen.sessionId, listen.pending > 0, listen.problem, app.startProblem, silent(app), app.micSilenced,
                       line?.id, line?.shown, line?.dst, app.notes.status, app.notes.notes.updatedAt, app.notes.notes.covered,
                       app.ending?.deadline, app.ling.blocking, listen.problemKind, app.ling.provider.id, customOnlyUntranslated(app),
-                      // 改正听错的词: the newest line's fixes, the card and the 撤销 message.
                       line?.fixes, listen.sessionId?.let { app.fixes.asking(it)?.fix }, app.fixes.toastNow()?.at, app.settings.showInCapture).joinToString("|")
     }
 
-    /// "正在听 · 03:12" / "面对面 · 03:12".
     fun status(app: CicadaApp): String {
         val head = if (app.listen.sourceKind == "mic") L("面对面") else L("正在听")
         return head + " · " + clock(app)
@@ -44,7 +37,6 @@ object NotesViews {
 
     fun clock(app: CicadaApp): String = app.listen.sessionId?.let { app.store.get(it) }?.let { Languages.clock(it.durationSeconds) } ?: "00:00"
 
-    /// "手机里的声音 · English → 简体中文".
     fun sourceLine(app: CicadaApp): String {
         val source = if (app.listen.sourceKind == "mic") L("面对面") else L("手机里的声音")
         val from = app.listen.spoken?.let { languageName(it) } ?: L("自动识别")
@@ -54,17 +46,12 @@ object NotesViews {
     fun languageName(code: String) = Languages.targets.firstOrNull { it.code == code }?.name
         ?: Languages.sources.firstOrNull { it.code == code }?.name ?: code
 
-    /// "刚刚更新" / "3 分钟前更新".
     fun updated(at: Instant?): String? {
         at ?: return null
         val minutes = (Instant.now().epochSecond - at.epochSecond) / 60
         return if (minutes < 1) L("刚刚更新") else LF("%@ 分钟前更新", minutes)
     }
 
-    /// The problem banner of the live screens, or null. `onMic` offers 面对面 when nothing is heard.
-    /// The meeting is about to end by itself (the Mac's MeetingEndingStrip): what's happening, the
-    /// seconds left (tagged ENDING_DETAIL, updated in place each second so the buttons keep their
-    /// touch), 继续记录 and 现在结束.
     fun endingStrip(ui: Ui, app: CicadaApp, compact: Boolean = false): View? {
         val p = app.ending ?: return null
         return ui.stack(if (compact) 8 else 12).apply {
@@ -85,11 +72,8 @@ object NotesViews {
     const val ENDING_DETAIL = "endingDetail"
     const val ENDING_BAR = "endingBar"
 
-    /// The subtitle bar has no buttons (as on the Mac): it says what will happen, and speaking
-    /// keeps a silent meeting going.
     fun endingBarText(app: CicadaApp): String? = app.ending?.let { app.endingTitle(it) + " · " + LF("%lld 秒后结束", app.endingLeft(it)) }
 
-    /// The countdown's seconds, without rebuilding the views around it.
     fun tickEnding(root: View?, app: CicadaApp) {
         val p = app.ending ?: return
         (root?.findViewWithTag<TextView>(ENDING_DETAIL))?.text = app.endingDetail(p)
@@ -99,21 +83,15 @@ object NotesViews {
     fun banner(ui: Ui, app: CicadaApp, onMic: (() -> Unit)?): View? {
         val problem = app.listen.problem
         val kind = app.listen.problemKind
-        // A key, the credit or a model: before the hearing's own words ("Ling key 无效"), which say less.
         val blocking = app.ling.blocking
         val micTaken = app.micSilenced && app.listen.listening
-        // The service's trouble is a status line; the microphone taken or nothing heard is not.
         when {
-            // Hearing goes through the service too: the subtitles wait with the notes. The network or
-            // the proxy, not the notes: it picks up by itself, or 改用 Ling when that key is saved.
             kind == "network" -> return statusLine(ui, Tone.Waiting, LF("字幕和纪要等 %@ 恢复 · 连上后自动继续", serviceLabel(app)),
                                                     if (app.canSwitchToLing) L("改用 Ling") to { app.switchToLing() } else null)
             micTaken -> {}
             blocking != null -> return statusLine(ui, Tone.NeedsYou, blocking, openSettings(ui, onMic))
             problem != null -> return statusLine(ui, when (kind) { "busy" -> Tone.Waiting; "key" -> Tone.NeedsYou; else -> Tone.Info },
                                                  problem, openSettings(ui, onMic).takeIf { kind == "key" })
-            // 语音和文字只发给你的服务: heard, but the user's service didn't translate and Google isn't
-            // asked. It picks up by itself; no 改用 Ling, which would send the meeting elsewhere.
             customOnlyUntranslated(app) -> return statusLine(ui, Tone.Waiting, LF("译文等 %@ 恢复 · 字幕先显示原文", serviceLabel(app)))
             !silent(app) -> return null
         }
@@ -132,17 +110,11 @@ object NotesViews {
         }
     }
 
-    /// 打开设置 › AI 服务, on Cicada's own screens only (`onMic` set): not from the floating window.
     private fun openSettings(ui: Ui, onMic: (() -> Unit)?): Pair<String, () -> Unit>? = if (onMic == null) null
         else L("打开设置") to { ui.context.startActivity(android.content.Intent(ui.context, AiServiceActivity::class.java)) }
 
-    /// How a status line reads at a glance, by its dot alone (a passing wait shouldn't look like a
-    /// fault): Waiting comes back by itself, NeedsYou is the user's to fix, Info is just so you know.
     enum class Tone { Waiting, NeedsYou, Info }
 
-    /// A service in trouble, said the same way wherever it shows (the Mac's StatusLine): a dot,
-    /// "what waits for what · what still works", and at most one action. The text is child 1:
-    /// the floating window's subtitle bar takes it from there.
     fun statusLine(ui: Ui, tone: Tone, text: String, action: Pair<String, () -> Unit>? = null): LinearLayout = LinearLayout(ui.context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -159,17 +131,13 @@ object NotesViews {
         accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
     }
 
-    /// #C98A00, the Mac's waiting dot: AiCheckViews.warn is too dark to tell from the text at 6 dp.
     private val WAITING = android.graphics.Color.parseColor("#C98A00")
 
-    /// Finished sentences going untranslated with 语音和文字只发给你的服务 in effect (the Mac's googleOff banner).
     private fun customOnlyUntranslated(app: CicadaApp) =
         app.listen.listening && app.translator.googleOff && app.translator.sentencesUntranslated
 
-    /// Where this meeting's notes stop: the time of the last line they cover.
     private fun serviceLabel(app: CicadaApp): String = app.ling.serviceLabel
 
-    /// An import's progress: the bar and "26:40 / 42:15".
     fun progress(ui: Ui, file: FileSource): LinearLayout {
         val box = ui.stack(8)
         val frac = if (file.total > 0) (file.done / file.total).coerceIn(0.0, 1.0) else 0.0
@@ -184,13 +152,10 @@ object NotesViews {
         return box
     }
 
-    /// Speaker colours (the iOS design's): the first voices blue and clay, then green and violet;
-    /// 你 ink; 对方 / 未识别 grey. Each pair passes 4.5:1.
     private val voiceColors = listOf(0xFFDCE7F7.toInt() to 0xFF1F4E8C.toInt(), 0xFFF6E2D6.toInt() to 0xFF8A3A16.toInt(),
                                      0xFFDFF0E4.toInt() to 0xFF1E6B3A.toInt(), 0xFFEDE3F6.toInt() to 0xFF5B2E8A.toInt())
     fun voiceColor(number: Int?): Pair<Int, Int> = number?.let { voiceColors[(it - 1) % voiceColors.size] } ?: (0xFFE7E9EE.toInt() to 0xFF3F434C.toInt())
 
-    /// A round initial for who said it.
     fun avatar(ui: Ui, line: TranscriptLine, numbers: Map<String, Int>, name: String, size: Int = 22) = ui.text(
         if (line.speaker == "me") L("你") else name.trim().firstOrNull()?.uppercase() ?: "?", 11f,
         if (line.speaker == "me") android.graphics.Color.WHITE else voiceColor(numbers[line.id]).second, bold = true).apply {
@@ -200,27 +165,22 @@ object NotesViews {
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
-    /// One line as a white bubble: who and when, the original small and grey, the translation in
-    /// ink. The newest is outlined in the accent while more may come.
     fun bubble(ui: Ui, line: TranscriptLine, numbers: Map<String, Int>, names: Map<Int, String>, newest: Boolean, listening: Boolean,
                onRevert: ((String, cicada.LineFix) -> Unit)? = null): LinearLayout {
         val who = cicada.SpeakerLabels.speakerName(line, numbers, names)
         val card = ui.stack(6)
         card.background = if (newest && listening) ui.rounded(Palette.card, 22, android.graphics.Color.parseColor("#F2C3B2"), 1.5) else ui.rounded(Palette.card, 22)
         card.setPadding(ui.dp(16), ui.dp(14), ui.dp(16), ui.dp(14))
-        // An initial only for someone known (你, a numbered or named voice); 对方 has no face.
         val head = ui.text("$who · ${Languages.clock(line.t)}", 12f, Palette.secondary, lines = 1)
         card.addView(if (line.speaker == "me" || numbers[line.id] != null) ui.row(8, avatar(ui, line, numbers, who), head) else head)
         val translated = !line.dst.isNullOrEmpty() && line.dst != line.shown
         if (translated) card.addView(ui.text(FixViews.text(ui, line), Ui.Type.ORIGINAL, Palette.secondary).apply { leading(1.45f) })
         card.addView(ui.text(line.dst?.takeIf { translated } ?: FixViews.text(ui, line), Ui.Type.TRANSLATION, Palette.ink).apply { leading(1.5f) })
-        // The line being said shows its fixed words open (the Mac's notes window does too): nothing to hover with.
         if (onRevert != null) FixViews.fixedWords(ui, line.id, line.fixes ?: emptyList(), onRevert)?.let { card.addView(it, ui.lp(top = 4)) }
         if (newest) card.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         return card
     }
 
-    /// The subtitle stream on 正在听: a bubble per line, the newest at the bottom.
     fun bubbles(ui: Ui, app: CicadaApp, count: Int): LinearLayout {
         val lines = currentLines(app)
         val box = ui.stack(12)
@@ -243,7 +203,6 @@ object NotesViews {
         return box
     }
 
-    /// The subtitle stream: earlier lines small, the newest as a large card at the bottom.
     fun stream(ui: Ui, app: CicadaApp, earlier: Int): LinearLayout {
         val lines = currentLines(app)
         val box = ui.stack(18)
@@ -270,8 +229,6 @@ object NotesViews {
         return box
     }
 
-    /// The newest line as a card, with the "still listening" dots under it.
-    /// The original as shown above its translation: mine is marked, so it's clear who said it.
     fun said(l: TranscriptLine) = if (l.speaker == "me") L("你 · 同传") + " · " + l.shown else l.shown
 
     fun liveCard(ui: Ui, app: CicadaApp, line: TranscriptLine, big: Float, bg: Int = Palette.card, lines: Int = 0, dots: Boolean = true): LinearLayout {
@@ -292,20 +249,13 @@ object NotesViews {
         return card
     }
 
-    /// The notes: name and freshness, summary, topics, conclusions, to-dos. `compact` (the
-    /// floating window) keeps the current topic only.
-    /// `heard`: this meeting's lines so far, for the listening placeholder.
     fun notesBody(ui: Ui, notes: MeetingNotes, status: NotesEngine.State, listening: Boolean, compact: Boolean = false, heard: Int = 0): LinearLayout {
         val body = ui.stack(0)
         notesTrouble(ui, notes, status, listening, actions = !compact)?.let { body.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ui.dp(12) }) }
-        // Listening and no request out yet (the first waits for a few lines or 20 s): the notes'
-        // own shape, kept after the first line is heard (the Mac's notesPane).
         if (notes.isEmpty && listening && (status == NotesEngine.State.Idle || status == NotesEngine.State.Failed)) {
             body.addView(listeningPlaceholder(ui, heard, compact))
             return body
         }
-        // The first version on its way (the Mac's NotesGeneratingView): the same shape, a spinner
-        // and how many lines it was written from, not a bare 正在整理纪要… for the 10–20 s it takes.
         if (notes.isEmpty && listening && heard > 0 && status == NotesEngine.State.Updating) {
             body.addView(listeningPlaceholder(ui, heard, compact, generating = true))
             return body
@@ -351,10 +301,6 @@ object NotesViews {
         return body
     }
 
-    /// What went wrong with the notes' own request, as a status line (the Mac's notes banner), or
-    /// null. What the live banner already says (the service unreachable, busy for the hearing too,
-    /// a key it can't use) isn't said twice. `actions`: 换 key opens the settings, so not from the
-    /// floating window.
     private fun notesTrouble(ui: Ui, notes: MeetingNotes, status: NotesEngine.State, listening: Boolean, actions: Boolean): View? {
         val app = CicadaApp.shared
         val shown = app.listen.problemKind.takeIf { listening }
@@ -364,26 +310,20 @@ object NotesViews {
                 statusLine(ui, Tone.NeedsYou, if (stopped != null) LF("key 失效了 · 纪要停在 %@", Languages.clock(stopped)) else L("key 失效了 · 纪要等新的 key"),
                            if (actions) L("换 key") to { ui.context.startActivity(android.content.Intent(ui.context, AiServiceActivity::class.java)) } else null)
             }
-            // A busy notes request is its own: the hearing goes on unless it is busy too (then the banner says so).
             status == NotesEngine.State.RateLimited && (listening || notes.isEmpty) && shown != "busy" ->
                 statusLine(ui, Tone.Waiting, LF("%@ 很忙 · 纪要稍后补上，字幕照常", serviceLabel(app)))
-            // Nothing reached: the banner's 字幕和纪要等 … 恢复 covers this round too.
             status == NotesEngine.State.Failed && listening && shown != "network" ->
                 statusLine(ui, Tone.Info, L("这轮纪要没写好 · 下轮自动补上"))
             else -> null
         }
     }
 
-    /// The Mac's NotesListeningView: a quiet status row, then the notes' shape waiting to be
-    /// filled and what they will hold. `compact` (the floating window) keeps the status row only.
-    /// `generating`: the first request is out: a spinner and 正在生成纪要… instead of the sound bars,
-    /// and no list of what the notes will hold (the Mac's NotesGeneratingView).
     fun listeningPlaceholder(ui: Ui, heard: Int, compact: Boolean, generating: Boolean = false): LinearLayout {
         val box = ui.stack(0)
         box.addView(LinearLayout(ui.context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = ui.rounded(0xB3FDEBE4.toInt(), 12)  // accentPale at 70%, as on the Mac
+            background = ui.rounded(0xB3FDEBE4.toInt(), 12)
             setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12))
             if (generating) {
                 addView(android.widget.ProgressBar(ui.context).apply {
@@ -407,7 +347,6 @@ object NotesViews {
         box.addView(topicSlot(ui, "00:00", listOf(0.52f, 0.88f, 0.7f)), ui.lp(top = 12))
         box.addView(topicSlot(ui, "--:--", listOf(0.4f, 0.76f)).apply { alpha = 0.6f }, ui.lp(top = 12))
         if (generating) return box
-        // Wraps: the English chips don't fit one line on a phone.
         box.addView(FlowRow(ui.context, ui.dp(6)).apply {
             addView(ui.text(L("会整理出"), 12f, Palette.tertiary).apply { setPadding(0, ui.dp(4), 0, ui.dp(4)) })
             for (t in listOf(L("结论"), L("待办"), L("人名和术语"), L("鱼骨图"))) addView(ui.text(t, 12f, Palette.secondary, lines = 1).apply {
@@ -432,20 +371,15 @@ object NotesViews {
         }, ui.weight().apply { leftMargin = ui.dp(12) })
     }
 
-    /// The Mac's Palette.placeholder and Palette.fill.
     private val PLACEHOLDER = android.graphics.Color.parseColor("#B8BDC6")
     private val FILL = android.graphics.Color.parseColor("#F2F3F5")
 
-    /// 0..1 through a repeating cycle (the Mac's phase()); with animations off, one still frame
-    /// (bars at mixed heights).
     fun phase(period: Double, delay: Double = 0.0): Double {
         val now = if (android.animation.ValueAnimator.areAnimatorsEnabled()) android.os.SystemClock.uptimeMillis() / 1000.0 else 0.4
         val t = now - delay
         return ((t % period) + period) % period / period
     }
 
-    /// Four small orange bars rising and falling: "listening". Redraws itself only while drawn,
-    /// so it stops once detached or off screen.
     class SoundBars(context: android.content.Context) : View(context) {
         private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = Palette.accent }
         private val rect = android.graphics.RectF()
@@ -464,8 +398,6 @@ object NotesViews {
         }
     }
 
-    /// A placeholder line with a light sweeping across it (the Mac's SkeletonBar), `fraction` of
-    /// the width. Redraws itself only while drawn.
     class SkeletonBar(context: android.content.Context, private val fraction: Float) : View(context) {
         private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
         private val rect = android.graphics.RectF()
@@ -487,8 +419,6 @@ object NotesViews {
         }
     }
 
-    /// Children left to right, wrapping to the next line (the Mac's FlowLayout), each row
-    /// centred vertically.
     class FlowRow(context: android.content.Context, private val gap: Int) : android.view.ViewGroup(context) {
         private fun rows(max: Int): List<List<View>> {
             val rows = mutableListOf<MutableList<View>>(mutableListOf())

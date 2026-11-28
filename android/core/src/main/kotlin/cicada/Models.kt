@@ -4,11 +4,6 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 
-// The meeting record, field for field the Mac app's `session.json` (SessionStore.swift, Notes.swift),
-// so a record moves between the platforms unchanged. Each type maps to and from a JSON object;
-// Json.write sorts the keys and leaves out nulls, as the Mac's encoder does.
-
-/// Whole seconds, UTC, "Z": what Swift's `.iso8601` writes (and expects back).
 object Iso8601 {
     private val format = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'Z'").withZone(java.time.ZoneOffset.UTC)
     fun write(at: Instant): String = format.format(at.truncatedTo(ChronoUnit.SECONDS))
@@ -16,28 +11,19 @@ object Iso8601 {
 }
 
 class TranscriptLine(
-    /// "h<n>-<segment>" for heard lines, "m<n>" for the user's own.
     var id: String = "",
-    /// Seconds from the start of the session.
     var t: Double = 0.0,
-    /// "them" (what was heard) or "me" (the user's microphone, on the Mac).
     var speaker: String = "them",
     var src: String = "",
     var dst: String? = null,
     var srcLang: String = "",
     var dstLang: String = "",
-    /// The other side's voice, as SpeakerTagger grouped it (null: not told apart).
     var voice: Int? = null,
-    /// "room": heard by the Mac's room microphone in a 电脑和会议室 meeting; kept so a Mac record
-    /// opened here keeps its 现场 / 线上.
     var via: String? = null,
-    /// Words the AI service or the user fixed (Correction.kt); `src` stays what was heard. Absent
-    /// when none, as the Mac writes it.
     var fixes: MutableList<LineFix>? = null,
 ) {
     fun copy() = TranscriptLine(id, t, speaker, src, dst, srcLang, dstLang, voice, via, fixes?.map { it.copy() }?.toMutableList())
 
-    /// What the line says once its fixes are in: shown, searched, exported and read by the notes.
     val shown: String get() = fixes?.let { Correction.apply(it, src).text } ?: src
 
     fun toJson(): Map<String, Any?> = mapOf(
@@ -74,15 +60,10 @@ class Session(
     var renamed: Boolean? = null,
     var voiceNames: Map<String, String>? = null,
     var voiceGuesses: Map<String, VoiceGuess>? = null,
-    /// An imported recording or video on the Mac (its file name, where it was, true until
-    /// transcribed); Android imports too (ImportActivity) and writes these as the Mac does.
     var sourceFile: String? = null,
     var sourcePath: String? = null,
     var importing: Boolean? = null,
-    /// Heard through the microphone in the room (会议室) for some or all of it.
     var room: Boolean? = null,
-    /// Keys this version doesn't know (the Mac's voiceProfiles / voiceSuggestions, newer
-    /// fields), written back untouched so saving here never drops another platform's data.
     var extra: Map<String, Any?> = emptyMap(),
 ) {
     val durationSeconds: Double get() = ((endedAt ?: Instant.now()).toEpochMilli() - startedAt.toEpochMilli()) / 1000.0
@@ -115,7 +96,6 @@ class Session(
     }
 }
 
-/// Written by Ling while the meeting runs, rewritten over the whole transcript when it ends.
 class MeetingNotes(
     var title: String? = null,
     var summary: String = "",
@@ -123,7 +103,6 @@ class MeetingNotes(
     var conclusions: MutableList<NoteItem> = mutableListOf(),
     var todos: MutableList<NoteItem> = mutableListOf(),
     var terms: MutableList<NoteTerm> = mutableListOf(),
-    /// How many transcript lines these notes cover.
     var covered: Int = 0,
     var final: Boolean = false,
     var updatedAt: Instant? = null,
@@ -154,13 +133,11 @@ class NoteTopic(
     var title: String = "",
     var summary: String = "",
     var points: MutableList<String> = mutableListOf(),
-    /// When each point was said (its first evidence line), parallel to points.
     var pointTimes: MutableList<Double?>? = null,
     var fishbone: Fishbone? = null,
 ) {
     fun pointTime(i: Int): Double? = pointTimes?.getOrNull(i)
 
-    // pointTimes keeps its nulls: Swift writes [12.4, null].
     fun toJson(): Map<String, Any?> = mapOf(
         "start" to start, "title" to title, "summary" to summary, "points" to points,
         "pointTimes" to pointTimes, "fishbone" to fishbone?.toJson(),
@@ -187,7 +164,6 @@ class FishboneBranch(
     var label: String = "",
     var detail: String = "",
     var t: Double? = null,
-    /// How many transcript lines back this branch; 0 is shown as weak.
     var support: Int = 0,
 ) {
     fun toJson(): Map<String, Any?> = mapOf("label" to label, "detail" to detail, "t" to t, "support" to support)
@@ -200,12 +176,10 @@ class NoteItem(
     var text: String = "",
     var owner: String? = null,
     var support: Int = 0,
-    /// When it was said (first evidence line).
     var t: Double? = null,
 ) {
     fun toJson(): Map<String, Any?> = mapOf("text" to text, "owner" to owner, "support" to support, "t" to t)
 
-    /// The owner as stored ("你", "对方", "说话人2" or a name) in the UI language.
     val ownerShown: String? get() {
         val o = owner ?: return null
         when (o) { "你", "对方", "未识别" -> return Strings.L(o) }
@@ -213,7 +187,6 @@ class NoteItem(
         return o
     }
 
-    /// The to-do with its owner after it: "（对方）" in Chinese, " (Them)" in English.
     val withOwner: String get() = text + (ownerShown?.let { Strings.LF("待办的负责人 %@", it) } ?: "")
 
     companion object {
@@ -221,18 +194,14 @@ class NoteItem(
     }
 }
 
-/// A name or term as the notes settled on it, and how speech recognition heard it.
 class NoteTerm(var name: String = "", var note: String = "", var heard: MutableList<String> = mutableListOf()) {
     fun toJson(): Map<String, Any?> = mapOf("name" to name, "note" to note, "heard" to heard)
 
     companion object {
         fun from(o: Map<String, Any?>) = NoteTerm(o["name"].str() ?: "", o["note"].str() ?: "", o["heard"].arr().mapNotNull { it.str() }.toMutableList())
 
-        /// Corrected spellings first: what a reader can't work out alone.
         fun ordered(terms: List<NoteTerm>) = terms.filter { it.heard.isNotEmpty() } + terms.filter { it.heard.isEmpty() }
 
-        /// The reply's terms in the order they were shown before, new ones after: the model often
-        /// returns the same names reshuffled, which would make the chips jump on every update.
         fun keepingOrder(old: List<NoteTerm>, new: List<NoteTerm>): List<NoteTerm> {
             val rank = HashMap<String, Int>()
             old.forEachIndexed { i, t -> rank.putIfAbsent(t.name, i) }

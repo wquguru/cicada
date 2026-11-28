@@ -20,8 +20,6 @@ import cicada.Strings.L
 import cicada.Strings.LF
 import cicada.keepsSavedKey
 
-/// First run, three screens, one job each, the main button pinned at the bottom: Ling key → what
-/// Cicada can hear and the permissions for it → try the sample meeting.
 class OnboardingActivity : Activity() {
     private lateinit var ui: Ui
     private lateinit var host: FrameLayout
@@ -30,7 +28,6 @@ class OnboardingActivity : Activity() {
     private var shown: String? = null
     private var progressFill: View? = null
     private var progressClock: android.widget.TextView? = null
-    // The sample's progress and clock move on their own; the rest re-renders when lines arrive.
     private val tick = object : Runnable {
         override fun run() {
             val l = cicada.listen
@@ -56,12 +53,9 @@ class OnboardingActivity : Activity() {
 
     override fun onResume() { super.onResume(); unobserve = cicada.observe { if (step == 2) render(); checkShown?.invoke() }; shown = null; render(); cicada.main.post(tick) }
 
-    /// The key step's (or its sheet's) check, redrawn when the AI client changes: the same step
-    /// list as the settings, and on to the next step once it passes.
     private var checkShown: (() -> Unit)? = null
     private var checkKey: String? = null
 
-    /// Fills `into` with the steps of a check this page started; true once it passed.
     private fun showCheck(into: LinearLayout): Boolean {
         val ling = cicada.ling
         val c = ling.aiCheck
@@ -75,9 +69,6 @@ class OnboardingActivity : Activity() {
     }
     override fun onPause() { super.onPause(); unobserve?.invoke(); unobserve = null; cicada.main.removeCallbacks(tick) }
 
-    // Back goes to the previous step. Android 13+ delivers back through OnBackInvokedCallback
-    // (Android 16 no longer calls onBackPressed for apps that target it), registered only while
-    // there is a step to go back to, so the system's back animation still works on the first.
     private val stepBack = android.window.OnBackInvokedCallback { step--; shown = null; render() }
     private var stepBackOn = false
 
@@ -99,7 +90,6 @@ class OnboardingActivity : Activity() {
         step++
         if (step > 2) {
             cicada.settings.onboarded = true; cicada.saveSettings()
-            // Opened on its own (no home screen under it): go home rather than out of the app.
             if (isTaskRoot) startActivity(Intent(this, MainActivity::class.java))
             finish(); return
         }
@@ -114,7 +104,6 @@ class OnboardingActivity : Activity() {
         syncBack()
         host.removeAllViews()
         host.addView(when (step) { 0 -> keyStep(); 1 -> hearStep(); else -> sampleStep() })
-        // A view added after the first layout gets the system bars' insets only when asked.
         host.requestApplyInsets()
     }
 
@@ -122,7 +111,6 @@ class OnboardingActivity : Activity() {
     private val micGranted get() = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     private val notifyGranted get() = Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    /// The step's frame: progress (and a back arrow after the first), the content, the main button.
     private fun frame(content: View, button: View): View {
         val progress = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -144,8 +132,6 @@ class OnboardingActivity : Activity() {
         val root = ui.screen(this, null, back = false, ground = Palette.ground, body = content, bottom = bottom)
         window.navigationBarColor = Palette.ground
         bottom.setBackgroundColor(Palette.ground)
-        // The screen's own bar is replaced by the progress bar. The bar is the first child of the
-        // column inside the root (the root's other child is the floating bottom), not of the root.
         val column = root.getChildAt(0) as LinearLayout
         column.removeViewAt(0)
         column.addView(topBar, 0)
@@ -177,8 +163,6 @@ class OnboardingActivity : Activity() {
             if (problem) status.announceForAccessibility(text)
         }
         showStatus(LF("加密存在这台手机上，只发给 %@", app.ling.serviceName), false)
-        // When the keyboard opens the page shrinks: once it has (the IME inset arrives), scroll to
-        // the end so the field and the line under it sit above the pinned button.
         var imeShown = false
         box.viewTreeObserver.addOnGlobalLayoutListener {
             val ime = box.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true
@@ -189,7 +173,6 @@ class OnboardingActivity : Activity() {
             }
             imeShown = ime
         }
-        // Another service's key pasted here: what it is, and 改用 it with one tap.
         val other = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val steps = ui.stack(0)
         var tried = false
@@ -203,16 +186,13 @@ class OnboardingActivity : Activity() {
         submit = submit@{
             val text = box.text.toString().trim()
             other.removeAllViews()
-            // Onboarding never blocks: a key that was checked and failed still goes on (the steps say why).
             if (tried && !app.ling.aiCheck.running && (text.isEmpty() || text == app.ling.currentKey())) { checkShown = null; next(); return@submit }
-            // The guide opened again with a working key saved: an empty field keeps it.
             if (!tried && keepsSavedKey(text, app.ling.currentKey(), app.ling.keyState)) { checkShown = null; next(); return@submit }
             if (AiServiceActivity.keyHint(ui, text, "ling", status, other) { tried = true; checkKey = null; status.text = L("正在检查…") }) {
                 field.background = ui.rounded(Palette.card, 16, Palette.link, 2)
                 return@submit
             }
             if (!text.startsWith("sk-")) { showStatus(L("要粘贴 sk- 开头的 Ling key"), true); return@submit }
-            // Back on this page after choosing another service: a Ling key means Ling again.
             app.setAiProvider("ling", check = false)
             app.key.save(text)
             app.ling.keyChanged()
@@ -245,16 +225,12 @@ class OnboardingActivity : Activity() {
             intro(L("接上 Ling"), L("识别、翻译和纪要都靠它，大约 1 分钟")),
             ui.group(listOf(stepRow(1, L("打开 Ling 开放平台"), open), stepRow(2, L("点“创建令牌”，复制 sk- 开头的 Ling key")), stepRow(3, L("回到这里粘贴")))),
             ui.stack(8, ui.text(L("Ling key"), 13f, Palette.body, bold = true).apply { setPadding(ui.dp(4), 0, 0, 0); labelFor = View.generateViewId().also { box.id = it } }, field, status.apply { setPadding(ui.dp(4), 0, 0, 0) }, other, steps),
-            // A way out for people who can't use Ling: another service, in a sheet, saying what it lacks.
             ui.textButton(L("用不了 Ling？"), Palette.link) { otherService() }.apply {
                 layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
             })
         return frame(content, ui.button(L("继续"), "primary") { submit() })
     }
 
-    /// 用其他服务 (OnboardingKey.swift › otherEntry): OpenRouter or ZenMux, their key, and what they
-    /// lack. The service switches only once its key checks out; a custom address is set up in
-    /// 设置 › AI 服务.
     private fun otherService() {
         val app = cicada
         var chosen = app.settings.aiProvider.takeIf { it == "openrouter" || it == "zenmux" } ?: "zenmux"
@@ -270,7 +246,6 @@ class OnboardingActivity : Activity() {
             fun problem(text: String) { status.text = text; status.setTextColor(Palette.link); status.announceForAccessibility(text) }
             val other = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             val steps = ui.stack(0)
-            // After a check that failed: the steps say why, and onboarding still goes on.
             val goOn = ui.textButton(L("继续"), Palette.link) { checkShown = null; dialog.dismiss(); next() }.apply { visibility = View.GONE }
             fun watch() {
                 checkKey = null
@@ -287,7 +262,6 @@ class OnboardingActivity : Activity() {
                 other.removeAllViews()
                 if (AiServiceActivity.keyHint(ui, text, p.id, status, other) { status.text = L("正在检查…"); watch() }) return@check
                 if (!text.startsWith("sk-")) { problem(LF("剪贴板里没有 sk- 开头的 key，请先去 %@ 复制。", p.name)); return@check }
-                // The service and key stay as chosen even if the check fails: the steps say why.
                 app.setAiProvider(p.id, check = false)
                 app.key.save(text)
                 app.aiChanged(check = false)
@@ -405,8 +379,6 @@ class OnboardingActivity : Activity() {
             val card = NotesViews.liveCard(ui, app, line, 20f, dots = playing)
             card.addView(ui.text(L("字幕"), 13f, Palette.secondary, bold = true), 0)
             (card.getChildAt(1).layoutParams as? LinearLayout.LayoutParams)?.topMargin = ui.dp(10)
-            // The lines before the newest stay above it: the sample's two come back half a second
-            // apart, and showing only the newest made the first one flash by.
             lines.dropLast(1).takeLast(2).forEachIndexed { i, l ->
                 val row = ui.stack(2, ui.text(NotesViews.said(l), 13f, Palette.secondary))
                 if (!l.dst.isNullOrEmpty() && l.dst != l.shown) row.addView(ui.text(l.dst!!, 15f, Palette.ink))
@@ -421,7 +393,6 @@ class OnboardingActivity : Activity() {
             }
             content.addView(notesCard, ui.lp(top = 12))
         } else if (playing) {
-            // Ming answers a stretch once it ends (the sample's first, ~7 s in): say it's coming.
             content.addView(ui.stack(10, ui.text(L("字幕"), 13f, Palette.secondary, bold = true),
                 LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL

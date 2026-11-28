@@ -1,4 +1,3 @@
-// The engines: Kotlin stdlib and java.* only, so they build, test and run on the Mac.
 plugins { id("org.jetbrains.kotlin.jvm") }
 kotlin { jvmToolchain(21) }
 java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }

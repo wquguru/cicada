@@ -3,15 +3,8 @@ package cicada
 import java.math.BigInteger
 import java.security.MessageDigest
 
-/// Ed25519 signing (RFC 8032), for the share service's device key (ShareClient). Android has it
-/// built in only from Android 13 (API 33) and the app runs from Android 10, so this is the RFC's
-/// reference algorithm on BigInteger, with the platform's SHA-512: slow by crypto standards (tens
-/// of milliseconds a signature), which is nothing for one request. Signing only; the server
-/// verifies. Tested against RFC 8032's vectors and the JDK's own Ed25519 (cli Tests).
-/// Not constant-time: the key only names this phone to the share service (rate limits and owning
-/// its links), and nothing else on the phone can time the signing.
 object Ed25519 {
-    private val TWO = BigInteger.valueOf(2) // BigInteger.TWO is Android 13+
+    private val TWO = BigInteger.valueOf(2)
     private val P = BigInteger.ONE.shiftLeft(255).subtract(BigInteger.valueOf(19))
     private val Q = BigInteger.ONE.shiftLeft(252).add(BigInteger("27742317777372353535851937790883648493"))
     private val D = BigInteger.valueOf(-121665).multiply(inv(BigInteger.valueOf(121666))).mod(P)
@@ -30,10 +23,9 @@ object Ed25519 {
         val x2 = yy.subtract(BigInteger.ONE).multiply(inv(D.multiply(yy).add(BigInteger.ONE))).mod(P)
         var x = x2.modPow(P.add(BigInteger.valueOf(3)).shiftRight(3), P)
         if (x.multiply(x).subtract(x2).mod(P).signum() != 0) x = x.multiply(SQRT_M1).mod(P)
-        return if (x.testBit(0)) P.subtract(x) else x // the base point's x is even
+        return if (x.testBit(0)) P.subtract(x) else x
     }
 
-    // Extended coordinates (X, Y, Z, T), x = X/Z, y = Y/Z, xy = T/Z.
     private fun add(a: Array<BigInteger>, b: Array<BigInteger>): Array<BigInteger> {
         val pa = a[1].subtract(a[0]).multiply(b[1].subtract(b[0])).mod(P)
         val pb = a[1].add(a[0]).multiply(b[1].add(b[0])).mod(P)
@@ -83,10 +75,8 @@ object Ed25519 {
         return a to h.copyOfRange(32, 64)
     }
 
-    /// The 32-byte public key of a 32-byte private seed.
     fun publicKey(seed: ByteArray): ByteArray = compress(mul(expand(seed).first, G))
 
-    /// A 64-byte signature of `message`.
     fun sign(seed: ByteArray, message: ByteArray, publicKey: ByteArray = publicKey(seed)): ByteArray {
         val (a, prefix) = expand(seed)
         val r = number(sha512(prefix, message)).mod(Q)

@@ -12,14 +12,11 @@ import cicada.AudioSource
 import cicada.Log
 import cicada.Segmenter
 
-/// Reads an AudioRecord at 16 kHz mono on its own thread and hands each buffer on: the audio
-/// thread only copies, ListenEngine's worker does the rest. Android resamples for us.
 abstract class RecordSource : AudioSource {
     override var onSamples: ((ShortArray) -> Unit)? = null
     override var onEnded: ((String?) -> Unit)? = null
     @Volatile private var running = false
     private var record: AudioRecord? = null
-    /// Android silenced this recording (a call, or another app holding the microphone), or let it go.
     var onSilenced: ((Boolean) -> Unit)? = null
     protected open fun watch(r: AudioRecord) {}
     protected open fun unwatch() {}
@@ -43,7 +40,7 @@ abstract class RecordSource : AudioSource {
         Log.d("capture: ${javaClass.simpleName} started")
         Thread({
             Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
-            val buf = ShortArray(Segmenter.RATE / 10) // 100 ms
+            val buf = ShortArray(Segmenter.RATE / 10)
             while (running) {
                 val n = r.read(buf, 0, buf.size)
                 if (n > 0) onSamples?.invoke(buf.copyOf(n))
@@ -59,9 +56,6 @@ abstract class RecordSource : AudioSource {
     override fun stop() { running = false }
 }
 
-/// What other apps play (Android 10+): media, games and unknown usages, never Cicada itself.
-/// Call and meeting apps are not captured (their usage is voice communication, and apps can opt
-/// out), which is why there is a microphone mode too.
 class PlaybackSource(private val projection: MediaProjection, private val ownUid: Int) : RecordSource() {
     @SuppressLint("MissingPermission")
     override fun make(format: AudioFormat, bufferBytes: Int): AudioRecord {
@@ -77,13 +71,10 @@ class PlaybackSource(private val projection: MediaProjection, private val ownUid
     override fun released() { projection.stop() }
 }
 
-/// 面对面: the phone's microphone, tuned for speech.
 class MicSource(private val context: android.content.Context) : RecordSource() {
     private var callback: android.media.AudioManager.AudioRecordingCallback? = null
     private val audio get() = context.getSystemService(android.media.AudioManager::class.java)
 
-    // During a phone call Android keeps the recording running but feeds it silence: say so
-    // instead of looking like nobody is talking.
     override fun watch(r: AudioRecord) {
         val session = r.audioSessionId
         val cb = object : android.media.AudioManager.AudioRecordingCallback() {

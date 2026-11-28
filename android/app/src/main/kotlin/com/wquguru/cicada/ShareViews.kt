@@ -26,9 +26,6 @@ import cicada.Strings.L
 import cicada.Strings.LF
 import java.time.Instant
 
-/// 分享…: a meeting as a link on cicada.indaloop.app (ShareViews.swift). Settings, then the server's
-/// review, then the link (and its password) or what the review stopped. A meeting already shared
-/// opens on its link. A bottom sheet whose content follows the step.
 class ShareSheet(private val activity: Activity, private val ui: Ui, private val sessionId: String) {
     private val app = activity.cicada
     private sealed class Step {
@@ -39,7 +36,6 @@ class ShareSheet(private val activity: Activity, private val ui: Ui, private val
         class Failed(val message: String) : Step()
     }
 
-    // A copy: the record is read while the request runs.
     private val session: Session = Session.from(app.store.get(sessionId)!!.toJson())
     private val hasNotes = session.notes?.isEmpty == false
     private var step: Step = Step.Settings
@@ -123,7 +119,6 @@ class ShareSheet(private val activity: Activity, private val ui: Ui, private val
         }
         lateinit var go: View
         if (!showOptions) {
-            // The choices already made, in one line; 更改 opens them.
             box.addView(LinearLayout(activity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -146,8 +141,6 @@ class ShareSheet(private val activity: Activity, private val ui: Ui, private val
         if (names) L("显示名字") else L("不显示名字"),
     ).joinToString(" · ")
 
-    /// Password, expiry, names and the preview, opened by 更改 (in the Mac's order). `go` is the
-    /// primary button, made after these rows: the password field turns it off under six characters.
     private fun options(go: () -> View) {
         val toggles = ui.stack(0).apply { setPadding(0, ui.dp(8), 0, 0) }
         toggles.addView(ui.switchRow(L("用密码保护"), null, usePassword, titleLines = 2) { usePassword = it; render() }.apply { setPadding(ui.dp(4), paddingTop, ui.dp(4), paddingBottom) })
@@ -239,8 +232,6 @@ class ShareSheet(private val activity: Activity, private val ui: Ui, private val
         }) else buttons(back), ui.lp(top = 18))
     }
 
-    /// Would anything be left to share once the flagged parts are out? (A notes-only share whose
-    /// notes were flagged has nothing; the server would refuse an empty document.)
     private fun leftAfterRemoving(hits: List<ShareHit>, kept: List<Int>): Boolean {
         val notesLeft = hasNotes && !dropNotes && hits.none { it.part == "notes" }
         if (scope != ShareScope.Full) return notesLeft
@@ -272,7 +263,6 @@ class ShareSheet(private val activity: Activity, private val ui: Ui, private val
 
     private fun done(r: ShareRecord) {
         header(if (copied == "all") (if (r.password == null) L("链接已复制") else L("链接和密码已复制")) else L("已分享"))
-        // One grey box: the link, and the password under it.
         box.addView(ui.stack(4, field(r.url)).apply {
             r.password?.let { addView(field(LF("密码：%@", it), Palette.secondary)) }
             background = ui.rounded(Palette.ground, 12)
@@ -281,7 +271,6 @@ class ShareSheet(private val activity: Activity, private val ui: Ui, private val
         box.addView(buttons(
             copyButton(r),
             ui.button(L("分享"), "primary", height = 48) {
-                // The same message 复制 copies: title, link, password and how long it stays open.
                 activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
                     .putExtra(Intent.EXTRA_SUBJECT, SessionStore.displayTitle(session)).putExtra(Intent.EXTRA_TEXT, clipboardText(r)), L("分享")))
             }), ui.lp(top = 10))
@@ -310,7 +299,6 @@ class ShareSheet(private val activity: Activity, private val ui: Ui, private val
         }
     }
 
-    // One line, the middle left out when long (selectable text would wrap instead); 复制 copies it whole.
     private fun field(text: String, color: Int = Palette.ink) = ui.text(text, 14f, color).apply {
         typeface = Typeface.MONOSPACE
         isSingleLine = true
@@ -319,8 +307,6 @@ class ShareSheet(private val activity: Activity, private val ui: Ui, private val
 
     private fun clipboardText(r: ShareRecord) = r.message(SessionStore.displayTitle(session))
 
-    /// 复制 copies the whole message. With a password its arrow (or a long press) offers the link or
-    /// the password alone, for whoever sends them apart (the Mac's Menu with a primary action).
     private fun copyButton(r: ShareRecord): View {
         val all = { copy(clipboardText(r), "all"); render() }
         val pw = r.password
@@ -379,10 +365,8 @@ class ShareSheet(private val activity: Activity, private val ui: Ui, private val
     }
 
     companion object {
-        /// The sheet on screen, for the debug commands.
         var open: ShareSheet? = null
 
-        /// Not while the meeting is still going, nor before an import has its text.
         fun canShare(app: CicadaApp, s: Session) =
             !(s.lines.isEmpty() && (s.notes?.isEmpty ?: true)) && app.store.liveId != s.id && s.importing != true
 

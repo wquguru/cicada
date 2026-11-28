@@ -20,26 +20,17 @@ import java.io.File
 import java.time.Instant
 import java.util.concurrent.Executors
 
-/// 存到文件夹 (docs/folder-export.md, the Mac's FolderExporter): writes settled meetings as Markdown
-/// into the folder the user picked (a SAF tree, held by a persisted grant) and keeps the index of
-/// what it wrote. State lives on the main thread; the files are written one at a time on its own
-/// thread, through DocumentsContract, since a provider may be slow or remote.
 class FolderExporter(private val app: CicadaApp) {
     enum class Problem {
-        /// The grant is gone (the user revoked it, or the app was restored without it).
         Denied,
-        /// The folder, or the storage it was on, is gone.
         Missing,
         Failed,
     }
 
     var index: FolderExportIndex; private set
     var problem: Problem? = null; private set
-    /// Failed's provider message.
     var problemText: String? = null; private set
-    /// Checking a newly chosen folder.
     var checking = false; private set
-    /// The folder is an Obsidian vault itself (it has `.obsidian`): the 位置 row says so.
     var vault = false; private set
 
     private val settings get() = app.settings
@@ -47,7 +38,6 @@ class FolderExporter(private val app: CicadaApp) {
     private val indexFile = File(Paths.root, "FolderExport.json")
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "FolderExport").apply { isDaemon = true } }
     private var scheduled: Runnable? = null
-    /// Told about this problem already (cleared once a write works).
     private var notified = false
 
     init { index = FolderExportIndex.load(indexFile) }
@@ -55,10 +45,8 @@ class FolderExporter(private val app: CicadaApp) {
     val on get() = settings.exportOn && settings.exportFolder.isNotEmpty()
     val tree: Uri? get() = settings.exportFolder.takeIf { it.isNotEmpty() }?.let(Uri::parse)
 
-    /// "Documents › Cicada": the folder and the one it is in, named when it was chosen.
     val shortPath: String get() = settings.exportName.ifEmpty { "Cicada" }
 
-    /// The record's file, when it is written to this folder.
     fun file(id: String): Uri? {
         if (!on || index.folder != settings.exportFolder || index.files[id] == null) return null
         return index.uris[id]?.let(Uri::parse)
@@ -66,18 +54,14 @@ class FolderExporter(private val app: CicadaApp) {
 
     fun isPending(id: String) = on && id in index.pending
 
-    /// Ended, not being imported, with something said.
     fun ready(s: Session) = s.endedAt != null && s.importing != true && s.lines.isNotEmpty() && s.id != store.liveId
 
-    /// Settled records not written to this folder yet.
     val unwritten: List<Session> get() = store.all().filter { ready(it) && index.files[it.id] == null && it.id !in index.pending }
 
-    /// What the screens' keys compare, so they rebuild when any of it changes.
     fun stateKey(): String = listOf(on, settings.exportName, problem, problemText, checking, vault, index.pending.size, index.files.size, index.lastAt, unwritten.size).joinToString("|")
 
     // MARK: Triggers (main thread)
 
-    /// A meeting ended or an import finished: write it once it is settled.
     fun ended(id: String) {
         if (!on) return
         if (id !in index.pending) index.pending.add(id)
@@ -85,17 +69,14 @@ class FolderExporter(private val app: CicadaApp) {
         schedule()
     }
 
-    /// A record changed: rewrite it if it was written, or write it if it is waiting.
     fun saved(id: String) {
         if (!on || (index.files[id] == null && id !in index.pending)) return
         if (id !in index.pending) index.pending.add(id)
         schedule()
     }
 
-    /// The final notes pass for a meeting is over (done, failed, or no key).
     fun settled(id: String) { if (on && id in index.pending) schedule() }
 
-    /// 也存一份: every settled record not written yet.
     fun writeAll() {
         if (!on) return
         index.pending.addAll(unwritten.map { it.id })
@@ -103,13 +84,11 @@ class FolderExporter(private val app: CicadaApp) {
         flush(fromMeeting = false)
     }
 
-    /// At launch (once the records are read) and when the app comes forward: try what is waiting.
     fun retry() {
         if (!on || index.pending.isEmpty() || !store.loaded) return
         schedule(500, fromMeeting = false)
     }
 
-    /// The record is gone from Cicada; its file stays.
     fun deleted(id: String) {
         if (index.files.remove(id) == null && !index.pending.remove(id)) return
         index.uris.remove(id)
@@ -118,8 +97,6 @@ class FolderExporter(private val app: CicadaApp) {
 
     // MARK: Choosing the folder
 
-    /// A new folder (its grant already taken), or the same one again: start its index and check it
-    /// can be written now, so a problem shows while settings is open, not when a meeting ends.
     fun choose(folder: Uri) {
         val text = folder.toString()
         if (settings.exportFolder.isNotEmpty() && settings.exportFolder != text) release(Uri.parse(settings.exportFolder))
@@ -156,12 +133,10 @@ class FolderExporter(private val app: CicadaApp) {
         app.changed()
     }
 
-    /// The folder Cicada writes in no longer: its grant goes back (an app holds at most 128 or 512).
     private fun release(old: Uri) {
         try { app.contentResolver.releasePersistableUriPermission(old, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } catch (_: Exception) {}
     }
 
-    /// The folder in the Files app, if anything opens a folder.
     fun openFolderIntent(): Intent? {
         val t = tree ?: return null
         val doc = DocumentsContract.buildDocumentUriUsingTree(t, DocumentsContract.getTreeDocumentId(t))
@@ -170,7 +145,6 @@ class FolderExporter(private val app: CicadaApp) {
             .takeIf { it.resolveActivity(app.packageManager) != null }
     }
 
-    /// The record's file in a Markdown viewer, or null when nothing opens text/markdown.
     fun revealIntent(id: String): Intent? {
         val uri = file(id) ?: return null
         return Intent(Intent.ACTION_VIEW).setDataAndType(uri, "text/markdown")
@@ -195,7 +169,6 @@ class FolderExporter(private val app: CicadaApp) {
         class Stopped(val problem: Problem, val message: String? = null) : Outcome()
     }
 
-    /// Renders what is settled here, writes it on the worker.
     private fun flush(fromMeeting: Boolean) {
         val folder = tree
         if (!on || folder == null || !store.loaded) return
@@ -233,23 +206,19 @@ class FolderExporter(private val app: CicadaApp) {
         problem = stopped?.problem; problemText = stopped?.message
         Log.d("folder export: ${outcomes.count { it is Outcome.Wrote }} written, ${outcomes.count { it is Outcome.Unchanged }} unchanged${stopped?.let { ", stopped: ${it.problem}" } ?: ""}")
         if (stopped == null) notified = false
-        // A lost grant is told once after a meeting (never for 也存一份); a missing folder never.
         if (stopped?.problem == Problem.Denied && fromMeeting && !notified) { notified = true; notifyDenied() }
         app.changed()
     }
 
-    /// On the worker. Stops at the first problem: the rest would fail the same way.
     private fun write(resolver: ContentResolver, folder: Uri, jobs: List<Job>, ours: MutableMap<String, String>): List<Outcome> {
         Saf.access(app, folder)?.let { return listOf(Outcome.Stopped(it)) }
         val out = mutableListOf<Outcome>()
         try {
-            // Child queries ignore a selection on most providers: list once, match names here.
             val listing = Saf.children(resolver, folder)
             val parent = Saf.root(folder)
             for (job in jobs) {
                 val mine = ours.filterKeys { it != job.id }.values.toSet()
                 val name = FolderExportFormat.fileName(job.stem) { c -> c != job.old && (c in mine || c in listing) }
-                // The stored URI is a hint; a path-based provider gives a renamed file a new one.
                 val existing = job.old?.let { listing[it] }
                 val doc: Uri
                 if (existing != null && name == job.old) {
@@ -257,7 +226,6 @@ class FolderExporter(private val app: CicadaApp) {
                     Saf.write(resolver, existing, job.text)
                     doc = existing
                 } else if (existing != null) {
-                    // A new name moves the file: renamed in place, else written anew and the old one deleted.
                     val renamed = try { DocumentsContract.renameDocument(resolver, existing, name) } catch (e: SecurityException) { throw e } catch (_: Exception) { null }
                     if (renamed != null) {
                         listing.remove(job.old); doc = renamed
@@ -272,7 +240,6 @@ class FolderExporter(private val app: CicadaApp) {
                     doc = Saf.create(resolver, parent, name)
                     Saf.write(resolver, doc, job.text)
                 }
-                // SAF may have named it otherwise (a collision it saw, an extension it added).
                 val actual = Saf.displayName(resolver, doc) ?: name
                 listing[actual] = doc
                 ours[job.id] = actual
@@ -305,7 +272,6 @@ class FolderExporter(private val app: CicadaApp) {
         try { nm.notify(NOTIFICATION, n); Log.d("folder export: notified denied") } catch (e: Exception) { Log.d("folder export: notification not shown ${e.javaClass.simpleName}") }
     }
 
-    /// The debug command's view (`export state`): no meeting text, only names and counts.
     fun debugState(): Map<String, Any?> = mapOf(
         "on" to on, "folder" to settings.exportFolder, "short" to shortPath, "problem" to problem?.name, "message" to problemText,
         "checking" to checking, "vault" to vault, "files" to index.files.toSortedMap(), "pending" to index.pending.toList(),
@@ -319,14 +285,11 @@ class FolderExporter(private val app: CicadaApp) {
     }
 }
 
-/// The Storage Access Framework calls 存到文件夹 makes, on the exporter's worker thread.
 object Saf {
     class Probe(val problem: FolderExporter.Problem?, val message: String? = null)
 
-    /// The tree's own document.
     fun root(tree: Uri): Uri = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
 
-    /// The grant first (cheap and certain), then whether the folder still answers.
     fun access(app: CicadaApp, tree: Uri): FolderExporter.Problem? {
         val granted = app.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isWritePermission }
         if (!granted) return FolderExporter.Problem.Denied
@@ -335,12 +298,10 @@ object Saf {
         } catch (_: SecurityException) { FolderExporter.Problem.Denied }
     }
 
-    /// Writes and deletes a hidden file: the check after choosing a folder.
     fun probe(app: CicadaApp, tree: Uri): Probe {
         access(app, tree)?.let { return Probe(it) }
         val r = app.contentResolver
         return try {
-            // octet-stream: a provider adds no extension to a name it has no type for.
             val doc = DocumentsContract.createDocument(r, root(tree), "application/octet-stream", ".cicada-check") ?: throw IllegalStateException("not created")
             try { DocumentsContract.deleteDocument(r, doc) } catch (_: Exception) {}
             Probe(null)
@@ -348,7 +309,6 @@ object Saf {
         catch (e: Exception) { Probe(FolderExporter.Problem.Failed, e.message ?: e.javaClass.simpleName) }
     }
 
-    /// The folder's files by name.
     fun children(r: ContentResolver, tree: Uri): MutableMap<String, Uri> {
         val out = HashMap<String, Uri>()
         val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
@@ -362,7 +322,6 @@ object Saf {
         return out
     }
 
-    /// Null when the provider doesn't answer: the document (or folder) is gone.
     fun displayName(r: ContentResolver, doc: Uri): String? = try {
         r.query(doc, arrayOf(Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
     } catch (e: SecurityException) { throw e } catch (_: Exception) { null }
@@ -374,8 +333,6 @@ object Saf {
         r.openInputStream(doc)?.use { it.readBytes().toString(Charsets.UTF_8) }
     } catch (e: SecurityException) { throw e } catch (_: Exception) { null }
 
-    /// No atomic replace in SAF, so the caller skips unchanged text. "wt" truncates; "w" only for a
-    /// provider that rejects "wt" (most providers truncate on "w" too).
     fun write(r: ContentResolver, doc: Uri, text: String) {
         val bytes = text.toByteArray(Charsets.UTF_8)
         val stream = try { r.openOutputStream(doc, "wt") } catch (e: SecurityException) { throw e } catch (_: IllegalArgumentException) { null }
@@ -383,8 +340,6 @@ object Saf {
         stream.use { it.write(bytes) }
     }
 
-    /// "Documents › Cicada": the tree's display name, and its parent's from the document id when
-    /// the provider uses paths (external storage: "primary:Documents/Cicada").
     fun shortPath(r: ContentResolver, tree: Uri): String? {
         val name = try { displayName(r, root(tree)) } catch (_: Exception) { null } ?: return null
         val path = DocumentsContract.getTreeDocumentId(tree).substringAfter(':', "")

@@ -27,9 +27,6 @@ import cicada.Wav
 import java.io.File
 import kotlin.concurrent.thread
 
-/// 我自己的声音: the Mac's VoiceCloneSheet as a page. Read a passage for 10–15 s → Ming writes down
-/// what it says → listen to the recording and to the clone → 用这个声音 keeps it (VoiceReference)
-/// and picks it for the language the picker was on (`id`). Nothing is kept until then.
 class VoiceRecordActivity : Activity() {
     private enum class Phase { Idle, Recording, Checking, Ready, Failed }
 
@@ -46,7 +43,6 @@ class VoiceRecordActivity : Activity() {
     private var playingOriginal = false
     private var unobserve: (() -> Unit)? = null
 
-    /// My language: the passage is in it, and it decides 最像你 / 会带你的口音.
     private val own get() = cicada.settings.targetCode
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,7 +51,6 @@ class VoiceRecordActivity : Activity() {
         language = intent.getStringExtra("id") ?: cicada.listen.theirLanguage
         page = ui.stack(0).apply { setPadding(ui.dp(24), 0, ui.dp(24), ui.dp(32)) }
         setContentView(ui.screen(this, null, back = true, ground = Palette.card, body = page))
-        // Debug (`show record <wav in files/>`): a pushed WAV stands in for the microphone.
         intent.getStringExtra("wav")?.let { name ->
             try { pcm = Wav.read(File(filesDir, name).inputStream()); seconds = pcm.size / Segmenter.RATE.toDouble(); phase = Phase.Recording; finishRecording(); return } catch (e: Exception) { Log.d("voice clone: no ${e.javaClass.simpleName}") }
         }
@@ -114,7 +109,6 @@ class VoiceRecordActivity : Activity() {
         }
     }
 
-    /// The big round button: a mic to start, a square to finish.
     private fun recordButton(label: String) = FrameLayout(this).apply {
         contentDescription = label
         background = ui.rounded(Palette.accentPale, 44)
@@ -164,8 +158,6 @@ class VoiceRecordActivity : Activity() {
     private var clockView: android.widget.TextView? = null
     private var barView: ProgressBar? = null
 
-    /// The clock, 10 times a second; at 15 s the recording finishes by itself. Only the clock and
-    /// bar change: rebuilding the page would drop a tap on 读完了 halfway through.
     private fun tick() {
         if (phase != Phase.Recording || isDestroyed) return
         seconds = pcm.size / Segmenter.RATE.toDouble()
@@ -182,7 +174,6 @@ class VoiceRecordActivity : Activity() {
         r.release()
     }
 
-    /// Stops, then the Mac's checks: long enough, heard, not read too slowly.
     private fun finishRecording() {
         if (phase != Phase.Recording) return
         stopRecorder()
@@ -196,7 +187,6 @@ class VoiceRecordActivity : Activity() {
             app.main.post {
                 if (isDestroyed) return@post
                 when (result) {
-                    // The trimmed clip is what's tried and kept, and its length is what's shown.
                     is VoiceReference.Check.Ok -> { transcript = result.text; pcm = result.pcm; seconds = pcm.size / Segmenter.RATE.toDouble(); phase = Phase.Ready }
                     is VoiceReference.Check.Again -> { problem = Strings.LF(result.reason, *result.args.toTypedArray()); phase = Phase.Failed }
                 }
@@ -291,7 +281,6 @@ class VoiceRecordActivity : Activity() {
     }
 
     companion object {
-        /// previewVoice's id while the unsaved recording is tried.
         const val DRAFT = VoiceCatalog.CLONE
     }
 }

@@ -9,16 +9,9 @@ import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-// A meeting shared as a link on cicada.indaloop.app (ShareProjection.swift, ShareClient.swift).
-
 enum class ShareScope(val id: String) { Notes("notes"), Full("full") }
 
-/// The share document (v1): what goes to the share page, made from a meeting record. Only these
-/// fields leave the phone: never the record's file paths, Ling's guesses at names with the lines
-/// they came from, or the record's own bookkeeping. Speakers are 说话人 N unless the user chose to
-/// show names. The same bytes as the Mac (Tests/fixtures/share); server/src/doc.js reads them.
 object ShareProjection {
-    /// `removed`: indices into the record's lines the user took out; `dropNotes` leaves the notes out.
     fun doc(s: Session, scope: ShareScope, names: Boolean, removed: Set<Int> = emptySet(), dropNotes: Boolean = false): Map<String, Any?> {
         val numbers = SpeakerLabels.numbers(s.lines)
         val nameMap = if (names) SpeakerLabels.names(s) else emptyMap()
@@ -52,34 +45,27 @@ object ShareProjection {
         )
     }
 
-    /// The meeting's usual direction ("en" → "zh"), by the most lines; ties go to the earliest.
     fun languages(lines: List<TranscriptLine>): List<String> {
         val count = LinkedHashMap<String, Int>()
         for (l in lines) if (l.dst != null) {
             val key = base(l.srcLang) + ">" + base(l.dstLang)
             count[key] = (count[key] ?: 0) + 1
         }
-        // LinkedHashMap keeps first-seen order, so the first of the most is the earliest.
         val top = count.entries.fold(null as Map.Entry<String, Int>?) { best, e -> if (best == null || e.value > best.value) e else best } ?: return emptyList()
-        return top.key.split(">").filter { it.isNotEmpty() } // Swift's split drops empty parts
+        return top.key.split(">").filter { it.isNotEmpty() }
     }
 
     private fun base(code: String) = (code.split("-").firstOrNull { it.isNotEmpty() } ?: code).lowercase()
 
-    /// One decimal, halves away from zero as Swift's rounded(): the page shows seconds, and short
-    /// numbers keep the bytes the same on every platform.
     fun round(t: Double): Double = Math.signum(t) * Math.floor(Math.abs(t) * 10 + 0.5) / 10
 
-    /// Compact, sorted keys, "/" unescaped: JSONEncoder's [.sortedKeys, .withoutEscapingSlashes].
     fun encode(doc: Map<String, Any?>): String = Json.write(doc, pretty = false, slashes = false)
 }
 
-/// Where the review found a problem: the notes, or lines `from`…`to` of what was sent.
 data class ShareHit(val part: String, val from: Int?, val to: Int?, val questions: List<String>) {
     companion object {
         fun from(o: Map<String, Any?>) = ShareHit(o["part"].str() ?: "", o["from"].int(), o["to"].int(), o["questions"].arr().mapNotNull { it.str() })
 
-        /// The record's line indices behind the hits, given which record lines were sent (`kept`).
         fun recordLines(hits: List<ShareHit>, kept: List<Int>): Set<Int> {
             val out = HashSet<Int>()
             for (h in hits) if (h.part == "lines") {
@@ -95,14 +81,9 @@ data class ShareHit(val part: String, val from: Int?, val to: Int?, val question
 object SharePassword {
     const val ITERATIONS = 210_000
 
-    /// PBKDF2-SHA256, 32 bytes: what the browser derives from the password (site/share.js). The
-    /// server keeps only its hash, so the password never leaves either side. Written out over the
-    /// platform's HMAC-SHA256 (one block is all 32 bytes need) rather than SecretKeyFactory, whose
-    /// providers turn the password into bytes differently on Android and the JDK.
     fun verifier(password: String, salt: ByteArray, iterations: Int = ITERATIONS): ByteArray {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(password.toByteArray(Charsets.UTF_8).let { if (it.isEmpty()) ByteArray(1) else it }, "HmacSHA256"))
-        // An empty password can't be a SecretKeySpec; HMAC pads keys with zeros, so one zero byte is the same key.
         var u = mac.doFinal(salt + byteArrayOf(0, 0, 0, 1))
         val out = u.copyOf()
         for (i in 1 until iterations) {
@@ -112,7 +93,6 @@ object SharePassword {
         return out
     }
 
-    /// "ruby-41-lake": easy to read out and type; the server limits how many can be tried.
     fun make(random: java.util.Random = SecureRandom()): String {
         val w = WORDS.split(" ")
         return "${w[random.nextInt(w.size)]}-${10 + random.nextInt(90)}-${w[random.nextInt(w.size)]}"
@@ -121,9 +101,6 @@ object SharePassword {
     private const val WORDS = "amber apple arrow aspen basil beach birch bloom brook cedar cherry cloud coral comet dawn delta dune ember fern field flint frost grove harbor hazel honey iris island jade lake lark lemon lily linen maple meadow mint moss olive orbit pearl pine plum pond quartz rain reed river ruby sage sand shell silk sky slate snow spruce stone storm sun tide tulip velvet willow wind"
 }
 
-/// What the phone keeps about a shared meeting. The manage token (needed to turn the link off)
-/// lives only here, in the app's private files (Shares/<record id>.json), never in the record,
-/// exports or logs; so does the password, so it can be copied again.
 data class ShareRecord(
     val id: String, val url: String, val token: String, val expiresAt: Instant,
     val scope: String, val password: String?, val createdAt: Instant,
@@ -133,14 +110,9 @@ data class ShareRecord(
         "scope" to scope, "password" to password, "createdAt" to Iso8601.write(createdAt),
     )
 
-    /// Whole days the link stays open, rounded up. Ten minutes of slack: the server's clock, not
-    /// the phone's, set the expiry.
     fun daysLeft(now: Instant = Instant.now()): Long =
         maxOf(1L, Math.ceil((expiresAt.epochSecond - now.epochSecond - 600) / 86400.0).toLong())
 
-    /// What 生成并复制 and 复制 put on the clipboard (and 分享 sends), in the UI's language: the
-    /// title, the link on a line of its own (chat apps then make it a link), the password and how
-    /// long it stays open (ShareSheet.clipboardText on the Mac).
     fun message(title: String, now: Instant = Instant.now()): String {
         val left = daysLeft(now)
         val valid = if (left >= 365) Strings.L("1 年内有效") else Strings.LF("%lld 天内有效", left)
@@ -158,8 +130,6 @@ data class ShareRecord(
     }
 }
 
-/// Shares/<record id>.json and the device key, in the app's private folder (Paths.root), readable
-/// by this app only and left out of backups and device transfers (data_extraction_rules.xml).
 object ShareStore {
     val folder get() = File(Paths.root, "Shares")
     val deviceFile get() = File(Paths.root, "share-device.json")
@@ -189,20 +159,12 @@ object ShareStore {
     }
 }
 
-/// Talks to the share service on cicada.indaloop.app (server/). There are no accounts: this phone
-/// is an Ed25519 key made on first use (share-device.json), registered once with a small proof of
-/// work, and every write is signed (method, path, time, nonce, body hash), as server/src/auth.js
-/// checks. Not an AI call, so not LingClient: the review runs on the server. Calls block: run
-/// them off the main thread.
 class ShareClient(
     private val platform: String,
     private val version: String,
     private val transport: Transport = UrlTransport,
-    /// The dev build can point at a local Worker.
     var base: String = "https://cicada.indaloop.app",
 ) {
-    /// Where this phone's key and registration live; the dev build gives a local Worker its own
-    /// file so switching back never re-registers with cicada.indaloop.app.
     var deviceFile: File? = null
     private val keyFile get() = deviceFile ?: ShareStore.deviceFile
 
@@ -240,7 +202,6 @@ class ShareClient(
         ShareStore.writePrivate(keyFile, Json.write(mapOf("key" to Base64.getEncoder().encodeToString(seed), "device" to id, "server" to server)))
     }
 
-    /// The device, registering this phone with the server first if needed (one at a time).
     private fun device(force: Boolean = false): Device = synchronized(gate) {
         val d = loadDevice()
         if (!force && d.id != null && d.server == base) return d
@@ -275,7 +236,6 @@ class ShareClient(
         return try { transport.send(base + path, method, body, h, 90_000) } catch (e: IOException) { throw Failure("network") }
     }
 
-    /// A signed call; registers again once if the server no longer knows this phone.
     private fun signed(method: String, path: String, body: String? = null, headers: Map<String, String> = emptyMap()): Transport.Response {
         var r = send(method, path, body, headers, device())
         if (r.status == 401 && code(r.body) == "unknown_device") r = send(method, path, body, headers, device(force = true))
@@ -297,8 +257,6 @@ class ShareClient(
                                      "hash" to b64url(sha256(SharePassword.verifier(pw, salt))))
         }
         return try {
-            // The same meeting, content and settings sent again (the answer was lost) gets the same
-            // link back; any other setting makes a new share.
             val settings = "${o.scope.id}|${o.days}|${o.names}|${o.password ?: ""}|${o.summaryInPreview}"
             val idem = s.id + "-" + hex(sha256(encoded.toByteArray(Charsets.UTF_8) + settings.toByteArray(Charsets.UTF_8)).copyOf(8))
             val r = signed("POST", "/api/v1/shares", Json.write(body, pretty = false, slashes = false), mapOf("Idempotency-Key" to idem))
@@ -333,11 +291,9 @@ class ShareClient(
         }
     }
 
-    /// Turns the link off on the server and forgets it here. `sessionId` null: the record is being replaced.
     fun revoke(r: ShareRecord, sessionId: String?): Boolean {
         val ok = try {
             val res = signed("DELETE", "/api/v1/shares/${r.id}", headers = mapOf("Authorization" to "Bearer ${r.token}"))
-            // 404: already gone (or never ours); either way nothing to keep.
             (res.status == 204 || res.status == 404).also { if (!it) Log.d("share: revoke ${r.id} failed ${res.status} ${code(res.body) ?: "?"}") }
         } catch (e: Exception) {
             Log.d("share: revoke ${r.id} failed ${e.message}")
@@ -360,7 +316,6 @@ class ShareClient(
     }
 
     companion object {
-        /// 20 leading zero bits of sha256(public key ‖ 8-byte big-endian nonce): about a million hashes.
         fun proofOfWork(pub: ByteArray): ByteArray {
             val md = MessageDigest.getInstance("SHA-256")
             val nonce = ByteArray(8)

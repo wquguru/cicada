@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Lists Android UI text with no translation: every L("…") / LF("…") key in android/app and
-android/core that is in neither the Mac's Resources/<lang>.lproj/Localizable.strings nor
-android/app/src/main/strings/<lang>.lproj/Android.strings. --write appends the missing keys to
-Android.strings as TODO lines (value = the Chinese)."""
 import re, sys, pathlib
-# The Windows console is cp1252: Chinese keys would crash the report itself.
 sys.stdout.reconfigure(encoding="utf-8")
 here = pathlib.Path(__file__).resolve().parent.parent
 root = here.parent

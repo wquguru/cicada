@@ -11,19 +11,15 @@ import cicada.Strings
 import cicada.Strings.L
 import cicada.Strings.LF
 
-/// 设置 › 会后存一份 and the record's line under its title (the Mac's FolderExportViews.swift).
-/// There is no default folder on a phone: the system's folder picker chooses, and its grant is kept.
 object FolderExportViews {
     const val PICK = 41
 
-    /// The section: label, card, and the grey 上次存于 line under it.
     fun section(activity: Activity, ui: Ui, page: LinearLayout) {
         val ex = activity.cicada.folderExport
         page.addView(ui.sectionLabel(L("会后存一份")))
         val rows = mutableListOf<View>(ui.switchRow(L("存到文件夹"), L("纪要和文字记录存成 Markdown；文件夹同步到哪，内容就到哪"), ex.on) { on ->
             when {
                 !on -> ex.turnOff()
-                // A folder chosen before whose grant still holds: on again, as on the Mac.
                 ex.tree?.let { t -> activity.contentResolver.persistedUriPermissions.any { it.uri == t && it.isWritePermission } } == true -> ex.choose(ex.tree!!)
                 else -> pick(activity)
             }
@@ -53,7 +49,6 @@ object FolderExportViews {
         }
     }
 
-    /// A lost grant and a folder that is gone look the same from here: 找不到, and 重新选.
     private fun problemRow(activity: Activity, ui: Ui, problem: FolderExporter.Problem): View {
         val ex = activity.cicada.folderExport
         val box = ui.stack(2).apply { setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10)) }
@@ -77,7 +72,6 @@ object FolderExportViews {
         }
     }
 
-    /// The system's folder picker, starting at Documents (or the folder in use).
     fun pick(activity: Activity) {
         val start = activity.cicada.folderExport.tree?.let { DocumentsContract.buildDocumentUriUsingTree(it, DocumentsContract.getTreeDocumentId(it)) }
             ?: DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Documents")
@@ -90,7 +84,6 @@ object FolderExportViews {
         } catch (e: Exception) { Log.d("folder export: no folder picker ${e.javaClass.simpleName}") }
     }
 
-    /// The picker's answer: the grant kept, the folder chosen. Cancelled: the switch stays (or goes back) off.
     fun picked(activity: Activity, resultCode: Int, data: Intent?) {
         val uri = data?.data
         if (resultCode != Activity.RESULT_OK || uri == null) { activity.cicada.changed(); return }
@@ -100,8 +93,6 @@ object FolderExportViews {
         activity.cicada.folderExport.choose(uri)
     }
 
-    /// The record's grey line: where its file is, or why it isn't there yet. Null when there is
-    /// nothing to say (off, or the record isn't settled).
     fun recordLine(activity: Activity, ui: Ui, s: Session): View? {
         val ex = activity.cicada.folderExport
         if (!ex.on || !ex.ready(s)) return null
@@ -115,7 +106,6 @@ object FolderExportViews {
         when {
             !pending && ex.file(s.id) != null -> {
                 val reveal = ex.revealIntent(s.id)
-                // Nothing opens Markdown here: the line ends at the folder.
                 row.addView(note(LF("已存到 %@ ·", ex.shortPath).let { if (reveal == null) it.removeSuffix("·").trimEnd() else it }))
                 if (reveal != null) row.addView(link(L("打开")) {
                     try { activity.startActivity(reveal) } catch (e: Exception) { Log.d("folder export: reveal failed ${e.javaClass.simpleName}") }

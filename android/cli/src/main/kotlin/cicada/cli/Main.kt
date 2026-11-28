@@ -1,22 +1,3 @@
-// cicada-cli: the Android engines without Android (scripts/cli.sh runs it).
-//
-//   cicada-cli test                       the unit tests (no network)
-//   cicada-cli listen <file.wav> [--target zh-CN] [--speed 1|0] [--notes] [--log] [--room]
-//       Plays the file into ListenEngine as if the phone were playing it, prints each line as it
-//       is recorded, then the record's folder. --notes waits for the final notes and prints them.
-//   cicada-cli hear <file.wav> [--target zh-CN]   one file to the hear model (Ming on Ling), raw reply printed
-//   cicada-cli say <file.wav> [--to en] [--out said.wav]
-//       我说 · 面对面: what I say heard and translated, then read by the service's voice into a WAV
-//   cicada-cli speak <text> [--voice US_Emma] [--lang ja] [--out speak.wav]   one line in the service's voice
-//       --reference <wav> [--own zh-CN]: in the voice of that recording (我自己的声音), checked first
-//   cicada-cli segments <file.wav> [--room]  where the segmenter cuts (--room: 面对面's gate)
-//   cicada-cli roundtrip <session.json>…  reads and writes records, says if a byte changed
-//
-//   --provider ling|openrouter|zenmux   the AI service (default ling), with its recommended models;
-//   --hear-model <id>                   another hear model on it
-//
-// Records go to CICADA_HOME (default: a temp folder). The key comes from CICADA_KEY_FILE, else the
-// Mac app's dev or release key file for the service; it is never printed.
 package cicada.cli
 
 import cicada.*
@@ -38,7 +19,6 @@ fun loadStrings(ui: String) = Strings.load(ui) { rel ->
 fun macKeyFile(service: String = "ling"): File? = System.getenv("CICADA_KEY_FILE")?.let(::File)
     ?: listOf("LiveSubs Dev", "LiveSubs").map { File(System.getProperty("user.home"), "Library/Application Support/$it/" + Paths.keyFile(service).name) }.firstOrNull { it.isFile }
 
-/// The AI service the settings name, with the Mac's key file for it.
 fun client(settings: AppSettings) = LingClient(AIKey(PlainProtector, macKeyFile(settings.aiProvider)), config = settings::aiConfig)
 
 fun main(argv: Array<String>) {
@@ -113,17 +93,14 @@ fun main(argv: Array<String>) {
             exitProcess(0)
         }
         "speak" -> {
-            // speak <text> [--voice US_Emma] [--lang ja] [--out speak.wav]: one line in a service voice.
             Log.echo = args.contains("--log")
             val ling = client(settings())
             val voice = opt("--voice", "").ifEmpty { null }
             val lang = opt("--lang", "").ifEmpty { null }
-            // --reference <wav> [--own zh-CN]: the user's own voice, the recording checked as 录制 checks it.
             val reference = opt("--reference", "").ifEmpty { null }?.let { path ->
                 val pcm = Wav.read(File(path).inputStream())
                 when (val r = VoiceReference.check(Translator(ling), pcm, opt("--own", "zh-CN"))) {
                     is VoiceReference.Check.Ok -> {
-                        // What 用这个声音 keeps: the trimmed clip, written and read back as the app does.
                         println("reference: %.1f s recorded, %.1f s kept, heard %d characters".format(pcm.size / 16000.0, r.pcm.size / 16000.0, r.text.length))
                         VoiceReference.save(r.pcm, r.text)
                         VoiceReference.reference()!!

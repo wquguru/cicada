@@ -1,5 +1,3 @@
-// 存到文件夹: the Mac's FolderExportTests. The file name and frontmatter are a contract with the Mac
-// and the other ports (Tests/fixtures/folder-export): the same record gives the same bytes.
 package cicada.cli
 
 import cicada.*
@@ -55,7 +53,6 @@ object FolderExportTests {
         }
     }
 
-    /// The name: the user's title, else the notes', else the imported file's, never the display title.
     private fun namePrecedence() {
         val s = session()
         s.renamed = false
@@ -79,8 +76,6 @@ object FolderExportTests {
         check(FolderExportIndex.load(File(Paths.root, "none.json")).folder.isEmpty(), "no index: an empty one")
     }
 
-    /// Settled means the final notes pass is over: it counts as running from the meeting's start
-    /// until finish() is done, and says so when it ends without a key.
     private fun waitsForTheFinalNotes() {
         val store = SessionStore(loadNow = false)
         val ling = LingClient(AIKey(PlainProtector, File(Paths.root, "no-key")))

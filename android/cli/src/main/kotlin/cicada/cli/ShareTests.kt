@@ -1,6 +1,3 @@
-// 分享…: the Mac's ShareTests (the share document is a contract with the server and the other
-// apps: the same record gives the same bytes, Tests/fixtures/share), plus the crypto Android does
-// itself (Ed25519, PBKDF2) and the client's requests against a fake server.
 package cicada.cli
 
 import cicada.*
@@ -25,7 +22,6 @@ object ShareTests {
         "shareMessageInTheUiLanguage" to ::message,
     )
 
-    /// 生成并复制's clipboard: title, link, password with how long it stays open (the Mac's clipboardText).
     private fun message() {
         val now = java.time.Instant.parse("2026-11-08T10:00:00Z")
         fun record(days: Long, pw: String?) =
@@ -83,7 +79,6 @@ object ShareTests {
     private fun speakerNumbersWithoutNames() {
         setUp()
         val s = session()
-        // Two voices with five substantive lines each get numbers; their names stay out.
         s.lines = (0 until 10).map { i ->
             TranscriptLine(id = "v$i", t = i.toDouble(), speaker = "them", src = "this is line number $i", dst = "第 $i 句话", srcLang = "en", dstLang = "zh", voice = if (i % 2 == 0) 3 else 7)
         }.toMutableList()
@@ -106,7 +101,6 @@ object ShareTests {
 
     private fun password() {
         val salt = ByteArray(16) { 1 }
-        // Same as the browser's crypto.subtle PBKDF2-SHA256, 32 bytes (server/test/api.test.mjs).
         val v = SharePassword.verifier("ruby-41-lake", salt, 1000)
         equal("eab69fcd00a0517794c156495dd76ad1fbfb036ea03df3d59a68a33519009c81", hex(v), "PBKDF2 vector")
         check(!v.contentEquals(SharePassword.verifier("ruby-41-laka", salt, 1000)), "another password differs")
@@ -114,13 +108,11 @@ object ShareTests {
     }
 
     private fun blockedHitsMapBack() {
-        // The server counts lines of what was sent; the app maps them back to the record.
         val hits = listOf(ShareHit("lines", 2, 3, listOf("credential")))
         equal(setOf(4, 5), ShareHit.recordLines(hits, listOf(0, 1, 4, 5, 6)), "record lines")
     }
 
     private fun ed25519Vectors() {
-        // RFC 8032 §7.1, tests 1–3 and the 1023-byte message's key.
         val cases = listOf(
             Triple("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60", "",
                    "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"),
@@ -139,7 +131,6 @@ object ShareTests {
     }
 
     private fun ed25519Jdk() {
-        // The JDK has Ed25519 (Android only from 13): it must accept ours for random keys and messages.
         val random = java.util.Random(7)
         repeat(8) { n ->
             val seed = ByteArray(32).also(random::nextBytes)
@@ -149,7 +140,6 @@ object ShareTests {
             v.initVerify(KeyFactory.getInstance("Ed25519").generatePublic(spec))
             v.update(msg)
             check(v.verify(Ed25519.sign(seed, msg)), "JDK verifies signature $n")
-            // Ed25519 is deterministic: the JDK's own signature is the same bytes.
             val s = Signature.getInstance("Ed25519")
             s.initSign(KeyFactory.getInstance("Ed25519").generatePrivate(java.security.spec.PKCS8EncodedKeySpec(bytes("302e020100300506032b657004220420") + seed)))
             s.update(msg)
@@ -157,7 +147,6 @@ object ShareTests {
         }
     }
 
-    /// A fake server that checks what auth.js checks: the proof of work, then each signature.
     private fun clientSigns() {
         setUp()
         val home = File(Paths.root, "share-test").apply { deleteRecursively(); mkdirs() }
@@ -207,7 +196,7 @@ object ShareTests {
             equal("ruby-41-lake", ShareStore.read(s.id)?.password, "record kept, with its password")
             equal(3, client.stats(listOf(shared.record.id))[shared.record.id]?.views, "stats")
             equal(1, registrations, "registered once")
-            forget = true // the server lost this phone: registers again, once
+            forget = true
             check(client.revoke(shared.record, s.id), "revoked")
             equal(2, registrations, "registered again after unknown_device")
             equal(null, ShareStore.read(s.id), "record forgotten")

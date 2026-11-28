@@ -1,6 +1,3 @@
-// Unit tests for the engines: `scripts/test.sh` (cicada-cli test). The Windows suite's cases, plus
-// byte-for-byte checks of the Mac's JSON format. A failed check throws and the runner reports it.
-// No network: LingClient runs against a fake transport.
 package cicada.cli
 
 import cicada.*
@@ -200,7 +197,6 @@ object Tests {
         equal(MAC, Json.write(s.toJson()), "written back byte for byte")
     }
 
-    /// A Mac record of an imported file heard partly in the room: Android writes it back whole.
     fun keepsTheMacsImportAndRoomFields() {
         val mac = MAC.replace("  \"id\" : \"20261102-101639\",\n", "  \"id\" : \"20261102-101639\",\n  \"importing\" : true,\n")
             .replace("  \"startedAt\"", "  \"room\" : true,\n  \"sourceFile\" : \"周会.m4a\",\n  \"sourcePath\" : \"\\/Users\\/me\\/周会.m4a\",\n  \"startedAt\"")
@@ -214,11 +210,8 @@ object Tests {
         equal("周会", SessionStore.displayTitle(untitled), "an imported file is known by its name until the notes name it")
     }
 
-    /// The Mac's voiceprint library (1.10) adds voiceProfiles / voiceSuggestions; Android has no
-    /// such library but must not drop them when it saves the record again.
     fun keepsFieldsItDoesNotKnow() {
         val ref = "{\n    \"1\" : {\n      \"id\" : \"6F9619FF-8B86-D011-B42D-00C04FC964FF\",\n      \"name\" : \"Emma\",\n      \"similarity\" : 0.75\n    }\n  }"
-        // Sorted keys: both come after voiceNames, the last key of MAC.
         val mac = MAC.removeSuffix("\n}") + ",\n  \"voiceProfiles\" : $ref,\n  \"voiceSuggestions\" : $ref\n}"
         check(mac.contains("\"voiceProfiles\"") && mac.contains("\"voiceSuggestions\""), "test record has the fields")
         val s = Session.read(mac)!!
@@ -258,7 +251,6 @@ object Tests {
         check(store.get(empty.id) == null, "an empty live meeting is still dropped when it ends")
     }
 
-    /// The Mac's LanguagesTests for followSystemTarget / myLanguage.
     fun followSystemLikeTheMac() {
         equal("zh-CN", Languages.myLanguage(listOf("en-US", "zh-Hans-CN")), "Chinese when the list has it")
         equal("ja", Languages.myLanguage(listOf("ja-JP", "en-US")), "else the first")
@@ -311,8 +303,6 @@ object Tests {
         check(md.contains("**[00:00] 对方**  \nhi\n"), "markdown export")
     }
 
-    /// Markdown, SRT and Word as the Mac writes them; speaker numbers only once two voices
-    /// have said enough, and a name the user gives shows in them.
     fun exportsLikeTheMac() {
         val them = (1..5).flatMap { i ->
             listOf(TranscriptLine(id = "a$i", t = i * 10.0, speaker = "them", src = "we should ship it now", dst = "我们现在就该发布", voice = 1),
@@ -386,7 +376,6 @@ object Tests {
         equal("ja", Translator.parseHeard("lang: ja-JP\noriginal: はい\ntranslation: 是", "zh-CN", null)!!.lang, "labels in any case")
     }
 
-    // Same cases as the Windows and Linux ports' noise tests.
     fun dropsNoise() {
         for (o in listOf("嗯。", "Mm.", "uh, um", "呃呃呃呃呃", "嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯。", "滴答".repeat(50),
                          "hmmmm", "うーん", "음…", "喂？", "No no no no no no",
@@ -441,14 +430,11 @@ object Tests {
 
     // MARK: Segmenter
 
-    /// A 300 Hz tone that swells and fades four times a second like syllables; steady when not, or
-    /// rising and falling by `wobble` twice a second like a fan.
     fun tone(seconds: Double, amp: Double = 0.3, syllables: Boolean = true, wobble: Double = 0.0) = ShortArray((seconds * 16000).toInt()) {
         val env = if (syllables) 0.55 + 0.45 * sin(2 * PI * 4 * it / 16000) else 1.0 + wobble * sin(2 * PI * 0.5 * it / 16000)
         (sin(2 * PI * 300 * it / 16000) * env * amp * 32767).toInt().toShort()
     }
     fun silence(seconds: Double) = ShortArray((seconds * 16000).toInt())
-    /// Typing: a key click every 0.2 s, 6 ms of decaying crackle peaking near -12 dBFS (scripts/vad-clips.py).
     private fun keys(seconds: Double) = silence(seconds).also { out ->
         var at = 1600
         while (at < out.size - 96) {
@@ -456,16 +442,13 @@ object Tests {
             at += 3200
         }
     }
-    /// A sine at `freq` that swells and fades four times a second like syllables.
     private fun hz(freq: Double, seconds: Double, amp: Double) = ShortArray((seconds * 16000).toInt()) {
         (sin(2 * PI * freq * it / 16000) * (0.55 + 0.45 * sin(2 * PI * 4 * it / 16000)) * amp * 32767).toInt().toShort()
     }
-    /// One word on its own ("Thanks."): a 300 Hz tone that swells from nothing and fades back.
     private fun word(seconds: Double, amp: Double): ShortArray {
         val n = (seconds * 16000).toInt()
         return ShortArray(n) { (sin(2 * PI * 300 * it / 16000) * Math.pow(sin(PI * it / n), 2.0) * amp * 32767).toInt().toShort() }
     }
-    /// A 7 kHz tone faded in and out over 0.3 s: crosses zero like a hiss, swells like a word.
     private fun hiss(seconds: Double, amp: Double): ShortArray {
         val n = (seconds * 16000).toInt()
         return ShortArray(n) { (sin(2 * PI * 7000 * it / 16000) * minOf(1.0, it / 4800.0, (n - it) / 4800.0) * amp * 32767).toInt().toShort() }
@@ -491,8 +474,6 @@ object Tests {
     }
 
     fun cutsLongSpeech() {
-        // After a first short stretch: 7 s of speech, a 0.3 s dip (shorter than a pause), 4 s
-        // more: one cut, at the dip.
         val list = cut(tone(1.0), silence(1.0), tone(7.0), tone(0.3, 0.004), tone(4.0), silence(1.0))
         equal(3, list.size, "the first, then the long one split in two")
         check(list[1].seconds in 6.9..7.4, "cut inside the dip, got ${list[1].seconds}")
@@ -507,15 +488,12 @@ object Tests {
         equal(0, cut(silence(0.5), keys(3.0), silence(1.0)).size, "typing alone makes no segment")
     }
 
-    /// A room's hiss, about -60 dBFS.
     private fun room(seconds: Double, seed: Long = 7): ShortArray {
         val r = java.util.Random(seed)
         return ShortArray((seconds * 16000).toInt()) { (r.nextGaussian() * 0.001 * 32767).toInt().toShort() }
     }
     private fun mix(a: ShortArray, b: ShortArray) = ShortArray(a.size) { (a[it] + b[it]).coerceIn(-32768, 32767).toShort() }
 
-    /// 面对面 (#30): a phone's mic hears a voice across the table around -50 dBFS, under the fixed
-    /// -40 dBFS line, so the meeting showed 等有人说话… for 8 minutes. The room's gate hears it.
     fun roomGateHearsAcrossTheTable() {
         val gate = VoiceGate()
         equal(0.004, gate.threshold, "before the room is known")
@@ -541,8 +519,6 @@ object Tests {
         equal(1, cut(silence(1.0), word(1.2, 0.022), silence(1.0)).size, "one smooth run of voice on its own, no dips inside")
         equal(1, cut(silence(1.0), tone(0.5, 0.022, syllables = false), tone(0.15, 0.0025, syllables = false), silence(1.0)).size,
             "a quiet word whose fade (an \"s\", a breath) falls under gate / 4 still swells: a meeting's quiet opening line")
-        // Wherever the 30 ms frames fall (a few ms more lead-in), a quiet phrase with brief dips between
-        // its words stays a word, and a hum or a faded hiss in silence stays out.
         fun flat(s: Double, a: Double) = tone(s, a, syllables = false)
         val phrase = concat(flat(0.35, 0.022), flat(0.04, 0.0055), flat(0.4, 0.022), flat(0.04, 0.0055), flat(0.35, 0.022), flat(0.06, 0.0025))
         for (ms in 0 until 30 step 2) {
@@ -565,8 +541,6 @@ object Tests {
 
     // MARK: Notes
 
-    /// A heard form only a fix wrote ("platform" for 平台) isn't one: it would teach the translator
-    /// and the next fix the same mistake.
     fun termsKeepOnlyFormsTheRecognizerWrote() {
         val l = TranscriptLine("a", 0.0, "them", "我们 twoty 平台", null, "zh-CN", "en", fixes = mutableListOf(LineFix("平台", "platform")))
         val terms = listOf(NoteTerm("X平台", "n", mutableListOf("Xplatform", "platform", "Twoty")))
@@ -630,10 +604,8 @@ object Tests {
 
     fun keepsFrozenTopicsAndTakesTheRepliesTail() {
         val old = (0 until 5).map { topic(it * 100.0, "t$it") }
-        // The model echoed everything, renamed the current topic and added one.
         val reply = listOf(topic(0.0, "t0"), topic(100.0, "t1 改"), topic(300.0, "t3"), topic(400.0, "t4 改"), topic(500.0, "t5"))
         equal("t0,t1,t2,t3,t4 改,t5", NotesEngine.merge(old, 3, reply).joinToString(",") { it.title }, "frozen kept, the reply's tail after them")
-        // The first update over many lines: nothing to echo, so every topic is the model's own.
         val five = (0 until 5).map { topic(it * 100.0, "t$it") }
         equal("t0,t1,t2,t3,t4", NotesEngine.merge(emptyList(), 0, five).joinToString(",") { it.title }, "nothing frozen")
         equal("t0,t1,t2,t3,t4", NotesEngine.merge(listOf(topic(0.0, "t0")), 0, five).joinToString(",") { it.title }, "nothing frozen keeps every topic")
@@ -643,7 +615,6 @@ object Tests {
         val terms = { names: String -> names.split(",").map { NoteTerm(it) } }
         equal("A,B,C,D", NoteTerm.keepingOrder(terms("A,B,C"), terms("C,D,A,B")).joinToString(",") { it.name }, "terms keep their place, new ones after")
         equal("B,E,D", NoteTerm.keepingOrder(terms("A,B,C"), terms("E,B,D")).joinToString(",") { it.name }, "dropped terms leave, new ones keep the reply's order")
-        // A runaway summary is cut to its first sentence.
         val runaway = topic(0.0, "t0").apply { summary = "对方展示AI眼镜后觉得是完全新的体验，提议可以出发回去。" + "最新对方又补充了一些内容，".repeat(20) }
         equal("对方展示AI眼镜后觉得是完全新的体验，提议可以出发回去。", NotesEngine.merge(emptyList(), 0, listOf(runaway))[0].summary, "a runaway summary")
         equal(NotesEngine.TOPIC_SUMMARY_LIMIT + 1, NotesEngine.shortened("长".repeat(200)).length, "or cut to the limit")
@@ -651,8 +622,6 @@ object Tests {
     }
 
     fun fullLiveNotesJoinTheShortestSettledPair() {
-        // Twelve topics, t3 and t4 the shortest neighbours (t3 to t5 is 100 s): a new topic
-        // still starts, and those two become one.
         val starts = listOf(0, 100, 200, 300, 330, 400, 600, 700, 800, 900, 1000, 1100)
         val old = starts.mapIndexed { i, s -> topic(s.toDouble(), "t$i", listOf("a$i", "b$i", "c$i")) }
         val reply = listOf(topic(1000.0, "t10"), topic(1100.0, "t11"), topic(1200.0, "t12"))
@@ -683,7 +652,6 @@ object Tests {
     }
 
     fun longMeetingsAreNotedInPartsByTime() {
-        // A line every 10 s: 90 min stays whole, 4 h becomes four parts of an hour.
         equal(listOf(0 until 540), NotesEngine.parts(notesLines(540)), "90 minutes in one")
         val four = NotesEngine.parts(notesLines(1440))
         equal(4, four.size, "4 hours in four")
@@ -697,7 +665,6 @@ object Tests {
         check(p.contains("[L241 40:00 对方] line 240"), "original line numbers")
         check(!p.contains("[L238 "), "no earlier lines")
         check(p.contains("This part ran 39:50"), "the part's length")
-        // Each of three parts gets two of the eight topics.
         check(p.contains("use at most 2 topics"), "the part's share of topics")
         val merge = NotesEngine.mergePrompt(listOf("{\"summary\":\"a\"}", "{\"summary\":\"b\"}"), all, "English")
         check(merge.contains("Part 2 of 2:\n{\"summary\":\"b\"}"), "the parts' notes")
@@ -711,8 +678,6 @@ object Tests {
         check(ten.all { t -> kept.any { t.title in it.title.split(" / ") } }, "every topic joined, none dropped")
         equal("0.0", NotesEngine.thinned(ten, 1, 3000.0).joinToString(",") { it.start.toString() }, "one")
         equal(3, NotesEngine.thinned(ten.take(3), 4, 3000.0).size, "fewer stay")
-        // A 2.5-hour meeting's last part, asked for 2 topics, came back with 3: the budget topic's
-        // end as its own. Kept first and last, the budget topic at 125 min was lost.
         val part = listOf(topic(6000.0, "营销发布安排", listOf("a")), topic(7500.0, "预算评审", listOf("b")), topic(8982.0, "预算评审（续）", listOf("c")))
         val two = NotesEngine.thinned(part, 2, 8990.0)
         equal("营销发布安排,预算评审", two.joinToString(",") { it.title }, "the topic kept over its continuation")
@@ -774,7 +739,7 @@ object Tests {
         equal("Live notes", Strings.L("实时纪要"), "plain strings still load")
         loadStrings("ja")
         equal("1文", Strings.LF("%lld 句", 1), "no stringsdict: the .strings value")
-        loadStrings("zh-Hans")   // the other tests read the Chinese
+        loadStrings("zh-Hans")
         val p = Strings.parsePlurals("<?xml version=\"1.0\"?>\n<!DOCTYPE plist>\n<plist version=\"1.0\"><dict><key>a &amp; b</key><dict>" +
             "<key>NSStringLocalizedFormatKey</key><string>%#@x@ &lt;</string><key>x</key><dict><key>one</key><string>%lld y</string>" +
             "<key>other</key><string>%lld ys</string></dict></dict></dict></plist>")
@@ -821,7 +786,6 @@ object Tests {
         return LingClient(key, fake, clock = clock)
     }
 
-    /// The start gate's time, moved on by each wait instead of waiting (one request at a time).
     private class FakeClock : GateClock() {
         val start = 1_000_000L
         var t = start
@@ -861,8 +825,6 @@ object Tests {
     }
 
     fun lingRidesOut429s() {
-        // Ling's 429s come in runs (two in a row lost a line with one retry): heard audio backs off
-        // 1, 2, 4 s and gets through; text translation fails at once so the caller can fall back.
         val calls = AtomicInteger()
         val clock = FakeClock()
         val ling = client(Fake { if (calls.incrementAndGet() <= 3) busy() else reply("LANG: en\nORIGINAL: Hi.\nTRANSLATION: 嗨。") }, clock)
@@ -892,7 +854,6 @@ object Tests {
         val clock = FakeClock()
         equal("ok", client(Fake { if (calls.incrementAndGet() == 1) busy("5") else reply("ok") }, clock).chat("c", "i", Priority.Notes), "answered after the wait")
         check(clock.waits[0] in 5.0..5.5, "waited as asked, got ${clock.waits}")
-        // Asked to wait minutes: an outage, so the line goes now rather than after it.
         val outage = Fake { busy("120") }
         try { client(outage, FakeClock()).chat("c", "i", Priority.Translate, model = LingClient.AUDIO_MODEL, audio = byteArrayOf(1)); throw AssertionError("waited") }
         catch (e: LingException) { equal(LingException.Kind.RateLimited, e.kind, "given up") }
@@ -910,11 +871,9 @@ object Tests {
         val fake = Fake { if (calls.incrementAndGet() == 1) busy() else reply("notes") }
         val ling = client(fake, clock)
         try { ling.chat("first", "i", Priority.Translate) } catch (_: LingException) {}
-        // A translation that wouldn't retry fails at once, without spending a request on the limit…
         try { ling.chat("second", "i", Priority.Translate); throw AssertionError("sent during the pause") }
         catch (e: LingException) { equal(LingException.Kind.RateLimited, e.kind, "busy") }
         equal(1, fake.calls.size, "nothing sent")
-        // …and one that would waits at the gate until the pause is over, then goes.
         equal("notes", ling.chat("notes", "i", Priority.Notes), "notes after the pause")
         check(clock.waits.sum() in 1.0..1.5, "held for the pause, got ${clock.waits}")
     }
@@ -950,7 +909,6 @@ object Tests {
             val ling = client(fake)
             val a = thread { ling.chat("first", "i", Priority.Notes) }
             Thread.sleep(20)
-            // Queued while the gate is closed: the translation goes before the earlier notes call.
             val b = thread { ling.chat("notes", "i", Priority.Notes) }
             Thread.sleep(20)
             val c = thread { ling.chat("translate", "i", Priority.Translate) }
@@ -962,8 +920,6 @@ object Tests {
     }
 
     fun listenEndToEnd() {
-        // Two stretches of "speech", told apart by length (1 s, then 1.6 s); the fake Ming answers
-        // the first one slower, and lines still come out in order.
         val fake = Fake { body ->
             if (body.contains("Ming-3.0-audio-flash")) {
                 val url = content(body, 1).arr()[0].obj()!!["audio_url"].obj()!!["url"] as String
@@ -995,8 +951,6 @@ object Tests {
     }
 
     fun listenServerErrors() {
-        // A gateway answering 502 to every stretch: no subtitles, so from the third in a row the banner
-        // says the service is erring (not after one or two); the next stretch heard clears it.
         val calls = java.util.concurrent.atomic.AtomicInteger()
         val fake = Fake { body ->
             if (!body.contains("Ming-3.0-audio-flash")) reply("{}")
@@ -1011,7 +965,6 @@ object Tests {
             val engine = ListenEngine(ling, Translator(ling), store, NotesEngine(ling, store), AppSettings(target = "zh-CN"))
             val seen = java.util.Collections.synchronizedList(mutableListOf<Pair<String?, Int>>())
             engine.onChange { seen.add(engine.problem to calls.get()) }
-            // Four times real time: each reply is back before the next stretch goes, as in a meeting.
             val src = PcmAudioSource({ concat(*Array(4) { concat(tone(1.0), silence(3.0)) }) }, speed = 4.0)
             val ended = CountDownLatch(1)
             src.onEnded = { ended.countDown() }
@@ -1050,8 +1003,6 @@ object Tests {
     }
 
     fun holdToSayAndEchoGate() {
-        // The other side speaks English; I hold and say something (a different length of tone),
-        // then the phone "speaks" while a tone plays: that must not become the other side's line.
         val fake = Fake { body ->
             val system = content(body, 0) as String
             if (system.contains("into English")) reply("LANG: zh-CN\nORIGINAL: 你好。\nTRANSLATION: Hello.")
@@ -1084,7 +1035,7 @@ object Tests {
             equal("Hello." to "en", spoken, "spoken in their language")
             engine.muted = true
             src.push(concat(tone(2.0), silence(1.2)))
-            Thread.sleep(300) // mute lasts as long as the voice plays: let the worker take what came in meanwhile
+            Thread.sleep(300)
             engine.muted = false
             src.push(silence(1.0))
             Thread.sleep(300)
@@ -1097,7 +1048,6 @@ object Tests {
     }
 
     fun anUnreachableServiceIsTriedOncePer15s() {
-        // The service doesn't answer; Google does.
         val fake = Fake { body -> if (body.contains("Subtitle:")) Transport.Response(500, "") else Transport.Response(200, "[[[\"你好\",\"Hello\"]]]") }
         val old = LingClient.spacing
         LingClient.spacing = 0.0
@@ -1118,7 +1068,6 @@ object Tests {
     }
 
     fun anUntranslatedSentenceIsNeitherSentNorRecorded() {
-        // Ming hears me but returns no translation, and Ling and Google both fail.
         val fake = Fake { body ->
             if (body.contains("Ming-3.0-audio-flash")) reply("LANG: zh-CN\nORIGINAL: 你好。")
             else Transport.Response(500, "")
@@ -1159,13 +1108,11 @@ object Tests {
             engine.onSaid = { text, _ -> spoken = text }
             val src = ManualSource()
             engine.start(src, "mic")
-            // Nobody spoke: the room's hush only, loud enough for the old check (rms 0.004).
             val hush = ShortArray(16000 * 2) { ((if (it % 2 == 0) 1 else -1) * 0.004 * 32767).toInt().toShort() }
             engine.hold(); src.push(hush); engine.release(); src.push(silence(0.3))
             Thread.sleep(600)
             equal(0, asked, "a silent hold isn't sent to the service")
             equal("没听到声音，靠近手机再说", engine.sayProblem, "and says why")
-            // Ming hears only 嗯: nothing said.
             engine.hold(); src.push(tone(1.2)); engine.release(); src.push(silence(0.3))
             val until = System.currentTimeMillis() + 4000
             while (asked == 0 && System.currentTimeMillis() < until) Thread.sleep(20)
@@ -1232,7 +1179,6 @@ object Tests {
         check(found[1]!!.evidence.startsWith("00:40 “Thanks"), "evidence is the line: ${found[1]!!.evidence}")
         equal(mapOf(0 to "Christina"), refuted.toMap(), "no evidence near the voice")
         equal(0, SpeakerNamer.read("not json", lines).first.size, "not JSON")
-        // Without JSON mode (a host that refuses it) the reply may come fenced.
         equal("George", SpeakerNamer.read("```json\n{\"speakers\": [{\"speaker\": 2, \"name\": \"George\", \"evidence\": \"L11\"}]}\n```", lines).first[1]?.name, "fenced")
         check(SpeakerNamer.content(lines)!!.contains("说话人1"), "Ling sees the numbers")
         check(SpeakerNamer.holds(found[1]!!, 1, lines), "the guess stands while its line does")
@@ -1255,7 +1201,6 @@ object Tests {
         check(NotesEngine.prompt(MeetingNotes(), lines, 0, "Chinese", false).contains("对方] "), "no voices: 对方")
     }
 
-    /// Ming cuts "so we will ship" | "on Friday then." mid-sentence; `voices` says whose each half is.
     private fun halves(voices: List<Int>): Pair<List<Pair<Int?, String>>, Int> {
         val fake = Fake { body ->
             if (body.contains("Ming-3.0-audio-flash")) {
@@ -1271,7 +1216,6 @@ object Tests {
             val ling = client(fake)
             val store = SessionStore()
             val engine = ListenEngine(ling, Translator(ling), store, NotesEngine(ling, store), AppSettings(target = "zh-CN"))
-            // Each "voiceprint" is the voice to give: one dimension, and a clusterer stand-in below.
             engine.speakers = object : SpeakerTagger(object : Voiceprinter {
                 override fun embed(samples: ShortArray) = synchronized(order) { floatArrayOf(order.next().toFloat()) }
             }) { override fun label(vector: FloatArray?, seconds: Double) = vector?.get(0)?.toInt() }
@@ -1307,7 +1251,7 @@ object Tests {
             val store = SessionStore()
             val engine = ListenEngine(ling, Translator(ling), store, NotesEngine(ling, store), AppSettings(target = "zh-CN"))
             engine.speakers = object : SpeakerTagger(object : Voiceprinter {
-                override fun embed(samples: ShortArray): FloatArray { Thread.sleep(600); return floatArrayOf(1f) } // a phone that can't keep up
+                override fun embed(samples: ShortArray): FloatArray { Thread.sleep(600); return floatArrayOf(1f) }
             }) { override fun label(vector: FloatArray?, seconds: Double) = if (vector == null) null else 0 }
             val src = PcmAudioSource({ concat(*Array(5) { concat(tone(1.0), silence(1.0)) }) }, speed = 0.0)
             val ended = CountDownLatch(1)
@@ -1391,7 +1335,7 @@ object Tests {
         val w = watch()
         equal(null, w.tick(5_000.0, zoom, true), "a muted webinar is still a meeting")
         equal(null, w.pending, "no prompt")
-        val plain = watch(followApps = false) // Android: a call says nothing
+        val plain = watch(followApps = false)
         equal(null, plain.tick(600.0, zoom, true), "prompts")
         equal(MeetingEndWatch.Reason.Silence, plain.pending?.reason, "silence counts")
     }
@@ -1417,7 +1361,6 @@ object Tests {
     }
 
     fun endsAtTheGivenTime() {
-        // An ended-by-itself meeting is stored as ending at the time given, not when it stopped.
         val store = SessionStore()
         val s = store.begin(java.time.Instant.parse("2026-11-04T10:00:00Z"))
         store.append(s.id, TranscriptLine(id = "h1-1", t = 1.0, src = "Hi", srcLang = "en", dstLang = "zh-CN"))
@@ -1432,7 +1375,7 @@ object Tests {
 
     fun findsTheNewestAndroidRelease() {
         val feed = Json.write(listOf(
-            release("v1.10.0", "Cicada-1.10.0.dmg"),                                   // Mac only: skipped
+            release("v1.10.0", "Cicada-1.10.0.dmg"),
             release("v1.11.0", "Cicada-1.11.0-Android.apk", draft = true),
             release("v1.12.0", "Cicada-1.12.0-Android.apk", pre = true),
             release("v1.9.2", "Cicada-1.9.2-Windows-x64.zip", "Cicada-1.9.2-Android.apk"),

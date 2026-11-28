@@ -15,33 +15,12 @@ import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/// Debug commands for dev builds over `adb shell am broadcast` (scripts/cicadactl.sh): the
-/// Android counterpart of the Mac's tools/lsctl and the Windows pipe. One command per broadcast,
-/// one JSON line back as the broadcast's result (never meeting text or the key).
-///   state | start [playback|mic] | stop | feed <wav in files/> | sample | view notes|subtitles
-///   capture on|off | overlay show|hide | show main|live|records|settings|words|onboarding|record [id] | overlay collapse|expand | key reload
-///   hear|say <wav in files/> (面对面: the other side / me holding 我说) | tts <lang> <text>
-///   import <session.json in files/> | importfile <audio or video in files/> | face | onboarded on|off | target <code> | ui <lang> | clip <text>
-///   provider ling|openrouter|zenmux|custom | ai-model hear|text|voice|notes <id> ("" back to the recommended) | show ai
-///   ai-base <url> (the custom service's address) · ai-notes same|own · ai-notes-base <url> · notes-key import <file in files/>|remove (the custom service's 纪要)
-///   key import <file in files/> (sealed as the current service's key, the plain file deleted) | voice-try (设置's 试一句)
-///   voice <lang>[=<id>] (读出来的声音: choose, or say it and the options) · voice-preview <lang> [<id>] (试听) · show voices [lang]
-///   voiceref <wav in files/> [lang] | remove (我自己的声音 from a pushed recording) · show record-voice <lang> [<wav in files/>]
-///   ai-check (重新检查) | ai-check-sim <reason|lowBalance|off> (every check ends that way; the state's ai.check has the steps)
-///   改正听错的词: fixes on|off · asknames on|off · silent (a meeting with no audio) · heard <text> · vocab add|remove|state
-///   fixstate · fixanswer yes|no · fixrevert <line> · fixlater · fixundo · fixedit <line>=<text>[|one][|keep0] · pinyin <text>
-///   分享…: share <id>[,full][,pw] · unshare <id> · shares · shareSheet <id> (no id: closes it) · delete <id>
-///   shareserver [url] (a local Worker; none: cicada.indaloop.app) · clipboard
-///   存到文件夹: export state · export folder <tree uri> (one already granted; else the problem shows) · export pick
-///   (the system picker) · export all (也存一份) · export retry · export off
-///   会议记录's search: search <text> · search-open [n] · search-step 1|-1 (state: record.search)
 class DebugReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (!BuildConfig.DEBUG) return
         val app = context.cicada
         val line = intent.getStringExtra("cmd") ?: "state"
         val pending = goAsync()
-        // UI work on the main thread; the reply waits for it, then for state to settle.
         app.background.execute {
             val done = CountDownLatch(1)
             var reply: Map<String, Any?> = emptyMap()
@@ -59,7 +38,6 @@ class DebugReceiver : BroadcastReceiver() {
         }
     }
 
-    /// Empty: "reply with the state once the command has had a moment".
     private fun run(app: CicadaApp, line: String): Map<String, Any?> {
         val parts = line.trim().split(Regex("\\s+"), 2)
         val arg = parts.getOrElse(1) { "" }
@@ -72,16 +50,13 @@ class DebugReceiver : BroadcastReceiver() {
             "stop" -> app.stopListening()
             "feed" -> app.listenToFile(File(app.filesDir, arg), play = false)
             "sample" -> app.listenToFile(null, play = true)
-            // 导入录音或视频 without the file picker: any audio or video in files/.
             "importfile" -> app.importFile(app, android.net.Uri.fromFile(File(app.filesDir, arg)))
             "face" -> app.startActivity(Intent(app, FaceActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             "view" -> app.setView(if (arg == "subtitles") "subtitles" else "notes")
             "capture" -> { app.settings.showInCapture = arg == "on"; app.saveSettings(); app.overlay.rebuild() }
             "overlay" -> if (arg == "collapse") { app.overlay.collapsed = true; app.overlay.rebuild() } else if (arg == "expand") { app.overlay.collapsed = false; app.overlay.rebuild() } else if (arg == "hide") { app.overlay.forced = false; app.overlay.hide() } else { app.overlay.forced = true; app.overlay.show() }
-            // 面对面 without a voice: `hear` plays a WAV as the other side, `say` as me holding 我说.
             "hear" -> app.listen.inject(Wav.read(File(app.filesDir, arg).inputStream()))
             "say" -> { app.holdToSay(); app.listen.inject(Wav.read(File(app.filesDir, arg).inputStream())); app.releaseToSay() }
-            // 会议自己结束 in seconds: `endtimes 20 10` (silence, countdown); `endtimes` alone resets.
             "endtimes" -> { val v = arg.split(Regex("\\s+")).mapNotNull { it.toDoubleOrNull() }; app.endTimesOverride = if (v.size == 2) v[0] to v[1] else null }
             "silence" -> { app.settings.silenceEnd = arg.ifEmpty { "prompt" }; app.saveSettings() }
             "keep" -> app.keepRecording()
@@ -92,12 +67,9 @@ class DebugReceiver : BroadcastReceiver() {
             }
             "target" -> { app.settings.target = arg.ifEmpty { "system" }; app.saveSettings() }
             "ui" -> { app.settings.uiLanguage = arg.ifEmpty { "system" }; app.saveSettings(); app.loadStrings(); app.overlay.rebuild() }
-            // Puts text on the clipboard (the shell can't), so 粘贴 can be tested.
             "clip" -> app.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("test", arg))
             "onboarded" -> { app.settings.onboarded = arg != "off"; app.saveSettings() }
             "key" -> if (arg.startsWith("import ")) {
-                // A key pushed in as a plain file: sealed into the current service's key file like
-                // one pasted in, and the plain copy goes at once.
                 val f = File(app.filesDir, arg.removePrefix("import ").trim())
                 val text = try { f.readText().trim() } catch (_: Exception) { "" } finally { f.delete() }
                 if (text.isEmpty() || !app.key.save(text)) return mapOf("error" to "no key in ${f.name}")
@@ -108,7 +80,6 @@ class DebugReceiver : BroadcastReceiver() {
             "ai-base" -> { app.settings.aiCustomBase = arg.removeSurrounding("\"").trim(); app.settings.save(); app.aiChanged(); return mapOf("ok" to true, "ai" to ai(app)) }
             "ai-notes" -> { app.setNotesOwn(arg == "own"); return mapOf("ok" to true, "ai" to ai(app)) }
             "ai-notes-base" -> { app.setNotesBase(arg.removeSurrounding("\"")); return mapOf("ok" to true, "ai" to ai(app)) }
-            // The notes' own key, pushed in as a plain file like `key import`, sealed, the plain copy deleted.
             "notes-key" -> {
                 if (arg == "remove") { app.setNotesKey(null); return mapOf("ok" to true, "ai" to ai(app)) }
                 val f = File(app.filesDir, arg.removePrefix("import ").trim())
@@ -116,15 +87,12 @@ class DebugReceiver : BroadcastReceiver() {
                 if (text.isEmpty() || !app.setNotesKey(text)) return mapOf("error" to "no key in ${f.name}")
                 return mapOf("ok" to true, "ai" to ai(app))
             }
-            // The 改用 Ling on a status line (says when it isn't offered).
             "switchToLing" -> { val offered = app.canSwitchToLing; app.switchToLing(); return mapOf("offered" to offered, "ai" to ai(app)) }
-            // ai-check-sim <reason|lowBalance|off>: every check ends this way (screenshots of each state).
             "ai-check-sim" -> {
                 app.ling.simulateCheck = cicada.AICheck.reasonNamed(arg)
                 app.ling.simulateBalance = if (arg == "lowBalance") 0.4 else null
                 app.background.execute { app.ling.check() }
             }
-            // 重新检查.
             "ai-check" -> app.background.execute { app.ling.check() }
             "ai-model" -> {
                 val kind = arg.substringBefore(' ')
@@ -132,11 +100,8 @@ class DebugReceiver : BroadcastReceiver() {
                 app.setAiModel(kind, model)
                 return mapOf("ok" to true, "ai" to ai(app))
             }
-            // 语音和文字只发给你的服务 (the Mac's aiCustomOnly:on|off): `ai-custom-only on|off`.
             "ai-custom-only" -> { app.setCustomOnly(arg == "on"); return mapOf("ok" to true, "ai" to ai(app)) }
             "voice-try" -> { app.previewVoice(app.voiceId("en"), "en", SettingsActivity.SAMPLE) { Log.d("debug: voice-try failed") }; return mapOf("voice" to app.voiceId("en")) }
-            // 读出来的声音: `voice <lang>=<id>` chooses (en=ming:UK_George, zh=phone; en= back to the
-            // default), `voice <lang>` says what it is and what's offered; `voice-preview <lang> <id>` is 试听.
             "voice" -> {
                 val lang = arg.substringBefore('=')
                 if ('=' in arg) {
@@ -147,9 +112,6 @@ class DebugReceiver : BroadcastReceiver() {
                 return mapOf("lang" to lang, "voice" to app.voiceId(lang), "options" to VoiceCatalog.options(lang, app.ling.config()).map { it.id },
                              "clone" to VoiceReference.exists, "cloneSeconds" to VoiceReference.duration, "clones" to app.ling.clones)
             }
-            // 我自己的声音 without a microphone: `voiceref <wav in files/> [<lang>]` checks a pushed
-            // recording as 录制 would (Ming hears it) and saves it for <lang>; `voiceref remove` is 删除.
-            // Replies with numbers only (never what it says).
             "voiceref" -> {
                 if (arg == "remove") { app.removeVoiceReference(); return mapOf("exists" to VoiceReference.exists) }
                 val name = arg.substringBefore(' ')
@@ -170,7 +132,6 @@ class DebugReceiver : BroadcastReceiver() {
                 app.previewVoice(id, lang) { Log.d("debug: preview failed $it") }
                 return mapOf("previewing" to id)
             }
-            // 检查更新 against a test feed: the dev build checks only once one is set.
             "updatefeed" -> { app.updates.setFeed(if (arg.isEmpty() || arg.contains("://")) arg else File(app.filesDir, arg).path); app.updates.checkIfDue(0) }
             "update" -> when (arg) {
                 "check" -> app.updates.checkNow()
@@ -178,14 +139,10 @@ class DebugReceiver : BroadcastReceiver() {
                 "job" -> app.background.execute { app.updates.checkInBackground() }
                 "notify" -> app.updates.available?.let { app.updates.notifyAbout(it) }
             }
-            // 改正听错的词 (the Mac's fixes / askNames / silentListen / heard / vocab* / fix* commands).
             "fixes" -> { app.settings.fixMisheard = arg != "off"; app.saveSettings() }
             "asknames" -> { app.settings.askNames = arg != "off"; app.saveSettings() }
-            // A meeting with no audio at all, its lines given by `heard <text>` (translated and fixed
-            // by the AI service in use, as a heard line is).
             "silent" -> if (!app.listen.listening) { app.listen.start(SilentAudioSource(), "file"); app.openLive() }
             "heard" -> app.listen.debugHeard(arg)
-            // vocab add Morpho=莫拉、莫法|巡检 · vocab remove <word> · vocab state
             "vocab" -> {
                 val (sub, rest) = arg.split(Regex("\\s+"), 2).let { it[0] to it.getOrElse(1) { "" } }
                 when (sub) {
@@ -195,12 +152,12 @@ class DebugReceiver : BroadcastReceiver() {
                 return mapOf("terms" to app.vocabulary.terms.size, "heard" to app.vocabulary.terms.sumOf { it.heard.size }, "fixes" to app.vocabulary.terms.sumOf { it.fixes })
             }
             "fixstate" -> return fixState(app, arg.ifEmpty { null })
-            "fixanswer" -> {   // fixanswer yes|no [session]
+            "fixanswer" -> {
                 val id = sessionOf(app, arg.substringAfter(' ', ""))
                 val f = app.fixes.asking(id)?.fix ?: app.fixes.pending(id).firstOrNull()?.fix ?: return mapOf("error" to "nothing waiting")
                 app.fixes.answer(f, arg.substringBefore(' ') == "yes", id)
             }
-            "fixrevert" -> {   // fixrevert <line> [session]: the line's first applied fix
+            "fixrevert" -> {
                 val id = sessionOf(app, arg.substringAfter(' ', ""))
                 val l = app.store.line(id, arg.substringBefore(' ')) ?: return mapOf("error" to "no line")
                 val f = l.fixes?.firstOrNull { it.applied } ?: return mapOf("error" to "no fix")
@@ -208,7 +165,7 @@ class DebugReceiver : BroadcastReceiver() {
             }
             "fixlater" -> { val id = sessionOf(app, arg); app.fixes.asking(id)?.let { app.fixes.later(it.fix, id) } }
             "fixundo" -> app.fixes.undo()
-            "fixedit" -> {   // fixedit <line>=<new text>[|one][|keep0] [, session]
+            "fixedit" -> {
                 val (head, sid) = if (arg.contains(",") && !arg.substringAfterLast(",").contains("=")) arg.substringBeforeLast(",") to arg.substringAfterLast(",").trim() else arg to ""
                 val line = head.substringBefore("=")
                 val opts = head.substringAfter("=").split("|")
@@ -221,7 +178,6 @@ class DebugReceiver : BroadcastReceiver() {
                 app.store.import(s)
             }
             "delete" -> app.store.delete(arg)
-            // rename <id>=<title>, as typed into the record's title (empty: the automatic one).
             "rename" -> app.store.rename(arg.substringBefore('='), arg.substringAfter('=', ""))
             "export" -> {
                 val ex = app.folderExport
@@ -235,8 +191,6 @@ class DebugReceiver : BroadcastReceiver() {
                     else -> return ex.debugState()
                 }
             }
-            // 分享… (the Mac's share: / unshare: / shareSheet:): `share <id>[,full][,pw]` shares as the
-            // sheet would and logs the link; `unshare <id>` turns it off; `shares` lists them (never the token).
             "share" -> {
                 val p = arg.split(",").map { it.trim() }
                 val s = app.store.get(p[0])?.let { Session.from(it.toJson()) } ?: return mapOf("error" to "no such record")
@@ -257,14 +211,11 @@ class DebugReceiver : BroadcastReceiver() {
                 app.background.execute { Log.d("debug: share revoked ${app.share.revoke(r, arg)}") }
                 return mapOf("unsharing" to arg)
             }
-            // `shareserver http://127.0.0.1:8790` (after adb reverse) points 分享… at a local Worker (wrangler dev), with its
-            // own device file so the real one stays registered; no argument goes back to cicada.indaloop.app.
             "shareserver" -> {
                 app.share.base = arg.ifEmpty { "https://cicada.indaloop.app" }.trimEnd('/')
                 app.share.deviceFile = if (arg.isEmpty()) null else File(cicada.Paths.root, "share-device-local.json")
                 return mapOf("shareserver" to app.share.base)
             }
-            // What is on the clipboard (the app must be in front to read it).
             "clipboard" -> return mapOf("clipboard" to app.getSystemService(android.content.ClipboardManager::class.java)
                 .primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString())
             "shares" -> return mapOf("shares" to cicada.ShareStore.all().mapValues { (_, r) ->
@@ -273,9 +224,6 @@ class DebugReceiver : BroadcastReceiver() {
             "shareSheet" -> if (arg.isEmpty()) ShareSheet.open?.let { it.dismiss() } else
                 app.startActivity(Intent(app, RecordActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     .putExtra("id", arg).putExtra("share", true))
-            // 会议记录's search (#33): `search <text>` types it into 会议记录, `search-open [n]` taps the
-            // n-th meeting found (0: the first), `search-step 1|-1` is 下一个 / 上一个 in the record.
-            // The state's record.search has the matches, where it is and the line's id.
             "search" -> app.startActivity(Intent(app, RecordsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP).putExtra("query", arg))
             "search-open" -> {
                 val r = RecordsActivity.current ?: return mapOf("error" to "会议记录 is not in front")
@@ -290,7 +238,6 @@ class DebugReceiver : BroadcastReceiver() {
                 "words" -> open(WordListActivity::class.java)
                 "ai" -> open(AiServiceActivity::class.java)
                 "voices" -> open(VoicesActivity::class.java, arg.substringAfter(' ', "").ifEmpty { null })
-                // `show record <lang> [<wav in files/>]`: 录制 for that language; a WAV stands in for the mic.
                 "record-voice" -> {
                     val rest = arg.substringAfter(' ', "").split(' ')
                     app.startActivity(Intent(app, VoiceRecordActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -308,11 +255,9 @@ class DebugReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        /// The meeting a fix command is for: the one named, else the live one, else the newest.
         fun sessionOf(app: CicadaApp, arg: String): String =
             arg.trim().ifEmpty { null } ?: app.store.liveId ?: app.store.all().firstOrNull()?.id ?: ""
 
-        /// A meeting's fixes in numbers (never its words): lines fixed, applied, waiting, said no to.
         fun fixState(app: CicadaApp, arg: String?): Map<String, Any?> {
             val id = sessionOf(app, arg ?: "")
             val lines = app.store.lines(id)
@@ -326,7 +271,6 @@ class DebugReceiver : BroadcastReceiver() {
                           "translated" to lines.count { it.dst != null }, "terms" to app.vocabulary.terms.size)
         }
 
-        /// The AI service in use and what its last check found (never the key itself).
         fun ai(app: CicadaApp): Map<String, Any?> {
             val l = app.ling
             val c = l.config()

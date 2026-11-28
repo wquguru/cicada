@@ -1,6 +1,4 @@
 #!/bin/bash
-# Boots the `cicada` emulator (AVD=cicada29 for Android 10; made by install-sdk.sh) and waits until Android is up. Network goes
-# through the Mac's proxy when one is set, so Google translation works too. --wipe starts clean.
 set -euo pipefail
 D="$HOME/.cicada-android"; S="$D/sdk"; adb="$S/platform-tools/adb"
 AVD="${AVD:-cicada}"

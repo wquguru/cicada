@@ -13,9 +13,6 @@ import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/// The system's text-to-speech, or the AI service's voice, for saying my translated words to the
-/// person in front of me. Only ever given a translation (ListenEngine.said checks that): never what
-/// I said myself.
 class Voice(private val context: Context) {
     enum class Result { Spoken, NoVoice, Failed }
 
@@ -24,7 +21,6 @@ class Voice(private val context: Context) {
     private var ok = false
     @Volatile var speaking = false; private set
 
-    /// Starts the engine early (it takes ~1 s), so the first sentence isn't late.
     fun warm() { engine() }
 
     @Synchronized private fun engine(): TextToSpeech? {
@@ -48,8 +44,6 @@ class Voice(private val context: Context) {
         return r >= TextToSpeech.LANG_AVAILABLE
     }
 
-    /// Speaks `text` in `lang`; `onStart` / `onEnd` come on a TTS thread. Call off the main thread
-    /// (waits for the engine the first time).
     fun speak(text: String, lang: String, onStart: () -> Unit, onEnd: () -> Unit): Result {
         val t = engine() ?: return Result.Failed
         val locale = Locale.forLanguageTag(lang)
@@ -70,11 +64,6 @@ class Voice(private val context: Context) {
     private class Stopped : RuntimeException()
     @Volatile private var track: AudioTrack? = null
 
-    /// Reads `text` in the AI service's `voiceName` (Ming's with `language`, Ming's language_id), or
-    /// in the user's own voice cloned from `reference`: its 24 kHz PCM goes into an AudioTrack as it
-    /// arrives, so the first words play before the rest has come. Blocks until it has played (or
-    /// `stop`). `onStart` comes with the first sound; `onEnd` always comes. Failed lets the caller
-    /// fall back to the phone's voice.
     fun speakCloud(ling: LingClient, text: String, voiceName: String?, language: String?,
                    onStart: () -> Unit, onEnd: () -> Unit, reference: Pair<String, String>? = null): Result {
         val rate = LingClient.TTS_RATE
@@ -99,7 +88,6 @@ class Voice(private val context: Context) {
                 frames += pcm.size / 2
             }
             if (frames == 0L) return Result.Failed
-            // What was written plays out before the track goes (a few seconds at most).
             val until = System.currentTimeMillis() + frames * 1000 / rate + 2000
             while (track === t && t.playbackHeadPosition < frames && System.currentTimeMillis() < until) Thread.sleep(40)
             Log.d("voice: cloud done")

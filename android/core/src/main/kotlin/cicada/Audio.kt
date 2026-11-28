@@ -7,19 +7,13 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/// Where listening gets its sound: 16 kHz mono Int16, pushed from any thread. On Android the
-/// playback capture or the microphone; in tests, the CLI and the sample meeting, a file.
 interface AudioSource {
-    /// Set before start(); called on the source's own thread.
     var onSamples: ((ShortArray) -> Unit)?
-    /// Called once when the source can't go on: null when a file finished, else why.
     var onEnded: ((String?) -> Unit)?
     fun start()
     fun stop()
 }
 
-/// Debug (the Mac's silentListen): a meeting with no audio at all, its lines given by
-/// ListenEngine.debugHeard, to try what follows a finished sentence without playing anything.
 class SilentAudioSource : AudioSource {
     override var onSamples: ((ShortArray) -> Unit)? = null
     override var onEnded: ((String?) -> Unit)? = null
@@ -27,7 +21,6 @@ class SilentAudioSource : AudioSource {
     override fun stop() {}
 }
 
-/// Plays 16 kHz samples into listening, in real time or as fast as it can (`speed` 0).
 class PcmAudioSource(private val load: () -> ShortArray, private val speed: Double = 1.0) : AudioSource {
     override var onSamples: ((ShortArray) -> Unit)? = null
     override var onEnded: ((String?) -> Unit)? = null
@@ -41,7 +34,7 @@ class PcmAudioSource(private val load: () -> ShortArray, private val speed: Doub
             val pcm = try { load() } catch (e: Exception) {
                 Log.d("file source: unreadable ${e.javaClass.simpleName}"); onEnded?.invoke("unreadable"); return@Thread
             }
-            val chunk = Segmenter.RATE / 10 // 100 ms, like a capture callback
+            val chunk = Segmenter.RATE / 10
             val started = System.nanoTime()
             var i = 0
             while (i < pcm.size && !stopped) {
@@ -53,7 +46,6 @@ class PcmAudioSource(private val load: () -> ShortArray, private val speed: Doub
                 }
                 i += chunk
             }
-            // A second of silence so the last sentence's pause is heard.
             onSamples?.invoke(ShortArray(Segmenter.RATE))
             onEnded?.invoke(null)
         }, "PcmAudioSource").apply { isDaemon = true }.start()
@@ -62,7 +54,6 @@ class PcmAudioSource(private val load: () -> ShortArray, private val speed: Doub
     override fun stop() { stopped = true }
 }
 
-/// One stretch of speech as sent to Ming: the bytes and their media type.
 class Clip(val bytes: ByteArray, val type: String) {
     companion object { fun wav(pcm: ShortArray) = Clip(Wav.bytes(pcm), "audio/wav") }
 }
@@ -77,7 +68,6 @@ object Wav {
         return b.array()
     }
 
-    /// A PCM16 WAV of any rate and channel count, as 16 kHz mono.
     fun read(input: InputStream): ShortArray {
         val all = input.use { it.readBytes() }
         val b = ByteBuffer.wrap(all).order(ByteOrder.LITTLE_ENDIAN)
@@ -112,7 +102,6 @@ object Wav {
         throw IllegalArgumentException("no data chunk")
     }
 
-    /// Box average then pick: plenty for speech going to a recognizer.
     fun resample(mono: DoubleArray, rate: Int): ShortArray {
         fun clamp(x: Double) = x.coerceIn(Short.MIN_VALUE.toDouble(), Short.MAX_VALUE.toDouble()).toInt().toShort()
         if (rate == Segmenter.RATE) return ShortArray(mono.size) { clamp(mono[it]) }

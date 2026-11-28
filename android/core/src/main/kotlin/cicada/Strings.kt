@@ -2,17 +2,10 @@ package cicada
 
 import java.util.Locale
 
-/// UI text. The Chinese text is the key, as on the Mac, and the translations are the Mac's own
-/// `Resources/{en,ja,ko}.lproj/Localizable.strings` (copied into the APK's assets at build time),
-/// plus `Android.strings` for text only the Android app has, and the Mac's
-/// `Localizable.stringsdict` for plurals ("1 line", "2 lines"). Placeholders are the Mac's `%@`,
-/// filled in order. Never for prompts, logs or stored values.
 object Strings {
     @Volatile private var table: Map<String, String> = emptyMap()
     @Volatile private var plurals: Map<String, Plural> = emptyMap()
 
-    /// A stringsdict entry: the format with `%#@n@` placeholders, and each variable's forms by
-    /// plural category ("one", "other").
     class Plural(val format: String, val forms: Map<String, Map<String, String>>)
     @Volatile var language = "zh-Hans"; private set
 
@@ -20,13 +13,10 @@ object Strings {
         "en" -> Locale.ENGLISH; "ja" -> Locale.JAPANESE; "ko" -> Locale.KOREAN; else -> Locale.SIMPLIFIED_CHINESE
     }
 
-    /// Loads the table for `ui` ("en", "ja", "ko"; anything else is Chinese). `read` returns the
-    /// text of "<lang>.lproj/<name>" or null.
     fun load(ui: String, read: (String) -> String?) {
         val head = ui.split('-', '_')[0]
         language = if (head == "en" || head == "ja" || head == "ko") head else "zh-Hans"
         val t = HashMap<String, String>()
-        // The Mac's table, then the Android-only strings over it (same format).
         for (name in listOf("Localizable.strings", "Android.strings")) {
             read("$language.lproj/$name")?.let { t.putAll(parse(it)) }
         }
@@ -34,15 +24,11 @@ object Strings {
         plurals = read("$language.lproj/Localizable.stringsdict")?.let { parsePlurals(it) } ?: emptyMap()
     }
 
-    /// Only English has more than one form among the app's languages: "one" for exactly 1.
     private fun category(n: Any?): String =
         if (language == "en" && (n as? Number)?.toDouble() == 1.0) "one" else "other"
 
     @JvmStatic fun L(key: String): String = table[key]?.takeIf { it.isNotEmpty() } ?: key
 
-    /// L() with the Mac's placeholders filled in order: `%@` (or `%1$@` by position), and the
-    /// numbers `%lld` / `%ld` / `%d`. A key in the stringsdict takes its plural form for the
-    /// number: `%#@n@` (or `%2$#@n@`) becomes variable n's "one" or "other" text.
     @JvmStatic fun LF(key: String, vararg args: Any): String {
         val plural = plurals[key]
         val text = plural?.format ?: L(key)
@@ -51,7 +37,6 @@ object Strings {
         var i = 0
         while (i < text.length) {
             if (text[i] != '%' || i + 1 >= text.length) { b.append(text[i]); i++; continue }
-            // An optional position: %2$…
             var j = i + 1
             var position: Int? = null
             if (text[j].isDigit() && j + 1 < text.length && text[j + 1] == '$') { position = text[j] - '1'; j += 2 }
@@ -73,8 +58,6 @@ object Strings {
         return b.toString()
     }
 
-    /// The Mac's Localizable.stringsdict (an XML plist of dicts and strings) as key → Plural. A
-    /// small reader of its own: the XML parsers want to fetch the plist DTD from apple.com.
     fun parsePlurals(xml: String): Map<String, Plural> {
         var i = 0
         fun tag(): String? {
@@ -114,7 +97,6 @@ object Strings {
         return result
     }
 
-    /// `"key" = "value";` lines, with /* */ and // comments and \" \\ \n escapes.
     fun parse(text: String): Map<String, String> {
         val result = HashMap<String, String>()
         var i = 0

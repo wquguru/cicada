@@ -6,11 +6,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
-/// Keeps the live meeting's notes up to date: every ~45 s with new speech, one Ling call sends the
-/// current notes plus the new lines and gets the last topics back as JSON; a final pass rewrites
-/// them over the whole transcript (a long one in parts) when the meeting ends. A failed or odd
-/// reply never replaces good notes. The prompt and parsing are the Mac's (Notes.swift, via the
-/// Windows port), so all write the same notes.
 class NotesEngine(private val ling: LingClient, private val store: SessionStore) {
     enum class State { Idle, Updating, NoKey, InvalidKey, RateLimited, Failed }
 
@@ -21,30 +16,22 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
     private var sessionId: String? = null
     private var inFlight = false
     private var pendingFinal: String? = null
-    /// The meeting whose final pass is running.
     private var finalId: String? = null
     private var lastAttempt = 0L
     private val listeners = mutableListOf<() -> Unit>()
 
     @Volatile var notes = MeetingNotes(); private set
     @Volatile var status = State.Idle; private set
-    /// The session the notes belong to (stays set after the meeting ends).
     @Volatile var shownId: String? = null; private set
-    /// A final pass is over, whether it wrote notes or not (存到文件夹 waits for it). On the
-    /// notes' worker thread.
     @Volatile var finalDone: ((String) -> Unit)? = null
 
-    /// The final pass for this meeting is running, waiting its turn, or still to start: the
-    /// meeting has ended but finish() hasn't run yet (it starts on listening's pool).
     fun settling(id: String): Boolean = synchronized(gate) { sessionId == id || finalId == id || pendingFinal == id } || generating == id
 
-    /// The language notes are written in (English name), from 纪要语言.
     @Volatile var language: () -> String = { "Simplified Chinese" }
 
     fun onChange(listener: () -> Unit) { synchronized(listeners) { listeners.add(listener) } }
     private fun changed() { synchronized(listeners) { listeners.toList() }.forEach { it() } }
 
-    /// Names for the translation glossary: "江充 (note; misheard as 江松, 江冲)".
     fun glossary(): List<String> = notes.terms.take(30).map {
         if (it.heard.isEmpty()) "${it.name} (${it.note})" else "${it.name} (${it.note}; misheard as ${it.heard.joinToString(", ")})"
     }
@@ -61,7 +48,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
         changed()
     }
 
-    /// The meeting ended: one last pass over the whole transcript. Blocks until it's written.
     fun finish() {
         val id = synchronized(gate) {
             tick?.cancel(false); tick = null
@@ -75,10 +61,8 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
         changed()
     }
 
-    /// The finished meeting whose notes are being written on request (the UI shows it working).
     @Volatile var generating: String? = null; private set
 
-    /// Notes for a finished meeting that has none (runs in the background; repeat taps are one).
     fun generate(id: String) {
         if (generating == id) return
         generating = id
@@ -90,15 +74,12 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
 
     private fun tick() {
         val id = synchronized(gate) {
-            // A key added or replaced since: clear the old complaint (an invalid key stays invalid
-            // until it's changed, which resets the client's keyState).
             if ((status == State.NoKey || status == State.InvalidKey) && ling.usable) { status = State.Idle; changed() }
             val id = sessionId ?: return
             if (inFlight) return
             val s = store.get(id) ?: return
             if (s.lines.size <= notes.covered) return
             val since = (System.currentTimeMillis() - lastAttempt) / 1000.0
-            // First notes as soon as there is something to say, then every 45 s.
             val due = if (notes.isEmpty) s.lines.size >= 3 || since > 20 else since >= INTERVAL
             if (!due) return
             id
@@ -128,11 +109,7 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             val lines = store.lines(id)
             val from = if (final) 0 else minOf(base.covered, lines.size)
             val lang = language()
-            // A live update returns only the last topics: when it rewrote them all, its reply grew with
-            // the meeting until, about an hour in, it was cut off at max_tokens or fell into a loop and
-            // the notes stopped updating. The final pass still rewrites everything once.
             val frozen = if (final) 0 else maxOf(0, base.topics.size - EDITABLE_TOPICS)
-            // Voices told apart go as 说话人N, or the name they've been given (notes then say "George").
             val numbers = SpeakerLabels.numbers(lines)
             val names = SpeakerLabels.names(session)
             val prompt = prompt(base, lines, from, lang, final, frozen = frozen, numbers = numbers, names = names)
@@ -181,16 +158,12 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
         }
     }
 
-    /// A long meeting's final pass: each part noted on its own, all at once, then merged into one.
-    /// null when a step fails: the caller then makes one pass over the whole transcript, as before.
     private fun longFinal(lines: List<TranscriptLine>, numbers: Map<String, Int>, names: Map<Int, String>,
                           lang: String, startedAt: Double): MeetingNotes? {
         val parts = parts(lines)
         if (parts.size <= 1) return null
         val started = System.currentTimeMillis()
         val times = lines.map { it.t }
-        // The engine's own executor is single-threaded: the parts get a pool of their own, for this
-        // pass only. Each call still goes through LingClient's gate.
         val pool = Executors.newFixedThreadPool(parts.size) { r -> Thread(r, "NotesPart").apply { isDaemon = true } }
         val replies = try {
             pool.invokeAll(parts.mapIndexed { i, range ->
@@ -213,7 +186,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
                 Log.d("notes: final part ${i + 1}/${parts.size} failed, one pass instead")
                 return null
             }
-            // Without its topics: given them, the merge wrote them all back out and was cut off.
             notes.add(Json.write(part - "topics", pretty = false))
             topics += thinned(parsed!!.topics, partTopics(parts.size), lines[parts[i].last].t)
         }
@@ -236,22 +208,11 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
 
     companion object {
         const val INTERVAL = 45.0
-        /// The most topics the final notes have (the prompt says so too; the model doesn't always listen).
         const val MAX_TOPICS = 8
-        /// Live notes once stopped at 8 topics and poured the rest of the meeting into the last one,
-        /// whose summary grew into a wall of "最新…又…补充…"; past this, the two shortest neighbouring
-        /// settled topics are joined instead, so the newest can start.
         const val LIVE_MAX_TOPICS = 12
-        /// A topic summary longer than this is a log the model kept appending to, not one sentence.
         const val TOPIC_SUMMARY_LIMIT = 160
-        /// How many of the last topics a live update may rewrite; earlier ones stay as they are.
         const val EDITABLE_TOPICS = 2
 
-        /// A live reply's topics after the `frozen` ones it was told to leave alone: with some frozen,
-        /// at most the editable ones plus one new, from the end (the model sometimes echoes the whole
-        /// list), never a copy of a frozen one, each summary kept to one sentence; and no more than
-        /// LIVE_MAX_TOPICS in all (past that, settled neighbours are joined). A reply with no topics of
-        /// its own keeps the ones it had.
         fun merge(old: List<NoteTopic>, frozen: Int, returned: List<NoteTopic>): List<NoteTopic> {
             val kept = old.take(frozen).toMutableList()
             val fixed = kept.map { it.title }.toSet()
@@ -261,7 +222,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             tail.forEach { it.summary = shortened(it.summary) }
             tail = capped(tail, LIVE_MAX_TOPICS - minOf(kept.size, 1))
             while (kept.size + tail.size > LIVE_MAX_TOPICS && kept.size >= 2) {
-                // The pair spanning the least time, its end being the next topic's start.
                 val ends = kept.drop(1).map { it.start } + tail[0].start
                 val i = (0 until kept.size - 1).minBy { ends[it + 1] - kept[it].start }
                 kept[i] = joined(kept[i], kept[i + 1])
@@ -270,8 +230,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             return capped(kept + tail, LIVE_MAX_TOPICS)
         }
 
-        /// Two neighbouring topics as one: both titles and summaries, and up to the 4 points the
-        /// prompt allows, taken evenly from each.
         fun joined(a: NoteTopic, b: NoteTopic): NoteTopic {
             val fromA = minOf(a.points.size, maxOf(2, 4 - b.points.size))
             val fromB = minOf(b.points.size, 4 - fromA)
@@ -282,8 +240,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
                              pointTimes = if (times.any { it != null }) times.toMutableList() else null, fishbone = a.fishbone ?: b.fishbone)
         }
 
-        /// At most `count` topics (at least one): the points of any after that go into the last kept.
-        /// Copies the topic it adds to: the earlier ones may be the notes on screen.
         fun capped(topics: List<NoteTopic>, count: Int): List<NoteTopic> {
             val out = topics.toMutableList()
             while (out.size > maxOf(1, count)) {
@@ -296,14 +252,10 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             return out
         }
 
-        /// Terms keep only the heard forms the recognizer really wrote (`src`). The notes read lines
-        /// with fixes in, so a wrong fix came back as a heard form ("X平台 heard as platform"), went to
-        /// the translator and the next fix's request as a known mishearing, and was proposed again.
         fun heardAsSaid(terms: List<NoteTerm>, lines: List<TranscriptLine>): List<NoteTerm> = terms.map { t ->
             NoteTerm(t.name, t.note, t.heard.filter { h -> lines.any { it.src.contains(h, ignoreCase = true) } }.toMutableList())
         }
 
-        /// A runaway topic summary cut back to its first sentence (or to the limit, with "…").
         fun shortened(summary: String): String {
             if (summary.length <= TOPIC_SUMMARY_LIMIT) return summary
             val head = summary.take(TOPIC_SUMMARY_LIMIT)
@@ -311,15 +263,12 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             return if (end >= 0) head.take(end + 1) else head.trimEnd() + "…"
         }
 
-        /// The model echoes points it already had without evidence: keep the times they had, and a
-        /// point keeps the time it was first heard.
         fun carryTimes(old: MeetingNotes, next: MeetingNotes) {
             val known = HashMap<String, Double>()
             for (t in old.topics) for (i in t.points.indices) t.pointTime(i)?.let { known.putIfAbsent(t.points[i], it) }
             for (t in next.topics) {
                 val times = t.points.mapIndexed { i, p -> min(t.pointTime(i), known[p]) }.toMutableList()
                 t.pointTimes = if (times.any { it != null }) times else null
-                // A topic starts no later than its first point (the reply dates it from the lines it cites now).
                 times.filterNotNull().minOrNull()?.let { if (it < t.start) t.start = it }
             }
             val items = HashMap<String, Double>()
@@ -334,9 +283,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
 
         // MARK: Prompt (Notes.swift › prompt, word for word)
 
-        /// `frozen`: how many first topics a live update leaves alone (sent as a list, not returned).
-        /// `part`: in a long meeting's final pass, which part `from until lines.size` is (1-based, of).
-        /// `numbers` / `names`: voices told apart (line id → 说话人N) and the names given to them.
         fun prompt(notes: MeetingNotes, lines: List<TranscriptLine>, from: Int, language: String, final: Boolean,
                    frozen: Int = 0, part: Pair<Int, Int>? = null,
                    numbers: Map<String, Int> = emptyMap(), names: Map<Int, String> = emptyMap()): String {            fun line(i: Int): String {
@@ -374,7 +320,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             return p + "\n\n" + format(language, final, frozen)
         }
 
-        /// The reply's JSON shape and the rules for its contents.
         private fun format(language: String, final: Boolean, frozen: Int): String =
             "Return the full notes as one JSON object with exactly these keys:\n" +
                 "{\"title\": \"the meeting's name: what it is about, a few words\",\n" +
@@ -400,8 +345,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
 
         // MARK: Long meetings
 
-        /// How a long meeting's final pass is split: over SPLIT_MINUTES, into equal parts by time of at
-        /// most PART_MINUTES. One pass covered a 91-minute meeting but only the first hour of a 4-hour one.
         const val SPLIT_MINUTES = 100.0
         const val PART_MINUTES = 60.0
         fun parts(lines: List<TranscriptLine>): List<IntRange> {
@@ -421,21 +364,14 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             return bounds.zipWithNext { a, b -> a until b }
         }
 
-        /// Each part's share of the topics: the merge keeps them as they are, so every part has some.
         fun partTopics(parts: Int) = maxOf(2, MAX_TOPICS / maxOf(1, parts))
 
-        /// At most `count` of a part's `topics`, neighbours joined: a part's reply often has more
-        /// topics than asked. Keeping the first ones lost the end of the part, and keeping some spread
-        /// from first to last kept a topic's "（续）" stub at the part's end and dropped the topic
-        /// itself. The same subject twice is joined first, under the first one's title; then the pair
-        /// spanning the least time (to the next topic's start, or `end` for the last), as live notes do.
         fun thinned(topics: List<NoteTopic>, count: Int, end: Double): List<NoteTopic> {
             val list = topics.toMutableList()
             while (list.size > maxOf(1, count)) {
                 fun span(i: Int) = (if (i + 2 < list.size) list[i + 2].start else end) - list[i].start
                 val pairs = 0 until list.size - 1
                 val same = pairs.firstOrNull { subject(list[it].title) == subject(list[it + 1].title) }
-                // minBy keeps the first of equal spans, as the Mac does.
                 val at = same ?: pairs.minBy { span(it) }
                 val one = joined(list[at], list[at + 1])
                 if (same != null) { one.title = list[at].title; one.summary = list[at].summary }
@@ -445,7 +381,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             return list
         }
 
-        /// A topic title without a trailing bracket ("预算评审（续）", "Budget (cont.)"): what it is about.
         fun subject(title: String): String {
             val t = title.trim()
             if (t.isEmpty() || t.last() !in "）)") return t
@@ -453,9 +388,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             return if (open > 0) t.substring(0, open).trim() else t
         }
 
-        /// The whole meeting's title, summary, conclusions, to-dos and terms from its parts' notes (the
-        /// replies as they came, with their evidence line ids). Asked to merge topics too, the model
-        /// kept the first parts' and dropped the rest, so topics are joined in code.
         fun mergePrompt(parts: List<String>, lines: List<TranscriptLine>, language: String): String {
             var p = "You keep notes for a meeting that has just ended. It was long, so each part was noted on its own; below are those notes, in time order (JSON; evidence ids are transcript lines, L1 the first). Merge them into the notes for the whole meeting.\n" +
                 "Write the notes in $language. Return JSON only.\n\n"
@@ -466,8 +398,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
             return p + format(language, final = true, frozen = 0)
         }
 
-        /// The current notes as sent back to the model (no bookkeeping fields). `from`: the first topic
-        /// sent (earlier ones go as a list of titles).
         private fun compactJson(n: MeetingNotes, from: Int = 0): String {
             val o = linkedMapOf<String, Any?>()
             if (n.title != null) o["title"] = n.title
@@ -483,7 +413,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
 
         // MARK: Parse
 
-        /// Lenient: missing keys become empty, evidence ids are checked against the transcript.
         fun parse(raw: String, times: List<Double>, startedAt: Double): MeetingNotes? {
             val a = raw.indexOf('{'); val b = raw.lastIndexOf('}')
             if (a < 0 || b <= a) return null
@@ -519,8 +448,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
                     points.add(text)
                     pointTimes.add(po?.let { time(it["evidence"]) })
                 }
-                // When it was first said, from its lines: the model's own `start` drifts by tens of
-                // minutes in a long meeting (a topic said at 51-85 min came back as starting at 23).
                 val said = (listOf(time(t["evidence"])) + pointTimes).filterNotNull().minOrNull()
                 n.topics.add(NoteTopic(start = said ?: t["start"].num() ?: startedAt, title = topicTitle, summary = s(t["summary"]), points = points,
                                        pointTimes = if (pointTimes.any { it != null }) pointTimes else null, fishbone = fish))
@@ -534,7 +461,6 @@ class NotesEngine(private val ling: LingClient, private val store: SessionStore)
                 val name = s(t["name"])
                 NoteTerm(name = name, note = s(t["note"]), heard = t["heard"].arr().map { s(it) }.filter { it.isNotEmpty() && it != name }.toMutableList())
             }.filter { it.name.isNotEmpty() }.toMutableList()
-            // The model keeps every term it ever had: bound the glossary, keeping the misheard ones.
             if (n.terms.size > 20) n.terms = NoteTerm.ordered(n.terms).take(20).toMutableList()
             return if (n.isEmpty) null else n
         }

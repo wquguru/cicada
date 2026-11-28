@@ -2,13 +2,6 @@ package cicada
 
 import java.math.BigDecimal
 
-/// A small JSON reader and writer, so the engines need neither org.json (Android only, unsorted)
-/// nor a library. Values are Map<String, Any?> (insertion-ordered), List<Any?>, String, Long,
-/// Double, Boolean and null.
-///
-/// `write(pretty = true)` produces what the Mac's JSONEncoder writes with [.prettyPrinted,
-/// .sortedKeys], byte for byte: `"key" : value`, two-space indent, `[\n\n  ]` for an empty array,
-/// `\/` for a slash, shortest doubles with no ".0", so a record read and written back is unchanged.
 object Json {
     class ParseException(message: String) : Exception(message)
 
@@ -117,8 +110,6 @@ object Json {
         }
     }
 
-    /// `slashes = false` writes "/" as it is, like JSONEncoder's .withoutEscapingSlashes (the share
-    /// document, ShareProjection.swift).
     fun write(value: Any?, pretty: Boolean = true, slashes: Boolean = true): String {
         val b = StringBuilder()
         emit(b, value, pretty, 0, slashes)
@@ -134,7 +125,6 @@ object Json {
             is Double -> b.append(number(v))
             is Float -> b.append(number(v.toDouble()))
             is Map<*, *> -> {
-                // Sorted like Swift's .sortedKeys; nulls are left out, as Swift leaves out nil optionals.
                 val entries = v.entries.filter { it.value != null }.sortedBy { it.key as String }
                 if (entries.isEmpty()) { b.append(if (pretty) "{\n\n" + "  ".repeat(depth) + "}" else "{}"); return }
                 b.append('{')
@@ -163,8 +153,6 @@ object Json {
         }
     }
 
-    /// Shortest round-trip digits, as Swift prints a Double: "2" not "2.0", no exponent for the
-    /// values records hold.
     fun number(d: Double): String {
         if (d.isNaN() || d.isInfinite()) return "0"
         if (d == Math.rint(d) && Math.abs(d) < 1e15) return d.toLong().toString()
@@ -190,8 +178,6 @@ object Json {
         b.append('"')
     }
 }
-
-// Lenient accessors for decoded JSON.
 
 @Suppress("UNCHECKED_CAST")
 fun Any?.obj(): Map<String, Any?>? = this as? Map<String, Any?>

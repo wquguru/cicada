@@ -19,13 +19,6 @@ import cicada.Strings.L
 import kotlin.math.abs
 import kotlin.math.hypot
 
-/// The floating window over other apps while listening, in three shapes: live notes (a card),
-/// the subtitle bar (dark, along the bottom, for reading over video), or collapsed to a small
-/// round bubble that drags anywhere and closes when dropped on the × target.
-///
-/// Like the Mac's notes panel it never takes focus (FLAG_NOT_FOCUSABLE: the keyboard and back
-/// button stay with the app underneath) and stays out of screenshots and recordings
-/// (FLAG_SECURE) unless 共享屏幕时让对方看到 is on, which shows a badge.
 class Overlay(private val app: CicadaApp) {
     private val wm = app.getSystemService(WindowManager::class.java)
     private val ui = Ui(app)
@@ -36,20 +29,16 @@ class Overlay(private val app: CicadaApp) {
     private var live: LinearLayout? = null
     private var notes: FrameLayout? = null
     private var shownKey: String? = null
-    /// The 这样改对吗？ card is up (for the debug state: a secure window can't be screenshotted).
     private var asking = false
     private val tick = object : Runnable {
         override fun run() { if (root != null) { clockText?.text = NotesViews.clock(app); render(); NotesViews.tickEnding(root, app); app.main.postDelayed(this, 1000) } }
     }
 
-    /// Shown by a debug command regardless of the rules (screenshots of it over Cicada itself).
     var forced = false
-    /// Collapsed to the bubble (reset when a meeting starts).
     var collapsed = false
     val shown get() = root != null
     private val subtitles get() = app.settings.view == "subtitles"
     private val mode get() = if (collapsed) "bubble" else if (subtitles) "subtitles" else "notes"
-    /// Where the person dragged the card and the subtitle bar, kept while Cicada runs.
     private val placed = HashMap<String, Pair<Int, Int>>()
 
     fun show() {
@@ -67,7 +56,6 @@ class Overlay(private val app: CicadaApp) {
         app.main.removeCallbacks(tick)
     }
 
-    /// The shape changed (notes ↔ subtitles ↔ bubble, or the capture setting): build it again in place.
     fun rebuild() { if (root != null) { hide(); show() } }
 
     private fun flags(): Int {
@@ -78,7 +66,6 @@ class Overlay(private val app: CicadaApp) {
 
     private fun build() {
         val dm = app.resources.displayMetrics
-        // Phone-sized on a tablet: a card and a subtitle bar, not a banner across the screen.
         val full = dm.widthPixels - ui.dp(16)
         val width = when (mode) { "bubble" -> ViewGroup.LayoutParams.WRAP_CONTENT; "subtitles" -> minOf(full, ui.dp(720)); else -> minOf(full, ui.dp(420)) }
         val left = if (width > 0) (dm.widthPixels - width) / 2 else 0
@@ -86,8 +73,6 @@ class Overlay(private val app: CicadaApp) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, flags(), PixelFormat.TRANSLUCENT).apply {
             title = "Cicada floating window"
             when (mode) {
-                // The subtitle bar hangs from the bottom edge, above the navigation bar, so a long
-                // line grows upwards instead of off the screen.
                 "subtitles" -> { gravity = Gravity.BOTTOM or Gravity.START; x = left; y = ui.dp(64) }
                 "bubble" -> { gravity = Gravity.TOP or Gravity.START; x = dm.widthPixels - ui.dp(76); y = (dm.heightPixels * 0.45).toInt() }
                 else -> { gravity = Gravity.TOP or Gravity.START; x = left; y = (dm.heightPixels * 0.32).toInt() }
@@ -102,8 +87,6 @@ class Overlay(private val app: CicadaApp) {
             "subtitles" -> buildSubtitles(frame, p)
             else -> buildNotes(frame, p)
         }
-        // A video in picture-in-picture moves out of the way of keep-clear areas (Android 13+),
-        // so 在视频上看 doesn't hide the very video it is about. The bubble is small enough to sit on it.
         if (mode != "bubble" && android.os.Build.VERSION.SDK_INT >= 33) frame.isPreferKeepClear = true
         try {
             wm.addView(frame, p)
@@ -128,8 +111,6 @@ class Overlay(private val app: CicadaApp) {
             addView(clock(if (dark) Palette.onScrim else Palette.ink), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ui.dp(8) })
             if (app.settings.showInCapture) addView(ui.badge(L("对方可见")), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = ui.dp(8) })
             addView(ui.spacer())
-            // Back to 正在听 in Cicada (the full notes, 结束): without it the only way was the
-            // notification or the launcher. A video that does picture-in-picture keeps playing.
             addView(ui.iconButton(R.drawable.i_external, L("回到正在听"), fg, 20, dark) { app.openLive() })
             addView(if (subtitles) ui.iconButton(R.drawable.i_list, L("换成纪要"), fg, 20, dark) { app.setView("notes") }
                     else ui.iconButton(R.drawable.i_captions, L("换成字幕条"), fg, 22, dark) { app.setView("subtitles") })
@@ -192,7 +173,6 @@ class Overlay(private val app: CicadaApp) {
         column.addView(chip, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ui.dp(4) })
         frame.addView(column)
         live = null; notes = null
-        // A tap expands it; a drag moves it, and dropping it on the × closes the floating window.
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
         bubble.setOnTouchListener { _, e ->
             when (e.actionMasked) {
@@ -216,10 +196,9 @@ class Overlay(private val app: CicadaApp) {
                 else -> { hideTarget(); false }
             }
         }
-        bubble.setOnClickListener { collapsed = false; rebuild() } // TalkBack's double tap
+        bubble.setOnClickListener { collapsed = false; rebuild() }
     }
 
-    /// Bubbles rest against the nearer side.
     private fun snapToEdge(frame: View, p: WindowManager.LayoutParams) {
         val dm = app.resources.displayMetrics
         p.x = if (p.x + ui.dp(34) < dm.widthPixels / 2) ui.dp(8) else dm.widthPixels - ui.dp(76)
@@ -267,10 +246,6 @@ class Overlay(private val app: CicadaApp) {
         dismissTarget = null
     }
 
-    /// The card or the subtitle bar, dragged from anywhere on it: a finger that moves past the
-    /// touch slop takes the gesture from the buttons underneath, so taps still reach them. (A
-    /// listener on the header alone never moved it: it turned the first touch down, and Android
-    /// then sends that view nothing more of the gesture.)
     @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
     private inner class DragFrame(private val p: WindowManager.LayoutParams, private val fromBottom: Boolean) : FrameLayout(app) {
         private val slop = ViewConfiguration.get(app).scaledTouchSlop
@@ -302,7 +277,6 @@ class Overlay(private val app: CicadaApp) {
             return true
         }
 
-        /// Follows the finger, kept on the screen and clear of the status and gesture bars.
         private fun move(e: MotionEvent) {
             val dm = app.resources.displayMetrics
             val edge = ui.dp(28)
@@ -315,7 +289,6 @@ class Overlay(private val app: CicadaApp) {
     fun refresh() { if (root != null) render() }
 
     private fun render() {
-        // Rebuilt only when what it shows changed: a view replaced under a finger loses the tap.
         val key = NotesViews.liveKey(app) + mode + app.settings.showInCapture
         if (key == shownKey) return
         shownKey = key
@@ -333,7 +306,6 @@ class Overlay(private val app: CicadaApp) {
                 line == null -> box.addView(ui.text(L("等有人说话…"), 15f, if (dark) Palette.onScrim else Palette.secondary).apply { setPadding(ui.dp(if (dark) 0 else 14), ui.dp(10), 0, ui.dp(10)) })
                 dark -> {
                     val col = ui.stack(4)
-                    // My line (我说) says so, as the Mac's subtitle bar does.
                     if (!line.dst.isNullOrEmpty() && line.dst != line.shown) col.addView(ui.text(NotesViews.said(line), 13f, Palette.onScrim, lines = 2))
                     else if (line.speaker == "me") col.addView(ui.text(L("你 · 同传"), 13f, Palette.onScrim))
                     col.addView(ui.text(line.dst ?: line.shown, 20f, Color.WHITE, bold = true, lines = 3).apply { leading(1.2f) })
@@ -341,8 +313,6 @@ class Overlay(private val app: CicadaApp) {
                 }
                 else -> box.addView(NotesViews.liveCard(ui, app, line, 18f, Palette.ground, lines = 3, dots = false).apply { setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12)) })
             }
-            // 这样改对吗？ in the live notes, never while the window is shown to the other side (共享屏幕时
-            // 让对方看到): names wait for after the meeting then. Taps reach it; it never takes focus.
             asking = false
             val sid = app.listen.sessionId
             if (!dark && sid != null) {
@@ -381,7 +351,6 @@ class Overlay(private val app: CicadaApp) {
         }
     }
 
-    /// For the debug receiver: the window as Android has it.
     fun describe(): Map<String, Any?> = mapOf(
         "shown" to (root != null),
         "mode" to if (root != null) mode else null,

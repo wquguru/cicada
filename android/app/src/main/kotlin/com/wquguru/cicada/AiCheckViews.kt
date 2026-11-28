@@ -17,22 +17,14 @@ import cicada.Strings
 import cicada.Strings.L
 import cicada.Strings.LF
 
-/// The AI service's check, step by step (AICheckView.swift): 设置 › AI 服务 and the onboarding
-/// show the same list; the home card and the 开始听 sheet say the same in fewer words. Every step
-/// that ran shows its result; the one that failed says why in one line and offers the one thing
-/// that fixes it.
 object AiCheckViews {
-    /// "Busy, retrying": a passing state that still deserves a word (Palette.warn on the Mac).
     val warn = Color.parseColor("#8A5900")
     val warnPale = Color.parseColor("#FFF4D6")
     val ok = Color.parseColor("#1E7B45")
     val okPale = Color.parseColor("#E3F3E8")
 
-    /// The steps show while something is wrong or being checked; all passed folds into one line.
     fun showSteps(c: AICheck) = c.running || c.failure != null || c.busy || (c.at != null && !c.passed)
 
-    /// The list of steps. `recheck`: 重新检查 in the failed step (onboarding; the settings have
-    /// their own row). `changeKey` opens the key field.
     fun steps(a: Activity, ui: Ui, recheck: Boolean, changeKey: () -> Unit): LinearLayout {
         val app = a.cicada
         val ling = app.ling
@@ -72,7 +64,6 @@ object AiCheckViews {
         return ui.text(glyph, 12f, fg, bold = true).apply { gravity = Gravity.CENTER; background = ui.rounded(bg, 11) }
     }
 
-    /// Why it failed, the proxy hint when it's the network, and the fix: one dark button, at most one other.
     private fun problem(a: Activity, ui: Ui, into: LinearLayout, busy: Boolean, recheck: Boolean, changeKey: () -> Unit) {
         val ling = a.cicada.ling
         ling.checkMessage()?.let { into.addView(ui.text(it, 13f, if (busy) warn else Palette.link)) }
@@ -92,7 +83,6 @@ object AiCheckViews {
         into.addView(buttons, ui.lp(top = 6))
     }
 
-    /// One primary fix and at most one other, by why it failed.
     fun actions(a: Activity, recheck: Boolean, changeKey: () -> Unit): List<Pair<String, () -> Unit>> {
         val app = a.cicada
         val ling = app.ling
@@ -101,7 +91,6 @@ object AiCheckViews {
         val cfg = ling.config()
         val again = if (recheck) listOf(L("重新检查") to { app.recheck() }) else emptyList()
         return when (f.reason) {
-            // A server on the local network: the proxy help has nothing to say.
             Reason.Unreachable -> if (ling.unreachableNearby()) again else listOf<Pair<String, () -> Unit>>(L("怎么设置代理") to { open(a, helpUrl()) }) + again
             Reason.InvalidKey, Reason.MgmtKey ->
                 listOf<Pair<String, () -> Unit>>(L("更换 key") to changeKey) + (p.site?.let { listOf<Pair<String, () -> Unit>>(LF("打开 %@", p.name) to { open(a, it) }) } ?: emptyList())
@@ -115,10 +104,8 @@ object AiCheckViews {
 
     private fun recommended(first: String?, current: String) = first?.takeIf { it != current }
 
-    /// Where to add money: OpenRouter's credits page, else the service's own site.
     fun topUp(p: cicada.Provider) = if (p.id == "openrouter") "https://openrouter.ai/settings/credits" else p.site ?: "https://zenmux.ai"
 
-    /// The website's proxy help, in the UI language.
     fun helpUrl(): String {
         val prefix = when (Strings.language) { "en" -> "/en"; "ja" -> "/ja"; "ko" -> "/ko"; else -> "" }
         return "https://cicada.indaloop.app$prefix/start/#proxy"
@@ -128,13 +115,10 @@ object AiCheckViews {
         try { a.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
     }
 
-    /// All passed, in one line: "已连接 · 文字 1.8 秒 · 听 0.9 秒", or when the newest evidence came
-    /// from a meeting, "正常 · 12 分钟前开会时用过". Null otherwise.
     fun summary(c: AICheck): String? {
         if (!c.passed || c.busy) return null
         val at = c.at
         if (c.passive && at != null) return L("正常") + " · " +
-            // Under a minute ICU says "now", which reads as in use right now: "just now", as on Linux.
             (if (System.currentTimeMillis() - at < 60_000) L("刚刚开会时用过") else LF("%@ 开会时用过", relative(at)))
         val text = (c[StepID.Text] as? State.Ok)?.seconds
         val hear = (c[StepID.Hear] as? State.Ok)?.seconds
@@ -142,7 +126,6 @@ object AiCheckViews {
         return (listOf(L("已连接")) + parts).joinToString(" · ")
     }
 
-    /// "2 分钟前" in the app's language (not the phone's, which may differ).
     fun relative(at: Long): String {
         val f = android.icu.text.RelativeDateTimeFormatter.getInstance(android.icu.util.ULocale.forLocale(Strings.locale), null,
             android.icu.text.RelativeDateTimeFormatter.Style.SHORT, android.icu.text.DisplayContext.CAPITALIZATION_NONE)
@@ -157,8 +140,6 @@ object AiCheckViews {
 
     // MARK: Home card (there is no tray: the card sits where 有新版本 does)
 
-    /// Title and detail when the user must fix something; null otherwise. On a phone the service
-    /// hears too, so most failures stop listening, not just the notes.
     fun cardWords(app: CicadaApp): Pair<String, String>? {
         val ling = app.ling
         val c = ling.aiCheck
@@ -186,12 +167,9 @@ object AiCheckViews {
 
     // MARK: 开始听
 
-    /// 开始听 stops only on a failure already known: a hear model that takes no audio, or a service
-    /// that still can't be reached after one more look. Anything else (unknown, busy) just starts.
     fun start(a: Activity, kind: String) {
         val app = a.cicada
         val ling = app.ling
-        // Already looking (the re-check below takes up to 20 s offline): one sheet, not two.
         if (ling.aiCheck.running) return
         when (ling.aiCheck.failure?.reason) {
             Reason.Deaf -> deafSheet(a, kind)
@@ -214,7 +192,6 @@ object AiCheckViews {
         }
     }
 
-    /// Whether 开始听 must stop and say why first (the tile hands it to the home screen).
     fun blocks(app: CicadaApp) = app.ling.aiCheck.failure?.reason.let { it == Reason.Deaf || it == Reason.Unreachable }
 
     private fun deafSheet(a: Activity, kind: String) {
@@ -250,7 +227,6 @@ object AiCheckViews {
         d.show()
     }
 
-    /// The fix on top, full width: side by side, English cut "Check Again and Start" short.
     private fun buttons(ui: Ui, quiet: Pair<String, () -> Unit>, primary: Pair<String, () -> Unit>?) = ui.stack(10).apply {
         if (primary != null) addView(ui.button(primary.first, "primary") { primary.second() })
         addView(ui.button(quiet.first, "quiet") { quiet.second() })
@@ -258,8 +234,6 @@ object AiCheckViews {
 
     // MARK: Proxy (read only, to word the hint; the app never sets or uses a proxy of its own)
 
-    /// A proxy set on the network in use (Wi-Fi › 代理, or a VPN app's), or for the whole phone.
-    /// A phone has no proxy app port to look for, so only "on" or "none".
     fun proxyHint(context: Context): AICheck.ProxyHint {
         val cm = context.getSystemService(ConnectivityManager::class.java)
         val link = try { cm?.getLinkProperties(cm.activeNetwork)?.httpProxy } catch (_: Exception) { null }
