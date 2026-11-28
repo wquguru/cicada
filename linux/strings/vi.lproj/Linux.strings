@@ -93,7 +93,6 @@
 "让知了听到电脑里的声音" = "Cho Cicada nghe máy tính của bạn";
 "同声传译的声音" = "Giọng phiên dịch";
 "连不上 Ling，检查网络或代理" = "Không tới được Ling; hãy kiểm tra mạng hoặc proxy";
-"注册或登录后点“创建令牌”" = "Đăng ký hoặc đăng nhập, rồi nhấn “Tạo thông tin xác thực”";
 "请先用 install.sh 安装知了" = "Hãy cài Cicada bằng install.sh trước";
 "已更新到 %@" = "Đã cập nhật lên %@";
 "安装没有完成" = "Cài đặt chưa hoàn tất";
@@ -145,7 +144,6 @@
 "听、纪要和翻译都能用，模型已经选好。" = "Nghe, biên bản và dịch đều dùng được, mô hình đã được chọn sẵn.";
 "仅保存在本机当前账户下，仅发送至 %@" = "Chỉ lưu cho tài khoản này trên máy tính này, chỉ gửi tới %@";
 "接上 %@" = "Kết nối %@";
-"同声传译的声音" = "Giọng phiên dịch viên";
 "例如 qwen3-omni" = "vd. qwen3-omni";
 "听的模型" = "Mô hình nghe";
 "要能输入音频：听对方和“我说”都用它" = "Phải nhận được âm thanh vào: dùng cho Nghe và cho Tôi nói";
