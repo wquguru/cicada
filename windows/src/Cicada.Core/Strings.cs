@@ -12,6 +12,9 @@ public static class Strings
     public static string Language { get; private set; } = "zh-Hans";
     public static CultureInfo Culture { get; private set; } = CultureInfo.GetCultureInfo("zh-CN");
 
+    public static readonly (string Code, string Name)[] UiLanguages =
+        [("zh-Hans", "简体中文"), ("en", "English"), ("es", "Español"), ("ja", "日本語"), ("ko", "한국어")];
+
     public static void Load(string folder, string? language = null) =>
         Load(path => File.Exists(Path.Combine(folder, path)) ? File.ReadAllText(Path.Combine(folder, path), Encoding.UTF8) : null, language);
 
@@ -19,8 +22,8 @@ public static class Strings
     {
         var ui = language ?? CultureInfo.CurrentUICulture.Name;
         var head = ui.Split('-')[0];
-        Language = head is "en" or "ja" or "ko" ? head : "zh-Hans";
-        Culture = CultureInfo.GetCultureInfo(Language switch { "en" => "en-US", "ja" => "ja-JP", "ko" => "ko-KR", _ => "zh-CN" });
+        Language = head is "en" or "es" or "ja" or "ko" ? head : "zh-Hans";
+        Culture = CultureInfo.GetCultureInfo(Language switch { "en" => "en-US", "es" => "es-ES", "ja" => "ja-JP", "ko" => "ko-KR", _ => "zh-CN" });
         table = [];
         foreach (var name in new[] { "Localizable.strings", "Windows.strings" })
         {
@@ -31,7 +34,7 @@ public static class Strings
     }
 
     static string Category(object? n) =>
-        Language == "en" && n is IConvertible c && c.ToDouble(CultureInfo.InvariantCulture) == 1 ? "one" : "other";
+        Language is "en" or "es" && n is IConvertible c && c.ToDouble(CultureInfo.InvariantCulture) == 1 ? "one" : "other";
 
     public static string L(string key) => table.TryGetValue(key, out var v) && v.Length > 0 ? v : key;
 

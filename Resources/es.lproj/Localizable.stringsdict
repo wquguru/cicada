@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>%@ · %lld 句</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%1$@ · %2$#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld línea</string>
+			<key>other</key>
+			<string>%lld líneas</string>
+		</dict>
+	</dict>
+	<key>%lld 个议题</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld tema</string>
+			<key>other</key>
+			<string>%lld temas</string>
+		</dict>
+	</dict>
+	<key>%lld 句</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld línea</string>
+			<key>other</key>
+			<string>%lld líneas</string>
+		</dict>
+	</dict>
+	<key>%lld 句新内容</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld línea nueva</string>
+			<key>other</key>
+			<string>%lld líneas nuevas</string>
+		</dict>
+	</dict>
+	<key>%lld 条要点</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld punto</string>
+			<key>other</key>
+			<string>%lld puntos</string>
+		</dict>
+	</dict>
+	<key>已听到 %lld 句</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld línea oída</string>
+			<key>other</key>
+			<string>%lld líneas oídas</string>
+		</dict>
+	</dict>
+	<key>已记录 %@ · %lld 句。结束后停止收听，并整理一份完整版纪要。</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Grabado %1$@ · %2$#@n@. Al terminar se deja de escuchar y se escriben las notas completas.</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld línea</string>
+			<key>other</key>
+			<string>%lld líneas</string>
+		</dict>
+	</dict>
+	<key>说了 %lld 句</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld línea</string>
+			<key>other</key>
+			<string>%lld líneas</string>
+		</dict>
+	</dict>
+	<key>还有 %lld 句在翻译</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@ aún traduciéndose</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld línea</string>
+			<key>other</key>
+			<string>%lld líneas</string>
+		</dict>
+	</dict>
+	<key>%@ 之后的 %lld 句还在整理</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%2$#@n@ después de %1$@ aún no están en las notas</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld línea</string>
+			<key>other</key>
+			<string>%lld líneas</string>
+		</dict>
+	</dict>
+	<key>全部 %lld 句</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Todas (%#@n@)</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld línea</string>
+			<key>other</key>
+			<string>%lld líneas</string>
+		</dict>
+	</dict>
+	<key>%lld 人在说</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@ hablando</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld persona</string>
+			<key>other</key>
+			<string>%lld personas</string>
+		</dict>
+	</dict>
+	<key>%lld 人</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld persona</string>
+			<key>other</key>
+			<string>%lld personas</string>
+		</dict>
+	</dict>
+	<key>打开 %lld 次</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Abierto %lld vez</string>
+			<key>other</key>
+			<string>Abierto %lld veces</string>
+		</dict>
+	</dict>
+	<key>%lld 天后失效</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Caduca en %lld día</string>
+			<key>other</key>
+			<string>Caduca en %lld días</string>
+		</dict>
+	</dict>
+	<key>还有 %lld 处</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Y %lld más</string>
+			<key>other</key>
+			<string>Y %lld más</string>
+		</dict>
+	</dict>
+	<key>还有 %lld 场没存</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld aún sin guardar</string>
+			<key>other</key>
+			<string>%lld aún sin guardar</string>
+		</dict>
+	</dict>
+	<key>%lld 场会议没存上，允许后自动补存</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@n@</string>
+		<key>n</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld reunión sin guardar; se guarda cuando haya permiso</string>
+			<key>other</key>
+			<string>%lld reuniones sin guardar; se guardan cuando haya permiso</string>
+		</dict>
+	</dict>
+</dict>
+</plist>
