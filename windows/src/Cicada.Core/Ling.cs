@@ -635,6 +635,7 @@ public sealed class LingClient
             if (kind.Contains("event-stream") || c.IsLing)
             {
                 using var reader = new StreamReader(stream);
+                string? other = null;
                 while (true)
                 {
                     string? line;
@@ -643,9 +644,16 @@ public sealed class LingClient
                     if (line is null) break;
                     var pcm = SpeechChunk(line, out var done);
                     if (done) break;
-                    if (pcm is null) continue;
+                    if (pcm is null) { if (other is null && line.StartsWith("data:")) other = line; continue; }
                     if (chunks++ == 0) Log.Debug($"ai {c.Provider.Id}: Speak first audio {(int)(DateTime.UtcNow - started).TotalMilliseconds} ms");
                     yield return pcm;
+                }
+                // A 200 that carried no audio (an error event inside the stream, or nothing at all) is a
+                // failure, not silence: the caller tries again or says so, and the log shows what came.
+                if (chunks == 0)
+                {
+                    Log.Debug($"ai {c.Provider.Id}: voice reply had no audio{(other is null ? "" : ": " + other[..Math.Min(other.Length, 200)])}");
+                    throw new LingException(LingException.Kind.Parse);
                 }
             }
             else if (kind.Contains("json"))

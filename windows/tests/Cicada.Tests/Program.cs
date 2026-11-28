@@ -2848,6 +2848,34 @@ static class Tests
         Check(AIProvider.Ling.Clones && !AIProvider.ZenMux.Clones && !AIProvider.OpenRouter.Clones && !AIProvider.Custom.Clones, "only Ling clones");
     }
 
+    public static async Task AnEmptyVoiceReplyIsTriedAgain()
+    {
+        var old = LingClient.Spacing; LingClient.Spacing = 0;
+        try
+        {
+            // Ling's 200 with an error event and no audio, then a real one.
+            int n = 0;
+            var flaky = new Service((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(n++ == 0 ? "data: {\"error\":{\"message\":\"busy\"}}\n\n" : "data: {\"audio\":\"AQACAA==\"}\n\ndata: {\"type\":\"speech.audio.done\"}\n\n", System.Text.Encoding.UTF8, "text/event-stream"),
+            });
+            var (ling, s) = Using(flaky, "ling");
+            s.SpeakVoices["ja"] = "ming:UK_George";
+            var voice = new NoVoice();
+            var engine = new SpeakEngine(ling, new Translator(ling), new SessionStore(), s, () => "ja", () => null, voice);
+            Check(await engine.Voice("はい", "ja", new Sink()), "spoken");
+            Equal(("ming", 2, 0), (engine.LastVoice, flaky.Sent.Count, voice.Calls), "by Ming on the second try, Windows not asked");
+            // Never any audio: two tries, then Windows' voice.
+            var empty = new Service((_, _) => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("data: {\"type\":\"speech.audio.done\"}\n\n", System.Text.Encoding.UTF8, "text/event-stream") });
+            var (ling2, s2) = Using(empty, "ling");
+            s2.SpeakVoices["ja"] = "ming:UK_George";
+            var engine2 = new SpeakEngine(ling2, new Translator(ling2), new SessionStore(), s2, () => "ja", () => null, voice);
+            Check(await engine2.Voice("はい", "ja", new Sink()), "still spoken");
+            Equal(("system", 2), (engine2.LastVoice, empty.Sent.Count), "Windows after two empty replies");
+        }
+        finally { LingClient.Spacing = old; }
+    }
+
     public static async Task SpeaksInTheOwnVoiceAndFallsBackToWindows()
     {
         var old = LingClient.Spacing; LingClient.Spacing = 0;

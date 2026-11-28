@@ -219,16 +219,26 @@ public sealed class SpeakEngine
         if ((id.StartsWith(prefix) || reference is not null) && ling.Speaks)
         {
             int chunks = 0;
-            try
+            var voice = reference is null ? id[prefix.Length..] : null;
+            // Ling now and then answers a short line with no audio: one more try before Windows' voice,
+            // which may not have the language at all. A refused key or a 429 won't change in a second,
+            // and a timeout already kept the room waiting 20 s.
+            for (int attempt = 1; attempt <= 2 && chunks == 0; attempt++)
             {
-                var voice = reference is null ? id[prefix.Length..] : null;
-                await foreach (var pcm in ling.Speech(text, voice, config.IsLing ? VoiceCatalog.MingLanguage(language) : null, reference))
+                try
                 {
-                    if (chunks++ == 0) sink.Begin(24000);
-                    sink.Write(pcm);
+                    await foreach (var pcm in ling.Speech(text, voice, config.IsLing ? VoiceCatalog.MingLanguage(language) : null, reference))
+                    {
+                        if (chunks++ == 0) sink.Begin(24000);
+                        sink.Write(pcm);
+                    }
+                }
+                catch (LingException e)
+                {
+                    Log.Debug($"speak: {config.Provider.Id} {(reference is null ? "voice" : "cloned voice")} failed {e.Message} (try {attempt})");
+                    if (chunks > 0 || e.Failure is LingException.Kind.InvalidKey or LingException.Kind.NoKey or LingException.Kind.RateLimited or LingException.Kind.Timeout) break;
                 }
             }
-            catch (LingException e) { Log.Debug($"speak: {config.Provider.Id} {(reference is null ? "voice" : "cloned voice")} failed {e.Message}"); }
             ling.VoiceSpoke(chunks > 0);
             if (chunks > 0) { await sink.End(); LastVoice = reference is not null ? "clone" : config.IsLing ? "ming" : "cloud"; return true; }
         }
