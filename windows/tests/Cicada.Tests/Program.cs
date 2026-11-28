@@ -1048,6 +1048,24 @@ static class Tests
         finally { Strings.Load(res, "zh-Hans"); }
     }
 
+    public static void SpeaksSpanish()
+    {
+        var res = Path.Combine(AppContext.BaseDirectory, "Resources");
+        try
+        {
+            Strings.Load(res, "es-MX");
+            Equal("es", Strings.Language, "a Spanish system gets Spanish");
+            Equal("Instalar Cicada", Strings.L("安装知了"), "the installer's own text");
+            Equal("Notas en vivo", Strings.L("实时纪要"), "the Mac's shared text");
+            Equal("1 línea", Strings.LF("%lld 句", 1), "singular");
+            Equal("3 líneas", Strings.LF("%lld 句", 3), "plural");
+            Check(Strings.UiLanguages.Any(l => l.Code == "es"), "Español is in the picker");
+            Strings.Load(res, "fr-FR");
+            Equal("zh-Hans", Strings.Language, "other languages still open in Chinese, with the picker to switch");
+        }
+        finally { Strings.Load(res, "zh-Hans"); }
+    }
+
     public static void LoadsTheMacsTranslations()
     {
         Strings.Load(Path.Combine(AppContext.BaseDirectory, "Resources"), "en");

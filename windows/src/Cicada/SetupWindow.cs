@@ -39,7 +39,7 @@ sealed class SetupWindow : Window
     {
         this.mode = mode;
         this.from = from;
-        Title = mode == Mode.Uninstall ? L("卸载知了") : L("安装知了");
+        Retitle();
         Width = mode == Mode.Uninstall ? 520 : 600; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.CanMinimize;
         Background = Palette.Page; FontFamily = Palette.Font; Icon = AppIcon.Image;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -58,6 +58,27 @@ sealed class SetupWindow : Window
     }
 
     void Render() => body.Content = mode == Mode.Uninstall ? UninstallPage() : InstallPage();
+
+    void Retitle() => Title = mode == Mode.Uninstall ? L("卸载知了") : L("安装知了");
+
+    FrameworkElement LanguagePicker()
+    {
+        var choice = Ui.Choice(Strings.UiLanguages, Strings.Language, code =>
+        {
+            var settings = AppSettings.Load();
+            settings.UiLanguage = code;
+            settings.Save();
+            Strings.Load(Bundled.Strings, code);
+            Log.Debug($"setup: language {code}");
+            Retitle();
+            Render();
+        }, width: 140);
+        var row = Ui.Row(8, Ui.Icon(Icons.Globe, 16, Palette.Secondary), choice);
+        row.HorizontalAlignment = HorizontalAlignment.Right;
+        row.VerticalAlignment = VerticalAlignment.Top;
+        System.Windows.Automation.AutomationProperties.SetName(choice, "Language / 语言 / Idioma");
+        return row;
+    }
 
     FrameworkElement InstallPage()
     {
@@ -176,10 +197,13 @@ sealed class SetupWindow : Window
         return dock;
     }
 
-    static FrameworkElement Page(string title, string text, UIElement? card, FrameworkElement? footer, bool logo = true)
+    FrameworkElement Page(string title, string text, UIElement? card, FrameworkElement? footer, bool logo = true)
     {
         var s = new StackPanel { Margin = new Thickness(40, 36, 40, 32) };
-        if (logo) { var icon = AppIcon.Small(48); icon.HorizontalAlignment = HorizontalAlignment.Left; icon.Margin = new Thickness(0, 0, 0, 18); s.Children.Add(icon); }
+        var top = new Grid { Margin = new Thickness(0, 0, 0, 18) };
+        if (logo) { var icon = AppIcon.Small(48); icon.HorizontalAlignment = HorizontalAlignment.Left; top.Children.Add(icon); }
+        if (phase != Phase.Working) top.Children.Add(LanguagePicker());
+        if (top.Children.Count > 0) s.Children.Add(top);
         s.Children.Add(Ui.Text(title, 26, Palette.Ink, FontWeights.Bold));
         var p = Ui.Text(text, 14, Palette.Secondary);
         p.Margin = new Thickness(0, 8, 0, 0); p.LineHeight = 22;

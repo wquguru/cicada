@@ -11,7 +11,7 @@ def table(path):
     if not path.exists(): return {}
     return dict(re.findall(r'^"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)";', path.read_text(encoding="utf-8"), re.M))
 missing_any = False
-for lang in ["en", "ja", "ko"]:
+for lang in ["en", "es", "ja", "ko"]:
     have = table(root / f"Resources/{lang}.lproj/Localizable.strings") | table(win / f"src/Cicada/Strings/{lang}.lproj/Windows.strings")
     missing = [k for k in keys if k not in have]
     if missing:
