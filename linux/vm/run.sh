@@ -1,9 +1,4 @@
 #!/bin/bash
-# Runs the Ubuntu 24.04 arm64 desktop test VM under QEMU (HVF), headless: VNC on :2, the QEMU
-# monitor on $VM/monitor.sock (screendump works whatever the compositor allows), SSH on
-# localhost:2223. First run builds the disk from the cloud image and cloud-init installs a GNOME
-# desktop with auto-login, so the app runs in a real session.
-#   VM=~/VMs/cicada-ubuntu linux/vm/run.sh        # needs noble-arm64.img and vm_key in $VM
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 VM="${VM:-$HOME/VMs/cicada-ubuntu}"
@@ -19,8 +14,6 @@ if [ ! -f disk.qcow2 ]; then
   rm -f seed.iso && hdiutil makehybrid -quiet -iso -joliet -default-volume-name cidata -o seed.iso seed
 fi
 
-# A real (if silent) sound card, so PipeWire makes a proper sink whose monitor we capture. Virtio:
-# the guest froze loading snd-hda-intel for the emulated Intel HDA under HVF.
 qemu-system-aarch64 \
   -name cicada-ubuntu -machine virt,highmem=on -accel hvf -cpu host -smp 4 -m 6G \
   -drive if=pflash,format=raw,readonly=on,file="$share/edk2-aarch64-code.fd" \

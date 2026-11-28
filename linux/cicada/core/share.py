@@ -1,16 +1,3 @@
-"""A meeting shared as a link on cicada.indaloop.app: the Mac's ShareProjection.swift and
-ShareClient.swift. Three parts:
-
-- `doc`: the share document (v1), made from a record. Only whitelisted fields leave the computer:
-  never the record's file paths, Ling's guesses at names with the lines they came from, or its own
-  bookkeeping. Speakers are 说话人 N unless the user chose to show names. Same bytes as the Mac
-  (Tests/fixtures/share); the server (server/src/doc.js) reads exactly these fields.
-- `ShareStore`: what this computer keeps about each link (Shares/<record id>.json, 0600 in a 0700
-  folder): the manage token and password live only there, never in the record, exports or logs.
-- `ShareClient`: no accounts. This computer is an Ed25519 key made on first use (share-device.json,
-  0600), registered once with a small proof of work; every write is signed (method, path, time,
-  nonce, body hash), as server/src/auth.js checks. Not an AI call, so not LingClient: the review
-  runs on the server."""
 from __future__ import annotations
 
 import base64
@@ -32,11 +19,8 @@ BASE = "https://cicada.indaloop.app"
 ITERATIONS = 210_000
 DAYS = (7, 30, 365)
 
-# The document
-
 
 def _round(t: float) -> float:
-    """One decimal, half away from zero (Swift's .rounded(), not Python's banker's round)."""
     x = t * 10
     r = math.floor(abs(x) + 0.5)
     return math.copysign(r, x) / 10
@@ -47,7 +31,6 @@ def _base(code: str) -> str:
 
 
 def languages(lines) -> list:
-    """The meeting's usual direction ("en" → "zh"), by the most lines; ties go to the earliest."""
     count, first = {}, {}
     for i, l in enumerate(lines):
         if l.dst is None:
@@ -62,14 +45,12 @@ def languages(lines) -> list:
 
 
 def kept_lines(s, scope: str, removed=()) -> list:
-    """The record's line indices that go out, in order: what the server's line numbers count."""
     if scope != "full":
         return []
     return [i for i, l in enumerate(s.lines) if i not in removed and l.src]
 
 
 def doc(s, scope: str, names: bool, removed=frozenset(), drop_notes: bool = False) -> dict:
-    """`removed`: indices into the record's lines the user took out; `drop_notes` leaves the notes out."""
     from .session_store import display_title
     nums = speakers.numbers(s.lines)
     name_map = speakers.names(s) if names else {}
@@ -120,7 +101,6 @@ def _round_whole(x: float) -> float:
 
 
 def _plain(v):
-    """Whole doubles as integers (605, not 605.0), as Swift's encoder writes them."""
     if isinstance(v, float) and v == int(v) and abs(v) < 1e15:
         return int(v)
     if isinstance(v, dict):
@@ -131,16 +111,11 @@ def _plain(v):
 
 
 def encode(d: dict) -> bytes:
-    """Compact, sorted keys, slashes and non-ASCII as they are: the Mac's [.sortedKeys, .withoutEscapingSlashes]."""
     return json.dumps(_plain(d), sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
-# Review hits
-
 
 def record_lines(hits: list, kept: list) -> set:
-    """The record's line indices behind the review's hits ({part, from, to, questions}), given which
-    record lines were sent (`kept`)."""
     out = set()
     for h in hits:
         if h.get("part") != "lines":
@@ -163,7 +138,6 @@ def category(q: str) -> str:
 
 
 def message(code: str) -> str:
-    """What a failed share says, by the server's code (ShareSheet.message)."""
     if code in ("rate_limited", "too_many_shares"):
         return L("分享得太频繁了，请稍后再试。")
     return L({"review_unavailable": "敏感内容检查暂时不可用，没有检查就不会分享。请稍后再试。",
@@ -173,23 +147,17 @@ def message(code: str) -> str:
 
 
 def summary(password: bool, days: int, names: bool) -> str:
-    """The settings already chosen, in one line (无密码 · 7 天有效 · 不显示名字); 更改 opens them."""
     return " · ".join((L("密码保护") if password else L("无密码"),
                        L("1 年有效") if days == 365 else LF("%lld 天有效", days),
                        L("显示名字") if names else L("不显示名字")))
 
 
 def clipboard_text(r: "ShareRecord", title: str, now: float | None = None) -> str:
-    """What 复制 puts on the clipboard, in the UI's language (ShareSheet.clipboardText): the title,
-    the link on a line of its own (chat apps then make it a link), the password and how long it
-    stays open."""
     left = r.days_left(now)
     valid = L("1 年内有效") if left >= 365 else LF("%lld 天内有效", left)
     last = LF("密码：%@（%@）", r.password, valid) if r.password else valid
     return "\n".join((LF("「%@」会议记录", title), r.url, last))
 
-
-# Passwords
 
 _WORDS = ("amber apple arrow aspen basil beach birch bloom brook cedar cherry cloud coral comet dawn delta dune ember fern "
           "field flint frost grove harbor hazel honey iris island jade lake lark lemon lily linen maple meadow mint moss "
@@ -198,13 +166,10 @@ _WORDS = ("amber apple arrow aspen basil beach birch bloom brook cedar cherry cl
 
 
 def verifier(password: str, salt: bytes, iterations: int = ITERATIONS) -> bytes:
-    """PBKDF2-SHA256, 32 bytes: what the browser derives from the password (site/share.js). The
-    server keeps only its hash, so the password itself never leaves either side."""
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations, 32)
 
 
 def make_password() -> str:
-    """"ruby-41-lake": easy to read out and type; the server limits how many can be tried."""
     return "%s-%d-%s" % (secrets.choice(_WORDS), 10 + secrets.randbelow(90), secrets.choice(_WORDS))
 
 
@@ -216,11 +181,8 @@ def unb64(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-# Local storage
-
 
 def write_secret(path: str, data: bytes) -> bool:
-    """A file only this user can read, created 0600 from the start in a 0700 folder."""
     try:
         os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -234,8 +196,6 @@ def write_secret(path: str, data: bytes) -> bool:
 
 
 class ShareRecord:
-    """A link this computer made: `expiresAt` and `createdAt` are Unix seconds."""
-
     def __init__(self, id: str, url: str, token: str, expiresAt: float, scope: str, password: str | None, createdAt: float):
         self.id, self.url, self.token, self.expiresAt = id, url, token, expiresAt
         self.scope, self.password, self.createdAt = scope, password, createdAt
@@ -258,7 +218,6 @@ class ShareRecord:
             return None
 
     def days_left(self, now: float | None = None) -> int:
-        # The server sets the expiry by its own clock: an hour's slack keeps a fresh 7-day link at 7.
         return max(1, math.ceil((self.expiresAt - (time.time() if now is None else now) - 3600) / 86400))
 
 
@@ -268,8 +227,6 @@ def _utc(t: float):
 
 
 class ShareStore:
-    """Shares/<record id>.json, 0600 in a 0700 folder, beside the records' folder."""
-
     @staticmethod
     def folder() -> str:
         return os.path.join(Paths.data(), "Shares")
@@ -313,12 +270,8 @@ class ShareStore:
         return out
 
 
-# The client
-
 
 def proof_of_work(pub: bytes) -> bytes:
-    """20 leading zero bits of sha256(public key ‖ 8-byte big-endian nonce): about a million
-    hashes, a few seconds in Python. Run it off the main loop."""
     head = hashlib.sha256(pub)
     n = 0
     while True:
@@ -338,8 +291,6 @@ class Failure(Exception):
 
 
 class Outcome:
-    """"shared" (record), "blocked" (hits, kept: the record lines sent) or "failed" (code)."""
-
     def __init__(self, kind: str, record: ShareRecord | None = None, hits=None, kept=None, code: str | None = None,
                  retry_after: int | None = None):
         self.kind, self.record, self.hits, self.kept, self.code, self.retry_after = kind, record, hits or [], kept or [], code, retry_after
@@ -354,7 +305,6 @@ def _version() -> str:
 
 
 def http(method: str, url: str, body: bytes | None, headers: dict, timeout: float = 90) -> tuple:
-    """(status, body bytes) through this computer's proxy; a refused status is an answer, not an error."""
     req = urllib.request.Request(url, data=body, method=method, headers=headers)
     try:
         with proxy.urlopen(req, timeout=timeout) as r:
@@ -384,9 +334,6 @@ class Options:
 
 
 class ShareClient:
-    """Blocking calls: run them on a worker thread. `transport(method, url, body, headers)` →
-    (status, bytes); tests pass a fake. CICADA_SHARE_SERVER points a dev build at a local Worker."""
-
     def __init__(self, transport=http, base: str | None = None, platform: str = "linux", version: str | None = None):
         self.transport = transport
         self.base = (base or os.environ.get("CICADA_SHARE_SERVER") or BASE).rstrip("/")
@@ -415,7 +362,6 @@ class ShareClient:
         write_secret(self.device_file(), json.dumps(o, sort_keys=True).encode())
 
     def device(self, force: bool = False) -> tuple:
-        """(private key seed, device id), registering this computer with the server first if needed."""
         seed, o = self._load()
         if not force and o.get("device") and o.get("server") == self.base:
             return seed, o["device"]
@@ -450,7 +396,6 @@ class ShareClient:
         return self.transport(method, self.base + path, body, h)
 
     def signed(self, method: str, path: str, body: bytes | None = None, headers: dict | None = None) -> tuple:
-        """A signed call; registers again once if the server no longer knows this computer."""
         signer = self.device()
         status, data = self._send(method, path, body, headers or {}, signer)
         if status == 401 and _code(data) == "unknown_device":
@@ -467,8 +412,6 @@ class ShareClient:
             v = verifier(o.password, salt)
             body["password"] = {"salt": b64url(salt), "iter": ITERATIONS, "hash": b64url(hashlib.sha256(v).digest())}
         data = json.dumps(_plain(body), ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        # The same meeting, content and settings sent again (the answer was lost) gets the same link
-        # back; any other setting makes a new share.
         settings = "%s|%d|%s|%s|%s" % (o.scope, o.days, _b(o.names), o.password or "", _b(o.summary_in_preview))
         idem = s.id + "-" + hashlib.sha256(encode(d) + settings.encode("utf-8")).digest()[:8].hex()
         try:
@@ -503,12 +446,10 @@ class ShareClient:
                        retry_after=obj.get("retryAfter") if isinstance(obj.get("retryAfter"), int) else None)
 
     def revoke(self, r: ShareRecord, sid: str | None) -> bool:
-        """Turns the link off on the server and forgets it here. `sid` None: the record is being replaced."""
         try:
             status, data = self.signed("DELETE", "/api/v1/shares/" + r.id, None, {"Authorization": "Bearer " + r.token})
         except Failure:
             return False
-        # 404: already gone (or never ours); either way nothing to keep.
         ok = status in (204, 404)
         if not ok:
             Log.d("share: revoke failed %d %s" % (status, _code(data) or "?"))
@@ -517,7 +458,6 @@ class ShareClient:
         return ok
 
     def stats(self, ids: list) -> dict:
-        """id → {id, expiresAt, state, views} for this computer's links among `ids`."""
         if not ids:
             return {}
         try:

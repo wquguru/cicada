@@ -1,8 +1,3 @@
-"""Ed25519 signatures (RFC 8032), for the share service's device key (share.py). Python's standard
-library has none, Ubuntu desktop's libsodium isn't always there, and the Mac's stub libcrypto
-aborts when loaded, so this is the RFC's reference algorithm in plain Python: extended twisted
-Edwards coordinates, a few milliseconds a signature. Not constant-time; the key only names this computer
-to the share service (rate limits, owning its links), and each link also needs its own token."""
 from __future__ import annotations
 
 import hashlib
@@ -29,7 +24,7 @@ def _add(p, q):
 
 
 def _mul(s: int, p):
-    q = (0, 1, 1, 0)  # the neutral point
+    q = (0, 1, 1, 0)
     while s > 0:
         if s & 1:
             q = _add(q, p)

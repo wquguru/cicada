@@ -1,7 +1,3 @@
-"""词表: the spellings the user stands behind, and how speech recognition has misheard each (the Mac's
-Vocabulary.swift). Only these let a new name be fixed without asking: names the notes guess are often
-wrong, so they stay suggestions until the user confirms one. One JSON file beside the records
-(vocabulary.json, the Mac's format); not a secret, so not one of the 0600 key files. Thread-safe."""
 from __future__ import annotations
 
 import os
@@ -14,7 +10,6 @@ from . import correction, jsonfmt
 from .models import iso_read, iso_write, now
 from .support import Log, Paths
 
-# More would make every sentence's request long, and more terms means more wrong swaps.
 LIMIT = 300
 _SEPARATORS = "、,，;；"
 
@@ -22,8 +17,8 @@ _SEPARATORS = "、,，;；"
 @dataclass
 class Term:
     word: str
-    heard: list = field(default_factory=list)  # wrong forms the recognizer produced, confirmed or typed by the user
-    source: str = "user"  # "user" (added or imported), "live" (confirmed during a meeting)
+    heard: list = field(default_factory=list)
+    source: str = "user"
     fixes: int = 0
     used: datetime | None = None
 
@@ -51,7 +46,6 @@ class ImportResult:
 
 
 def key(s: str) -> str:
-    """Same word whatever its width, case or spacing ("ＡＡＶＥ" is "aave")."""
     return " ".join(unicodedata.normalize("NFKC", s).lower().split())
 
 
@@ -64,10 +58,6 @@ def _edge(c: str) -> bool:
 
 
 def learnable(heard: str, word: str):
-    """What a fix can teach the list, or None (Vocabulary.swift's learnable): both sides trimmed of
-    spaces and punctuation, no punctuation inside, short, and a real swap. An edit that only adds or
-    drops words around the heard ones ("我来" → "OK我来") or ends on a full stop ("持。" → "讲。")
-    teaches nothing."""
     def trim(s: str) -> str:
         a, b = 0, len(s)
         while a < b and _edge(s[a]):
@@ -87,8 +77,6 @@ def default_path() -> str:
 
 
 def parse(text: str) -> list:
-    """粘贴导入: one per line, heard forms after "=" ("Morpho = 莫拉、莫法"). Each non-empty line as
-    (line number, word, heard); a word too long or with control characters comes back as "" (skipped)."""
     out = []
     for i, raw in enumerate(text.splitlines()):
         line = raw.strip()
@@ -142,9 +130,6 @@ class Vocabulary:
             return any(key(t.word) == w and any(key(x) == h for x in t.heard) for t in self.terms)
 
     def confirm(self, heard: str, word: str, source: str = "live") -> None:
-        """The user said yes to a fix (or added it): the word, and the form it was heard as. A pair
-        that isn't a word for a word (`learnable`) adds nothing. A yes in a meeting never teaches a
-        translation (平台 → platform): it would rewrite that word everywhere after."""
         if heard:
             pair = learnable(heard, word)
             if pair is None or (source != "user" and correction.translation(*pair)):
@@ -160,7 +145,6 @@ class Vocabulary:
         self._save()
 
     def forget(self, heard: str, word: str) -> None:
-        """A heard form the user turned down twice (or took off in 词表) stops being one."""
         with self._gate:
             i = self._find(word)
             if i is None:
@@ -169,7 +153,6 @@ class Vocabulary:
         self._save()
 
     def rename(self, word: str, new: str) -> None:
-        """词表 › click a word: its spelling changes; what it was heard as stays with it."""
         n = new.strip()
         with self._gate:
             i = self._find(word)
@@ -177,7 +160,6 @@ class Vocabulary:
                 return
             j = self._find(n)
             if j is not None and j != i:
-                # Renamed onto a word already there: the two become one.
                 for h in self.terms[i].heard:
                     if not any(key(x) == key(h) for x in self.terms[j].heard):
                         self.terms[j].heard.append(h)
@@ -187,13 +169,11 @@ class Vocabulary:
         self._save()
 
     def owners(self, heard: str, except_word: str | None = None) -> list:
-        """The other words a heard form already belongs to ("莫拉" is Morpho's)."""
         with self._gate:
             return [t.word for t in self.terms if any(key(x) == key(heard) for x in t.heard)
                     and key(t.word) != key(except_word or "")]
 
     def insert(self, term: Term, index: int) -> None:
-        """Back where it was, after 撤销 on a delete."""
         with self._gate:
             if self._find(term.word) is not None:
                 return
@@ -201,7 +181,6 @@ class Vocabulary:
         self._save()
 
     def restore(self, saved: list) -> None:
-        """撤销: the list as it was."""
         with self._gate:
             if saved == self.terms:
                 return
@@ -223,14 +202,12 @@ class Vocabulary:
         self._save()
 
     def prompt_lines(self) -> list:
-        """For the request: the most recently useful first, "Morpho (heard as 莫拉, 莫法)"."""
         oldest = datetime.min.replace(tzinfo=now().tzinfo)
         with self._gate:
             ts = sorted(self.terms, key=lambda t: t.used or oldest, reverse=True)[:LIMIT]
             return [t.word if not t.heard else "%s (heard as %s)" % (t.word, ", ".join(t.heard)) for t in ts]
 
     def preview(self, text: str) -> ImportResult:
-        """What 粘贴导入 would do, before it does it (the sheet's counts and its button)."""
         r = ImportResult()
         seen = set()
         with self._gate:
@@ -271,8 +248,6 @@ class Vocabulary:
         if not self.path:
             return
         with self._gate:
-            # The Mac writes this file without escaping slashes (.withoutEscapingSlashes); an escaped
-            # slash is always "\/" here, after an even run of backslashes, so the swap is exact.
             text = jsonfmt.write([t.to_json() for t in self.terms]).replace("\\/", "/")
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)

@@ -1,13 +1,9 @@
-"""会议室: listening to the people in the room through a real microphone instead of what the computer
-plays (the Mac's RoomMic.swift). Pure: which microphone, and when a block of it counts as speech.
-The capture itself is app/capture.py's SystemAudio on a source instead of a monitor."""
 from __future__ import annotations
 
 import threading
 
 from .support import Log
 
-# Sources Cicada makes itself (app/room.py's 知了 麦克风), never a room microphone.
 OURS = ("cicada_mic",)
 
 
@@ -26,8 +22,6 @@ class Input:
 
 
 def parse_sources(text: str) -> list:
-    """The inputs in `LC_ALL=C pactl list sources`. A monitor of an output, a source a module made
-    (no device.api: 知了 麦克风, an echo canceller, a remap) or one of ours is virtual: it hears no room."""
     out = []
     block: dict = {}
     props: dict = {}
@@ -61,10 +55,6 @@ def parse_sources(text: str) -> list:
 
 
 def pick(default: str | None, inputs: list, chosen: str = "") -> str | None:
-    """The microphone that hears the room (RoomMicPlan.pick): the one chosen in 设置 › 会议室 while it
-    is there; else the default input, unless it is virtual (同声传译 makes 知了 麦克风 the default) or a
-    Bluetooth headset's (it hears the wearer, not the table, and drops to call quality while open);
-    then the computer's own microphone, then any real one."""
     real = [i for i in inputs if not i.virtual]
     if chosen and any(i.name == chosen for i in real):
         return chosen
@@ -79,11 +69,6 @@ def pick(default: str | None, inputs: list, chosen: str = "") -> str | None:
 
 
 class VoiceGate:
-    """When a block of audio counts as speech (the Mac's VoiceGate). The computer's own audio is
-    digital silence between words, so a fixed -40 dBFS works there. A room mic always hears the room
-    (a fan, the street), and a voice across the table can be quieter than -40 dBFS: there the line
-    sits at twice the room's own noise. The noise is the quietest moment of each second (the gaps
-    between words, even while people talk on and on), taken low over the last half minute."""
     fixed = 0.01
     lowest = 0.0015
 
@@ -117,11 +102,7 @@ class VoiceGate:
         return on
 
 
-# 电脑和会议室: the computer's audio and the room microphone at once, each heard on its own.
-
 def heard_both(lines) -> bool:
-    """The room mic and the computer's audio both brought in the other side's lines, so each one says
-    where it was heard (the Mac's RecordList.heardBoth). Read from the lines, not stored."""
     room = online = False
     for l in lines:
         if l.speaker != "them":
@@ -136,7 +117,6 @@ def heard_both(lines) -> bool:
 
 
 def place_starts(lines) -> set:
-    """Lines of the other side's where the place changes from the line before: their label shows again."""
     out, last, first = set(), None, True
     for l in lines:
         key = "me" if l.speaker == "me" else l.via
@@ -147,26 +127,14 @@ def place_starts(lines) -> set:
 
 
 class EchoGate:
-    """打开麦克风 while the computer plays a meeting, without the sound server's echo cancellation: the
-    room mic hears the remote voices again from the speakers (the Mac's EchoGate, same rules). The
-    room mic hears silence while the computer plays speech, until `hang` after it, but only when
-    that is needed and only for speech:
-
-    - Echo is measured: the room mic's loud end while the computer is loud over its floor while the
-      computer is quiet. Headphones or a meeting mic leave it where it was, and then nothing is
-      silenced, so people at the table are heard over a remote speaker too. Until there is enough
-      to tell (and whenever it is unclear) the speakers are taken to echo.
-    - Music isn't speech: a loud stretch the computer's side has recognized no words in for `music`
-      seconds stops closing the gate; words close it again. Longer than the Mac's 4 s: here words
-      only come back after a whole segment has gone to the service."""
     hang = 0.4
     music = 20.0
     stretch_gap = 1.5
-    during = 0.15      # computer audio this recent makes a room block "during"
-    quiet_after = 1.0  # …this long ago, "the computer is quiet"
-    echo_ratio = 3.0   # at or over: echo; under clear_ratio: none
+    during = 0.15
+    quiet_after = 1.0
+    echo_ratio = 3.0
     clear_ratio = 2.0
-    enough = 3.0       # seconds of each a decision needs
+    enough = 3.0
     window = 20.0
 
     def __init__(self):
@@ -175,10 +143,10 @@ class EchoGate:
         self._last_loud = float("-inf")
         self._stretch_start = float("-inf")
         self._last_words = float("-inf")
-        self._during: list = []  # (t, rms, seconds) while the computer is loud
+        self._during: list = []
         self._quiet: list = []
         self._echo = True
-        self.forced = None  # debug (roomEchoSim): pretend the measurement says this
+        self.forced = None
 
     @property
     def echo(self) -> bool:
@@ -194,7 +162,6 @@ class EchoGate:
             return self._music(now)
 
     def hold(self, now: float) -> None:
-        """A loud block of the computer's audio."""
         with self._lock:
             if now - self._last_loud > self.stretch_gap:
                 self._stretch_start = now
@@ -213,7 +180,6 @@ class EchoGate:
             return now < self._until
 
     def room_level(self, rms: float, seconds: float, now: float) -> None:
-        """A block of what the room mic heard, before any silencing."""
         with self._lock:
             since = now - self._last_loud
             if since <= self.during:
@@ -239,9 +205,6 @@ class EchoGate:
 
     @classmethod
     def ratio(cls, during: list, quiet: list):
-        """The room mic's loud end (a fifth of it louder) while the computer is loud over its floor
-        (the quietest fifth) while it is quiet, or None without `enough` of both. People at the table
-        talking over the computer raise it too: that errs on the side of echo."""
         if sum(s for _, s in during) < cls.enough or sum(s for _, s in quiet) < cls.enough:
             return None
         d = sorted(r for r, _ in during)
@@ -257,13 +220,9 @@ class Heard:
 
 
 class EchoMatch:
-    """电脑和会议室's last line of defence against hearing an online sentence twice: once from the
-    computer's audio, once more from the speakers into the room mic (the Mac's EchoMatch). A room line
-    made mostly of what the computer played around the same time is dropped, matched by containment
-    in word pairs (characters for Chinese, Japanese and Korean)."""
-    window = 3.0     # seconds around the room line where the computer's lines count
-    hold = 2.5       # how long a room line waits for the computer's line it may echo
-    contained = 0.6  # share of the room line found in the computer's lines that makes it an echo
+    window = 3.0
+    hold = 2.5
+    contained = 0.6
 
     @classmethod
     def is_echo(cls, room: Heard, online: list) -> bool:
@@ -274,7 +233,7 @@ class EchoMatch:
         if not r:
             return False
         o = [units(x.text) for x in near]
-        if len(r) <= 2:  # a word or two ("OK", "对"): the very same words near it
+        if len(r) <= 2:
             return any(x == r for x in o)
         mine = set(_pairs(r))
         theirs = set(p for x in o for p in _pairs(x))
@@ -288,7 +247,6 @@ def _cjk(c: str) -> bool:
 
 
 def units(text: str) -> list:
-    """Lower-case words, each CJK character on its own; punctuation and spacing don't count."""
     out, word = [], ""
     for c in text.lower():
         if _cjk(c):

@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Sets the VM's monitor scale through Mutter's DisplayConfig D-Bus API (fractional scaling must be
-on: org.gnome.mutter experimental-features 'scale-monitor-framebuffer').  set_scale.py 1.25"""
 import sys
 from gi.repository import Gio, GLib
 want = float(sys.argv[1])

@@ -1,12 +1,3 @@
-"""System audio on Linux: the monitor of the default output, read through libpulse-simple (ctypes).
-PulseAudio and PipeWire (through pipewire-pulse, Ubuntu's default since 22.10) both serve it, and
-reading a monitor needs no permission. Cicada itself plays nothing while it listens, so unlike the
-Mac's process tap there is nothing of its own to leave out.
-
-Two things a meeting outlives: the default output changing (headphones plugged in, a Bluetooth
-headset connecting; PipeWire moves the stream itself, plain PulseAudio leaves it on the old device,
-so it is reopened when the default changes) and the sound server going away for a moment (suspend
-and resume, a restart; the stream is reopened for up to 20 s before listening gives up)."""
 from __future__ import annotations
 
 import ctypes
@@ -23,7 +14,7 @@ from ..core.support import Log
 
 PA_SAMPLE_S16LE = 3
 PA_STREAM_RECORD = 2
-CHUNK = RATE // 10  # 100 ms per read, like a capture callback
+CHUNK = RATE // 10
 
 
 class _Spec(ctypes.Structure):
@@ -57,7 +48,6 @@ def _pulse():
 
 
 class _ServerInfo(ctypes.Structure):
-    # pa_server_info, as far as default_source_name.
     _fields_ = [("user_name", ctypes.c_char_p), ("host_name", ctypes.c_char_p), ("server_version", ctypes.c_char_p),
                 ("server_name", ctypes.c_char_p), ("sample_spec", _Spec), ("default_sink_name", ctypes.c_char_p),
                 ("default_source_name", ctypes.c_char_p)]
@@ -91,17 +81,14 @@ def _libpulse():
 
 
 def default_sink() -> str | None:
-    """The sound server's default output, or None when it can't be asked (a few ms, blocking)."""
     return _server_info().get("sink")
 
 
 def default_source() -> str | None:
-    """The sound server's default input, or None when it can't be asked."""
     return _server_info().get("source")
 
 
 def sources_text() -> str:
-    """`pactl list sources` in English (roommic.parse_sources reads it); empty without pactl."""
     try:
         return subprocess.run(["pactl", "list", "sources"], env={**os.environ, "LC_ALL": "C"}, capture_output=True,
                               text=True, timeout=3).stdout
@@ -132,11 +119,11 @@ def _server_info() -> dict:
         while time.monotonic() < deadline:
             l.pa_mainloop_iterate(loop, 0, None)
             state = l.pa_context_get_state(ctx)
-            if state in (5, 6):  # FAILED, TERMINATED
+            if state in (5, 6):
                 return {}
-            if state == 4 and op is None:  # READY
+            if state == 4 and op is None:
                 op = l.pa_context_get_server_info(ctx, got, None)
-            if op is not None and l.pa_operation_get_state(op) != 0:  # no longer RUNNING
+            if op is not None and l.pa_operation_get_state(op) != 0:
                 l.pa_operation_unref(op)
                 break
             time.sleep(0.005)
@@ -156,9 +143,6 @@ def available() -> bool:
 
 
 class SystemAudio(AudioSource):
-    """16 kHz mono from "@DEFAULT_MONITOR@" (or a microphone, `device`): the server resamples and
-    downmixes for us. `name` is what the sound settings and GNOME's privacy menu show."""
-
     def __init__(self, device: str = "@DEFAULT_MONITOR@", name: str | None = None):
         self.device = device
         self.name = name
@@ -175,16 +159,13 @@ class SystemAudio(AudioSource):
 
     def _open(self, lib):
         spec = _Spec(PA_SAMPLE_S16LE, RATE, 1)
-        # fragsize: hand data over every 100 ms rather than in the server's default 2 s blocks.
         attr = _Attr(0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, CHUNK * 2)
         err = ctypes.c_int(0)
-        # The stream's name is what the sound settings and GNOME's privacy menu show.
         s = lib.pa_simple_new(None, b"Cicada", PA_STREAM_RECORD, self.device.encode(), (self.name or L("知了 · 系统声音")).encode(),
                               ctypes.byref(spec), None, ctypes.byref(attr), ctypes.byref(err))
         return s, (None if s else lib.strerror(err.value).decode())
 
     def _reopen(self, lib, why: str):
-        """The server went away: try again for a while (it is back within seconds after resume)."""
         deadline = time.monotonic() + 20
         while not self._stop.is_set() and time.monotonic() < deadline:
             time.sleep(1)
@@ -224,7 +205,7 @@ class SystemAudio(AudioSource):
                     sink = default_sink()
                     continue
                 reads += 1
-                if self.device == "@DEFAULT_MONITOR@" and reads % 30 == 0:  # every 3 s: did the default output change?
+                if self.device == "@DEFAULT_MONITOR@" and reads % 30 == 0:
                     now = default_sink()
                     if now and sink and now != sink:
                         Log.d("tap: default output changed, reopening")

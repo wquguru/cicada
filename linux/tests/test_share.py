@@ -1,7 +1,3 @@
-"""分享…: the share document is a contract with the server (server/src/doc.js) and the Mac, so the
-same record must give the same bytes (Tests/fixtures/share); plus the password, the Ed25519
-signatures (RFC 8032) and the client against a fake server (never the real one: production limits
-how many devices an address may register)."""
 from __future__ import annotations
 
 import hashlib
@@ -30,7 +26,6 @@ def session() -> Session:
 
 class ShareDocTests(unittest.TestCase):
     def setUp(self):
-        # Other suites switch the UI language; the document's speaker words follow it.
         strings.load("zh-Hans", [os.path.join(REPO, "Resources")])
 
     def test_fixture_bytes(self):
@@ -59,7 +54,6 @@ class ShareDocTests(unittest.TestCase):
 
     def test_speaker_numbers_without_names(self):
         s = session()
-        # Two voices with five substantive lines each get numbers; their names stay out.
         s.lines = [TranscriptLine(id="v%d" % i, t=float(i), speaker="them", src="this is line number %d" % i,
                                   dst="第 %d 句话" % i, srcLang="en", dstLang="zh", voice=3 if i % 2 == 0 else 7)
                    for i in range(10)]
@@ -68,7 +62,7 @@ class ShareDocTests(unittest.TestCase):
 
     def test_rounding_and_numbers(self):
         s = session()
-        s.lines[0].t = 0.25  # half away from zero, as Swift rounds: 0.3, not Python's 0.2
+        s.lines[0].t = 0.25
         s.lines[1].dst = s.lines[1].src
         d = share.doc(s, "full", False)
         self.assertEqual(0.3, d["lines"][0]["t"])
@@ -81,14 +75,12 @@ class ShareDocTests(unittest.TestCase):
 
     def test_password(self):
         salt = bytes([1] * 16)
-        # Same as the browser's crypto.subtle PBKDF2-SHA256, 32 bytes (server/test/api.test.mjs).
         v = share.verifier("ruby-41-lake", salt, 1000)
         self.assertEqual("eab69fcd00a0517794c156495dd76ad1fbfb036ea03df3d59a68a33519009c81", v.hex())
         self.assertNotEqual(v, share.verifier("ruby-41-laka", salt, 1000))
         self.assertEqual(3, len(share.make_password().split("-")))
 
     def test_blocked_hits_map_back(self):
-        # The server counts lines of what was sent; the app maps them back to the record.
         hits = [{"part": "lines", "from": 2, "to": 3, "questions": ["credential"]}, {"part": "notes", "questions": []}]
         self.assertEqual({4, 5}, share.record_lines(hits, [0, 1, 4, 5, 6]))
 
@@ -98,7 +90,6 @@ class ShareDocTests(unittest.TestCase):
         self.assertEqual("服务器出了问题，请稍后再试。", share.message("whatever"))
 
     def test_clipboard_message(self):
-        # One message, three lines, in the UI's language; days left round up, a year reads as a year.
         now = 1_000_000.0
         r = share.ShareRecord("a", "https://x/s/a", "t", now + 6.5 * 86400, "notes", "ruby-41-lake", now)
         self.assertEqual("「周会」会议记录\nhttps://x/s/a\n密码：ruby-41-lake（7 天内有效）", share.clipboard_text(r, "周会", now))
@@ -116,7 +107,6 @@ class ShareDocTests(unittest.TestCase):
 
 
 class Ed25519Tests(unittest.TestCase):
-    # RFC 8032 §7.1, tests 1–3: secret key, public key, message, signature.
     VECTORS = [
         ("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
          "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a", "",
@@ -139,8 +129,6 @@ class Ed25519Tests(unittest.TestCase):
 
 
 class FakeServer:
-    """server/src's contract in miniature: registration with proof of work, signed requests."""
-
     def __init__(self):
         self.keys = {}
         self.calls = []

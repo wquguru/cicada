@@ -1,8 +1,3 @@
-"""存到文件夹 on screen (the Mac's FolderExportViews.swift): 设置 › 会后存一份's card, the 存到哪里 dialog
-and the record's line under its title. The work is core/folder_export.py's.
-
-Linux has no privacy prompt (the .deb isn't sandboxed): a folder Cicada can't write is its
-permissions, so the Mac's 去系统设置 and "macOS 可能会问…" have no counterpart here."""
 from __future__ import annotations
 
 import os
@@ -16,7 +11,6 @@ from . import ui
 
 
 def open_folder(path: str) -> None:
-    """Never creates it: under a drive that isn't mounted that would be a stray folder."""
     if not os.path.isdir(path):
         return
     try:
@@ -26,7 +20,6 @@ def open_folder(path: str) -> None:
 
 
 def documents_dir() -> str:
-    """GLib's XDG documents folder; unset, it answers the home folder: then xdg-user-dir, ~/Documents."""
     d = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOCUMENTS)
     if d and os.path.normpath(d) != os.path.normpath(os.path.expanduser("~")):
         return d
@@ -34,9 +27,6 @@ def documents_dir() -> str:
 
 
 class FolderExportCard:
-    """设置 › 会后存一份. Rebuilt from a state key (as WordList is), so the window's show_all never brings
-    back a row that shouldn't show."""
-
     def __init__(self, app, group, window):
         self.app = app
         self.window = window
@@ -44,7 +34,6 @@ class FolderExportCard:
         self._key = None
         self.widget = group(L("会后存一份"), self.box)
         self.refresh()
-        # Opened again: a vault opened in Obsidian since may now hold the folder.
         window.connect("show", lambda *_: (setattr(self, "_vault_for", None), self.refresh()))
 
     def refresh(self) -> None:
@@ -61,7 +50,7 @@ class FolderExportCard:
         sw = Gtk.Switch()
         sw.set_valign(Gtk.Align.CENTER)
         sw.set_active(ex.on)
-        sw.connect("notify::active", self._toggled)  # after set_active: only the user's clicks
+        sw.connect("notify::active", self._toggled)
         rows = [ui.prow(L("存到文件夹"), sw, L("纪要和文字记录存成 Markdown；文件夹同步到哪，内容就到哪"))]
         if ex.on and folder:
             short = fx.short_path(folder)
@@ -74,12 +63,12 @@ class FolderExportCard:
             controls = ui.hbox(8)
             if key[-1]:
                 tag = ui.text(L("Obsidian 库"), 11, "", wrap=False, ellipsize=False)
-                ui.pad(tag, 1, 6)  # a margin: GTK 3 ignores CSS padding on an EventBox
+                ui.pad(tag, 1, 6)
                 t = ui.panel(tag, "foldertag")
                 t.set_valign(Gtk.Align.CENTER)
                 controls.pack_start(t, False, False, 0)
             opener = ui.soft_button(L("打开"), lambda: open_folder(folder))
-            opener.set_sensitive(key[-2])  # nothing to open while the folder is gone
+            opener.set_sensitive(key[-2])
             controls.pack_start(opener, False, False, 0)
             controls.pack_start(ui.soft_button(L("更改…"), self._choose), False, False, 0)
             sub = ui.text(short, 11, "tertiary", wrap=False)
@@ -97,7 +86,6 @@ class FolderExportCard:
         self.box.show_all()
 
     def _vault(self, folder):
-        """Obsidian 库 or not, read once per folder: refresh runs on every change, meetings included."""
         if not folder:
             return None
         if getattr(self, "_vault_for", None) != folder:
@@ -108,7 +96,6 @@ class FolderExportCard:
         waiting = len(ex.index.pending)
         if ex.problem == fx.DENIED:
             title = LF("没有权限写入 %@", short)
-            # Linux asks no one: the folder's own permissions are what to change.
             detail = LF("%lld 场会议没存上，允许后自动补存", waiting) if waiting else L("改一下这个文件夹的权限，或换个文件夹")
         elif ex.problem == fx.MISSING:
             title, detail = LF("找不到 %@", short), L("接上或换个文件夹后自动补存")
@@ -124,7 +111,6 @@ class FolderExportCard:
         elif ex.folder:
             ex.choose(ex.folder)
         else:
-            # Not inside the switch's own signal: the dialog's refresh replaces the switch.
             GLib.idle_add(lambda: self._choose() and False)
 
     def _choose(self) -> None:
@@ -132,13 +118,11 @@ class FolderExportCard:
         if picked:
             self.app.folder_export.choose(picked)
         else:
-            self._key = None  # the switch flipped on for a dialog that was cancelled: back off
+            self._key = None
             self.refresh()
 
 
 def choose_folder(parent, current: str | None) -> str | None:
-    """存到哪里: an Obsidian vault first (a new Cicada folder in it), then Documents › Cicada, or any
-    folder through the system's folder dialog."""
     options = [(LF("Obsidian 库「%@」", os.path.basename(v)), L("在库里新建 Cicada 文件夹"), os.path.join(v, "Cicada"))
                for v in fx.all_vaults()[:3]]
     docs = documents_dir()
@@ -147,18 +131,17 @@ def choose_folder(parent, current: str | None) -> str | None:
     d = Gtk.Dialog(transient_for=parent, modal=True)
     d.set_title(L("存到哪里"))
     d.set_resizable(False)
-    # The app's flat bar with only ×, not Yaru's dark one repeating the heading (the Mac's is a sheet).
     bar = Gtk.HeaderBar()
     bar.set_show_close_button(True)
     bar.set_decoration_layout(":close")
-    bar.set_custom_title(Gtk.Box())  # the heading below says it once
+    bar.set_custom_title(Gtk.Box())
     ui.classes(bar, "cicada")
     d.set_titlebar(bar)
     ui.classes(d, "sheet")
     area = d.get_content_area()
     ui.classes(area, "sheet")
     body = ui.vbox(14, ui.text(L("存到哪里"), 15, "heading", bold=True, wrap=False))
-    ui.pad(body, 0, 20, 20, 20)  # the bar above is the top margin
+    ui.pad(body, 0, 20, 20, 20)
     body.set_size_request(380, -1)
     picks = ui.vbox(8)
     body.pack_start(picks, False, False, 0)
@@ -214,7 +197,6 @@ def choose_folder(parent, current: str | None) -> str | None:
 
 
 def line_key(app, s):
-    """What the record's line says, so it is rebuilt only when that changes."""
     ex = app.folder_export
     if not (ex.on and ex.folder and ex.ready(s)):
         return None
@@ -223,7 +205,6 @@ def line_key(app, s):
 
 
 def record_line(app, s, show_in_folder):
-    """Under the record's title: where its file is, or why it isn't there yet. None: nothing to say."""
     key = line_key(app, s)
     if key is None:
         return None

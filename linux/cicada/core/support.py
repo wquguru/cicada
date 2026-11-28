@@ -1,4 +1,3 @@
-"""Paths, the debug log and languages."""
 from __future__ import annotations
 
 import os
@@ -9,9 +8,6 @@ from datetime import datetime
 
 
 class Paths:
-    """Where the app keeps its files, by the XDG rules: records in ~/.local/share/cicada, settings
-    and the Ling key in ~/.config/cicada. Dev builds use "cicada-dev" so they never touch real
-    records. Tests and the CLI point everything at one folder with CICADA_HOME."""
     dev = os.environ.get("CICADA_DEV") == "1"
     home_override: str | None = None
 
@@ -49,14 +45,12 @@ class Paths:
 
     @classmethod
     def key_file(cls, service: str = "ling") -> str:
-        """One key file per AI service, named as on the Mac."""
         return os.path.join(cls.config(), "ling-api-key" if service == "ling" else "ai-key-" + service)
 
     log_override: str | None = None
 
     @classmethod
     def log(cls) -> str:
-        """~/.local/state/cicada/debug.log (XDG state, private to the user), not a shared /tmp file."""
         if cls.log_override:
             return cls.log_override
         h = cls._home()
@@ -72,7 +66,6 @@ class Paths:
 
 
 class Log:
-    """The debug log: timings and states, never meeting text or the key."""
     _gate = threading.Lock()
     echo = False
 
@@ -89,7 +82,6 @@ class Log:
                 print(line, file=sys.stderr)
 
 
-# The languages the Mac app offers (Languages.swift), as translation codes.
 SOURCES = [("English", "en"), ("日本語", "ja"), ("中文", "zh-CN"), ("한국어", "ko"),
            ("Español", "es"), ("Français", "fr"), ("Deutsch", "de"), ("Português", "pt")]
 TARGETS = [("简体中文", "zh-CN"), ("繁體中文", "zh-TW"), ("English", "en"), ("日本語", "ja"),
@@ -104,12 +96,10 @@ _ENGLISH = {"zh-CN": "Simplified Chinese", "zh-TW": "Traditional Chinese", "zh":
 
 
 def english_name(code: str) -> str:
-    """"Simplified Chinese", "Japanese": the names prompts use."""
     return _ENGLISH.get(code) or _ENGLISH.get(code.split("-")[0].lower()) or code
 
 
 def from_system(tag: str) -> str:
-    """A system UI language ("zh_CN.UTF-8", "zh-Hant-HK", "en_US") as a translation code."""
     parts = tag.split(".")[0].split("@")[0].replace("_", "-").split("-")
     if parts[0] != "zh":
         return parts[0] or "en"
@@ -117,8 +107,6 @@ def from_system(tag: str) -> str:
 
 
 def system_languages() -> list:
-    """The desktop's languages, most preferred first: LANGUAGE is a list ("en_US:zh_CN"), the
-    locale variables add one each. What the Mac reads as Locale.preferredLanguages."""
     out = []
     for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
         for v in (os.environ.get(var) or "").split(":"):
@@ -128,15 +116,10 @@ def system_languages() -> list:
 
 
 def my_language(prefs: list) -> str:
-    """The reader's own language under "follow system" (the Mac's myLanguage): Chinese when the
-    system list has it, otherwise the first system language."""
     return from_system(next((p for p in prefs if p.startswith("zh")), prefs[0] if prefs else "zh_CN"))
 
 
 def follow_system_target(source: str | None, prefs: list) -> str:
-    """What "follow system" translates into (the Mac's followSystemTarget): my language, unless that
-    is what they speak; then the next system language, or between Chinese and English when the
-    system has only one."""
     mine = my_language(prefs)
     if source is None or source != mine:
         return mine
@@ -144,7 +127,6 @@ def follow_system_target(source: str | None, prefs: list) -> str:
 
 
 def system_language() -> str:
-    """The desktop's language, as POSIX locale variables give it."""
     for var in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
         v = os.environ.get(var)
         if v and v not in ("C", "POSIX", "C.UTF-8"):
@@ -153,7 +135,6 @@ def system_language() -> str:
 
 
 def normalize(reported: str | None, fallback: str) -> str:
-    """Normalizes what Ming says the language is ("zh", "zh-Hans", "cmn") to a source code."""
     if not reported or not reported.strip():
         return fallback
     r = reported.strip().strip('.`"')
@@ -183,8 +164,6 @@ def is_cjk_language(code: str) -> bool:
 
 
 def in_script(text: str, target: str) -> bool:
-    """Whether text is in the target's script: Chinese, Japanese and Korean targets need some CJK,
-    others must not be mostly CJK (TranslationService.cleanTranslation's check)."""
     letters, cjk = _count(text)
     if letters == 0:
         return True
@@ -192,7 +171,6 @@ def in_script(text: str, target: str) -> bool:
 
 
 def written_in(text: str, english_language: str) -> bool:
-    """Notes' check: CJK languages need a fair share (names and numbers stay Latin)."""
     letters, cjk = _count(text)
     if letters == 0:
         return True

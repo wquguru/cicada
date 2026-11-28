@@ -1,5 +1,3 @@
-"""The search in a meeting's lines, shared by the notes window and the records window (the Mac's
-TranscriptSearchTests)."""
 from __future__ import annotations
 
 import os
@@ -21,10 +19,8 @@ class TranscriptSearchTests(unittest.TestCase):
     def test_a_name_also_finds_how_it_was_misheard(self):
         notes = [NoteTerm(name="江充", note="", heard=["江松"]), NoteTerm(name="Ling", note="", heard=[])]
         self.assertEqual(ts.terms("江充", notes), ["江充", "江松"])
-        # Searching the misheard form finds the right one too; an unrelated term stays out.
         self.assertEqual(ts.terms(" 江松 ", notes), ["江松", "江充"])
         self.assertEqual(ts.terms("  ", notes), [])
-        # A query inside a name, and a name inside the query, both bring the forms in, case aside.
         self.assertEqual(ts.terms("ling", notes), ["ling", "Ling"])
         self.assertEqual(ts.terms("问江充吧", notes), ["问江充吧", "江充", "江松"])
 
@@ -42,7 +38,6 @@ class TranscriptSearchTests(unittest.TestCase):
 
     def test_every_occurrence_is_marked(self):
         self.assertEqual(ts.spans("Budget, budget, done", ["budget"]), [(0, 6), (8, 14)])
-        # Overlapping terms mark one stretch.
         self.assertEqual(ts.spans("江充江松", ["江充", "充江"]), [(0, 3)])
         self.assertEqual(ts.spans("nothing", ["budget"]), [])
 

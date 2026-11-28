@@ -28,17 +28,16 @@
 #define MAX_THREADS 4
 
 #if defined(__GNUC__) && defined(__x86_64__) && !defined(__clang__)
-/* One .so for every x86_64 machine: the GEMM also built for AVX2, picked at load. */
 #define FAST __attribute__((target_clones("avx2", "default")))
 #else
 #define FAST
 #endif
 
 typedef struct {
-    int type; /* 1 conv, 2 add */
+    int type;
     int src, src2, dst, cin, cout, k, stride, relu;
     float *w, *b;
-    int last_use_src, last_use_src2; /* free a slot after its last reader */
+    int last_use_src, last_use_src2;
 } Op;
 
 typedef struct {
@@ -55,7 +54,7 @@ static float half(uint16_t h) {
     uint32_t s = (uint32_t)(h & 0x8000) << 16, e = (h >> 10) & 0x1F, m = h & 0x3FF, bits;
     if (e == 0) {
         if (m == 0) bits = s;
-        else { /* subnormal */
+        else {
             e = 127 - 15 + 1;
             while (!(m & 0x400)) { m <<= 1; e--; }
             bits = s | (e << 23) | ((m & 0x3FF) << 13);
@@ -87,7 +86,6 @@ static float *read_f32(FILE *f, size_t n) {
 static void tables(Model *m) {
     for (int i = 0; i < FRAME; i++)
         m->window[i] = powf(0.5f - 0.5f * cosf(2 * (float)M_PI * (float)i / (float)(FRAME - 1)), 0.85f);
-    /* `BINS` rows of `COLS` weights, the Nyquist column zero, as in Kaldi (Fbank.melBanks). */
     double lo = 1127 * log(1 + 20 / 700.0), hi = 1127 * log(1 + 8000 / 700.0), delta = (hi - lo) / (BINS + 1);
     memset(m->mel, 0, sizeof m->mel);
     for (int b = 0; b < BINS; b++) {
@@ -140,7 +138,6 @@ void *cvp_load(const char *path) {
     m->fc_b = read_f32(f, m->dims);
     m->mean = read_f32(f, m->dims);
     if (!m->fc || !m->fc_b || !m->mean) goto fail;
-    /* A slot is freed after the op that reads it last. */
     for (int i = 0; i < m->nops; i++) {
         Op *o = &m->ops[i];
         o->last_use_src = o->last_use_src2 = 1;
@@ -159,7 +156,6 @@ fail:
     return NULL;
 }
 
-/* In-place radix-2 FFT of NFFT complex values. */
 static void fft(const Model *m, float *re, float *im) {
     for (int i = 1, j = 0; i < NFFT; i++) {
         int bit = NFFT >> 1;
@@ -183,7 +179,6 @@ static void fft(const Model *m, float *re, float *im) {
     }
 }
 
-/* Frames x BINS, row-major (Fbank.compute). Returns the frame count. */
 int cvp_fbank(void *model, const float *samples, int n, float *out) {
     const Model *m = model;
     if (n < FRAME) return 0;
@@ -213,8 +208,6 @@ int cvp_fbank(void *model, const float *samples, int n, float *out) {
     return frames;
 }
 
-/* ---- the ResNet ---- */
-
 typedef struct {
     const Op *o;
     const float *in;
@@ -224,8 +217,6 @@ typedef struct {
     pthread_mutex_t *lock;
 } ConvJob;
 
-/* c_q[j] += a_q * b[j] for eight output channels: restrict parameters (GCC ignores them on locals) let
- * the compiler see the rows never overlap, so the loop over pixels vectorizes (NEON, SSE, AVX2). */
 static inline __attribute__((always_inline)) void axpy8(const float *restrict b, int nt, const float *a,
         float *restrict c0, float *restrict c1, float *restrict c2, float *restrict c3,
         float *restrict c4, float *restrict c5, float *restrict c6, float *restrict c7) {
@@ -241,7 +232,6 @@ static inline __attribute__((always_inline)) void axpy1(const float *restrict b,
     for (int j = 0; j < nt; j++) c[j] += a * b[j];
 }
 
-/* C[rows][nt] = W[rows][K] . col[K][nt], 8 output channels at a time so each col row is read once per 8. */
 FAST static void gemm(const float *w, int K, int rows, const float *col, int nt, float *acc) {
     int r = 0;
     float a8[8];
@@ -272,7 +262,6 @@ static void *conv_worker(void *arg) {
         pthread_mutex_unlock(j->lock);
         if (t >= j->tiles) break;
         int p0 = t * j->tile, nt = P - p0 < j->tile ? P - p0 : j->tile;
-        /* im2col for pixels p0..p0+nt */
         int pad = o->k / 2;
         for (int ci = 0; ci < o->cin; ci++)
             for (int ky = 0; ky < o->k; ky++)
@@ -304,7 +293,6 @@ static float *conv(const Op *o, const float *in, int h, int w, int *ho, int *wo,
     int K = o->cin * o->k * o->k, P = *ho * *wo;
     float *out = malloc((size_t)o->cout * P * sizeof(float));
     if (!out) return NULL;
-    /* The column tile stays within ~256 KB of cache. */
     int tile = 65536 / K;
     tile = tile < 32 ? 32 : tile > 512 ? 512 : tile;
     tile -= tile % 8;
@@ -319,7 +307,6 @@ static float *conv(const Op *o, const float *in, int h, int w, int *ho, int *wo,
     return out;
 }
 
-/* A unit-length voiceprint of 16 kHz mono samples in -1...1 into out[dims]. 0, or -1 when too short. */
 int cvp_embed(void *model, const float *samples, int n, float *out, int threads) {
     Model *m = model;
     if (n < MIN_SECONDS * RATE) return -1;
@@ -339,7 +326,6 @@ int cvp_embed(void *model, const float *samples, int n, float *out, int threads)
         float mean = (float)(sum / frames);
         for (int f = 0; f < frames; f++) feats[(size_t)f * BINS + b] -= mean;
     }
-    /* [frames][BINS] -> [1][BINS][frames]: height is frequency, width is time. */
     float **slot = calloc(m->nslots, sizeof(float *));
     int *hs = calloc(m->nslots, sizeof(int)), *ws = calloc(m->nslots, sizeof(int)), *cs = calloc(m->nslots, sizeof(int));
     float *x = malloc((size_t)frames * BINS * sizeof(float));
@@ -370,7 +356,6 @@ int cvp_embed(void *model, const float *samples, int n, float *out, int threads)
     }
     int result = -1;
     if (ok) {
-        /* Statistics pooling over time: mean, then unbiased std + 1e-8, per (channel, frequency). */
         const float *t = slot[last];
         int rows = cs[last] * hs[last], w = ws[last];
         float *z = malloc((size_t)rows * 2 * sizeof(float));
@@ -414,7 +399,6 @@ void cvp_free(void *model) {
     free(m);
 }
 
-/* The same for 16-bit samples, as the segmenter keeps them. */
 int cvp_embed_s16(void *model, const int16_t *samples, int n, float *out, int threads) {
     if (n > MAX_SECONDS * RATE) n = (int)(MAX_SECONDS * RATE);
     float *f = malloc((size_t)(n > 0 ? n : 1) * sizeof(float));

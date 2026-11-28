@@ -1,6 +1,3 @@
-"""改正听错的词: the record's fixes, read and written as the Mac does (mac-fixes-session.json is a record
-the Mac dev build wrote), and the line as shown in display, search and export.
-    python3 -m unittest discover -s linux/tests      (scripts/test.sh)"""
 from __future__ import annotations
 
 import os
@@ -53,7 +50,7 @@ class RecordFormat(Base):
         s = Session(id="x", title="t", lines=[line])
         self.assertNotIn("fixes", s.write())
         line.fixes = []
-        self.assertNotIn("fixes", s.write())  # none is absent, as the Mac stores nil
+        self.assertNotIn("fixes", s.write())
         line.fixes = [LineFix("a", "b")]
         back = Session.read(s.write()).lines[0]
         self.assertEqual(back.shown, "b")
@@ -104,15 +101,12 @@ def verdict(frm, to, c, known=(), rejected=()):
 
 
 class Correction(unittest.TestCase):
-    """The Mac's CorrectionTests: cases from a 21-minute meeting recording (a DeFi team's weekly)."""
-
     def test_sound_alike_chinese_is_applied(self):
         self.assertEqual(verdict("解除质压", "解除质押", 0.9), APPLY)
-        self.assertNotEqual(verdict("跳便是", "跳变", 0.9), APPLY)  # a word dropped: not a sound fix
+        self.assertNotEqual(verdict("跳便是", "跳变", 0.9), APPLY)
         self.assertEqual(verdict("两个代笔", "两个代币", 0.9), APPLY)
         self.assertEqual(verdict("管理房", "管理方", 0.9), APPLY)
         self.assertEqual(verdict("追压", "质押", 0.85), APPLY)
-        # Only the changed part is compared: 花/概 share nothing, though the phrase around them does.
         self.assertEqual(verdict("花了大花", "花了大概", 0.85), DROP)
         self.assertEqual(verdict("FFT制押", "FFT质押", 0.9), APPLY)
 
@@ -127,7 +121,7 @@ class Correction(unittest.TestCase):
     def test_spelling_fix_needs_high_confidence(self):
         self.assertEqual(verdict("cransfer", "transfer", 0.85), APPLY)
         self.assertEqual(verdict("cransfer", "transfer", 0.7), DROP)
-        self.assertEqual(verdict("bos", "BOS", 0.9), DROP)  # case only
+        self.assertEqual(verdict("bos", "BOS", 0.9), DROP)
 
     def test_new_names_are_asked(self):
         self.assertEqual(verdict("莫拉", "Morpho", 0.85), ASK)
@@ -136,7 +130,6 @@ class Correction(unittest.TestCase):
         self.assertEqual(verdict("莫纳", "Morpho", 0.7), DROP)
 
     def test_learned_words_stay_whole(self):
-        """A learned "S平 → X平" never reaches into "iOS平台"; on its own it still applies."""
         self.assertEqual(correction.word("S平", "iOS平台很好"), -1)
         self.assertEqual(correction.word("A工", "DATA工具"), -1)
         self.assertNotEqual(correction.word("S平", "在S平台上"), -1)
@@ -145,7 +138,6 @@ class Correction(unittest.TestCase):
         self.assertEqual(apply([LineFix("S平", "X平")], "iOS平台和S平台")[0], "iOS平台和X平台")
 
     def test_translations_are_not_asked(self):
-        """A translation isn't a misheard name: one 对 to "X平台 → X platform" taught 平台 → platform."""
         self.assertEqual(verdict("X平台", "X platform", 0.9), DROP)
         self.assertEqual(verdict("平台", "platform", 0.95), DROP)
         self.assertEqual(verdict("respons", "responsible", 0.85), DROP)
@@ -167,7 +159,6 @@ class Correction(unittest.TestCase):
         self.assertEqual(core("Un450P三", "Uniswap V3"), ("Un450P三", "Uniswap V3"))
         self.assertEqual(core("解释这个莫拉的", "解释这个Morpho的"), ("莫拉", "Morpho"))
         self.assertEqual(core("找了cransfer记录", "找了transfer记录"), ("cransfer", "transfer"))
-        # A Chinese change next to a Latin word leaves the word out.
         self.assertEqual(core("FFT制押", "FFT质押"), ("制押", "质押"))
 
     def test_pinyin_is_the_macs(self):
@@ -218,30 +209,23 @@ class Correction(unittest.TestCase):
         self.assertEqual(correction.label(LineFix("解除质压", "解除质押")), ("质压", "质押"))
 
     def test_added_word_stays_on_its_line_and_never_matches_punctuation(self):
-        # "now" added before the full stop: the fix is the last word, unique in the line, not ".".
         line = "Great, let's lock that in."
         fix, _, swap = correction.user_edit(line, "Great, let's lock that in now.", line, [])
         self.assertEqual((fix.from_, fix.to, swap), ("in", "in now", False))
         self.assertEqual(apply([fix], line)[0], "Great, let's lock that in now.")
-        # A word added at the start.
         fix, _, swap = correction.user_edit(line, "OK Great, let's lock that in.", line, [])
         self.assertEqual((fix.from_, fix.to, swap), ("Great", "OK Great", False))
-        # A word that appears twice: grown until the span is unique.
         line = "in the room in the hall"
         fix = correction.user_edit(line, "in the room inside the hall", line, [])[0]
         self.assertEqual(apply([fix], line)[0], "in the room inside the hall")
-        # Chinese: an inserted word takes its neighbour.
         line = "好的我来看一下"
         fix, _, swap = correction.user_edit(line, "好的OK我来看一下", line, [])
         self.assertEqual(apply([fix], line)[0], "好的OK我来看一下")
         self.assertFalse(swap)
-        # A real swap is still a swap.
         self.assertTrue(correction.user_edit("我木娜找了", "我Monad找了", "我木娜找了", [])[2])
 
 
 class Vocab(Base):
-    """The Mac's VocabularyTests."""
-
     def test_import_lines_with_heard_forms(self):
         v = Vocabulary(None)
         r = v.import_text("Uniswap V3\nMorpho = 莫拉、莫法\n\n" + "长" * 41 + "\n巡检=寻检,巡练")
@@ -298,7 +282,7 @@ class Vocab(Base):
             text = f.read()
         self.assertTrue(text.startswith('[\n  {\n    "fixes" : 1,\n    "heard" : [\n      "莫拉"\n    ],\n    "source" : "user",\n'
                                         '    "used" : "2026-11-07T07:08:01Z",\n    "word" : "Morpho"\n  },'))
-        self.assertIn('"word" : "A/B"', text)  # slashes unescaped, as the Mac's encoder writes them
+        self.assertIn('"word" : "A/B"', text)
         self.assertIn('"heard" : [\n\n    ]', text)
 
     def test_reads_the_macs_file(self):
@@ -332,9 +316,6 @@ class Vocab(Base):
 
 
 class Live(Base):
-    """The Mac's LiveFixesTests: who wins on a line, the user's decisions, then the word list, then the
-    recheck, then the first guess."""
-
     def setup(self, texts):
         store = session_store.SessionStore()
         s = store.begin()
@@ -367,7 +348,6 @@ class Live(Base):
         self.assertEqual(fx.edit("l0", sid, "我Monad找了一个", everywhere=True, remember=True), 2)
         self.assertEqual(store.line(sid, "l1").shown, "Monad那边也有")
         self.assertTrue(fx.vocabulary.knows("木娜", "Monad"))
-        # A later pass can't override what the user wrote.
         fx.received(store.line(sid, "l1").src, [Edit("木娜", "Mona", 0.95)])
         self.assertEqual(store.line(sid, "l1").shown, "Monad那边也有")
         fx.undo()
@@ -445,9 +425,6 @@ class Live(Base):
 
 
 class Request(Base):
-    """The translation request with fixes: the Mac's prompt word for word, no JSON mode, and a reply
-    that isn't the JSON asked for falls through like a failed one."""
-
     def test_prompt_and_reply(self):
         from test_core import Fake, client, reply
         bodies = []

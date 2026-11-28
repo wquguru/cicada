@@ -1,5 +1,3 @@
-"""Updates: the Mac's UpdateTests case for case, then downloading, checking and unpacking a release
-from a file:// feed, the way the app installs one."""
 from __future__ import annotations
 
 import hashlib
@@ -88,8 +86,6 @@ class Schedule(unittest.TestCase):
 
 
 class Install(unittest.TestCase):
-    """A release on disk: a tarball like scripts/build.sh makes, its checksums, and a feed."""
-
     def setUp(self):
         self.dir = tempfile.mkdtemp()
         Paths.home_override = os.path.join(self.dir, "home")
@@ -201,7 +197,6 @@ class Notify(unittest.TestCase):
 
 
 class _Flaky(http.server.BaseHTTPRequestHandler):
-    """Serves BODY with Range; the first request is cut off halfway, or stalls when `stall`."""
     protocol_version = "HTTP/1.1"
     requests: list = []
     stall = False
@@ -235,7 +230,6 @@ class Download(unittest.TestCase):
         Paths.home_override = os.path.join(self.dir, "home")
         os.makedirs(Paths.data(), exist_ok=True)
         self.addCleanup(setattr, Paths, "home_override", None)
-        # A proxy in the shell running the tests would carry these local requests off through it.
         for k in ("http_proxy", "https_proxy", "all_proxy", "no_proxy"):
             for name in (k, k.upper()):
                 if name in os.environ:
@@ -258,7 +252,7 @@ class Download(unittest.TestCase):
             self.assertEqual(BODY, f.read())
         self.assertEqual([None, "bytes=%d-" % (len(BODY) // 2)], _Flaky.requests)
         self.assertIn("stopped at %d of %d bytes, try 1 of 3 (IncompleteRead" % (len(BODY) // 2, len(BODY)), self.log())
-        self.assertNotIn("http://", self.log())  # the host only
+        self.assertNotIn("http://", self.log())
 
     def test_a_stall_is_a_timeout_per_read_not_for_the_whole_file(self):
         _Flaky.stall = True
@@ -269,7 +263,7 @@ class Download(unittest.TestCase):
         updates._download(self.url, to, None)
         with open(to, "rb") as f:
             self.assertEqual(BODY, f.read())
-        self.assertRegex(self.log(), r"try 1 of 3 \((timeout|TimeoutError): timed out\)")  # socket.timeout's name varies
+        self.assertRegex(self.log(), r"try 1 of 3 \((timeout|TimeoutError): timed out\)")
 
     def test_giving_up_says_why(self):
         with self.assertRaises(OSError):

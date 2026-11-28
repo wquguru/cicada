@@ -56,7 +56,6 @@ def key_file() -> str | None:
 
 
 def client(settings: AppSettings) -> LingClient:
-    """The AI service the settings name, with the key file found for it."""
     return LingClient(AIKey(key_file(), service=lambda: SERVICE), config=settings.ai_config)
 
 
@@ -132,7 +131,7 @@ def main(args: list) -> int:
                 pass
 
             def close(self):
-                out.extend(bytes(24000 // 2 * 2))  # half a second between sentences
+                out.extend(bytes(24000 // 2 * 2))
         eng = SpeakEngine(ling, Translator(ling), settings, player=Collect)
         eng.on_change(lambda: eng.last and eng.stage == "speaking" and print("  %s\n  → %s" % eng.last, flush=True))
         done = threading.Event()

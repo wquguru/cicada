@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""Converts the WeSpeaker ResNet34-LM speaker model (VoxCeleb, CC BY 4.0) into linux/models/voiceprint.bin,
-the voiceprint model behind 分出对方的每个人 on Linux. The same ONNX file the Mac's Core ML model comes
-from (scripts/convert-voiceprint.py), sha256 7bb2f06e9df17cdf1ef14ee8a15ab08ed28e8d0ef5054ee135741560df2ec068.
-Developer-only, run once; stdlib only (a protobuf reader for the parts of ONNX this model uses).
-
-usage: python3 linux/scripts/convert-voiceprint.py voxceleb_resnet34_LM.onnx linux/models/voiceprint.bin
-
-The file, little-endian: b"CVP1", u32 op count, then each op
-  1 conv: u32 src dst cin cout kernel stride relu, f16 weights [cout][cin][k][k], f32 bias [cout]
-  2 add:  u32 a b dst relu
-then the head: u32 channels freq dims, f16 fc [dims][channels*freq*2], f32 fc bias [dims], f32 mean_vec [dims].
-Slot 0 is the input [1][80][T]; the last op's dst is the trunk's output. BatchNorm is already folded into
-the convs in this export; statistics pooling (mean, unbiased std + 1e-8) is in the C code."""
 import hashlib
 import struct
 import sys
@@ -125,10 +112,9 @@ def main(src, out):
     def slot(name):
         return slots.setdefault(name, len(slots))
 
-    # The trunk starts at Unsqueeze(Transpose(feats)): [1, 1, 80, T].
     start = next(n for n in nodes if n["op"] == "Unsqueeze")["out"][0]
     slot(start)
-    produced = {start}  # the trunk's tensors; Adds in the pooling work on other things
+    produced = {start}
     ops = []
     for n in nodes:
         op = n["op"]
@@ -148,7 +134,7 @@ def main(src, out):
         elif op == "Relu" and n["in"][0] in produced:
             assert ops[-1]["dst"] == n["in"][0], "relu not right after its op"
             ops[-1]["relu"] = 1
-            ops[-1]["dst"] = n["out"][0]  # the relu's output is the op's output
+            ops[-1]["dst"] = n["out"][0]
             produced.add(n["out"][0])
     blob = bytearray(b"CVP1")
     blob += struct.pack("<I", len(ops))
@@ -159,7 +145,7 @@ def main(src, out):
         else:
             blob += struct.pack("<5I", 2, slot(o["a"]), slot(o["b"]), slot(o["dst"]), o["relu"])
     trunk_end = ops[-1]["dst"]
-    assert trunk_end == "343", trunk_end  # the last Relu before pooling
+    assert trunk_end == "343", trunk_end
     fc, bias, mean = inits["model.seg_1.weight"], inits["model.seg_1.bias"], inits["mean_vec"]
     dims, flat = fc["dims"]
     blob += struct.pack("<3I", 256, flat // 512, dims)

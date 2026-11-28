@@ -1,15 +1,3 @@
-"""How the app's requests reach the internet, and the words of the "can't reach the AI service" hint
-(ProxyHint.swift). The app never sets a proxy; it uses the one this computer has:
-
-- the environment's `https_proxy` (`http_proxy` for http://), as urllib always did, or `all_proxy`
-  (an HTTP or SOCKS5 proxy);
-- else GNOME's 设置 › 网络 › 网络代理 set to manual, which isn't passed to apps' environments: its
-  HTTPS proxy, else the HTTP one (use-same-proxy, GNOME's default), else its SOCKS host, except for
-  the hosts it says to ignore. The website's proxy help sends Linux users exactly there.
-
-"Automatic" (a PAC file) needs a JavaScript engine to evaluate, so requests go direct then, and the
-hint says so rather than claiming a proxy is on. Every request (AI service, translation, updates)
-goes through `urlopen` here."""
 from __future__ import annotations
 
 import ast
@@ -27,17 +15,11 @@ import urllib.request
 
 from .support import Log
 
-# Ports common proxy apps listen on (Clash 7890, Clash Verge 7897, SOCKS 1080).
 PORTS = (7890, 7897, 1080)
-# A host the hint asks about: any public one (GNOME's ignore list names local ones).
 PROBE_URL = "https://openrouter.ai/"
 
 
 class Route:
-    """`kind`: "direct"; "env" (urllib reads the environment itself, no_proxy included); "http" or
-    "socks" through `host`:`port`, from `origin` ("env" or "gnome"). `url` is the HTTP proxy as
-    urllib takes it (credentials in it stay out of logs: `where` is host:port only)."""
-
     def __init__(self, kind: str, host: str = "", port: int = 0, origin: str = "", url: str = ""):
         self.kind, self.host, self.port, self.origin, self.url = kind, host, port, origin, url
 
@@ -55,19 +37,16 @@ class Route:
         return "Route(%s)" % " ".join(str(p) for p in self.key()[:4] if p)
 
 
-# GNOME's settings
-
 def _gsettings_dump() -> str:
     try:
         r = subprocess.run(["gsettings", "list-recursively", "org.gnome.system.proxy"],
                            capture_output=True, text=True, timeout=2)
         return r.stdout if r.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
-        return ""  # no gsettings (not GNOME, or the Mac running the tests)
+        return ""
 
 
 def parse_gnome(text: str) -> dict:
-    """`gsettings list-recursively org.gnome.system.proxy` as {"mode": "manual", "https.host": …}."""
     out: dict = {}
     for line in text.splitlines():
         parts = line.split(None, 2)
@@ -75,7 +54,7 @@ def parse_gnome(text: str) -> dict:
             continue
         child = parts[0][len("org.gnome.system.proxy"):].lstrip(".")
         raw = parts[2].strip()
-        if raw.startswith("@"):  # a typed empty value: "@as []"
+        if raw.startswith("@"):
             raw = raw.split(None, 1)[1] if " " in raw else ""
         raw = {"true": "True", "false": "False"}.get(raw, raw)
         try:
@@ -91,8 +70,6 @@ _gnome_lock = threading.Lock()
 
 
 def gnome(read=None, ttl: float = 3.0) -> dict:
-    """GNOME's proxy settings, read again after `ttl` seconds: partial translations ask several
-    times a second, and a changed setting applies within moments, no restart."""
     global _gnome_cache
     if read is not None:
         return parse_gnome(read())
@@ -107,8 +84,6 @@ def gnome(read=None, ttl: float = 3.0) -> dict:
 
 
 def ignored(host: str, port: int, patterns) -> bool:
-    """GNOME's ignore-hosts (GSimpleProxyResolver's forms): "example.com", ".example.com" and
-    "*.example.com" all match it and its subdomains; an address or a CIDR range; any with ":port"."""
     host = host.strip("[]").lower().rstrip(".")
     try:
         addr = ipaddress.ip_address(host)
@@ -119,10 +94,10 @@ def ignored(host: str, port: int, patterns) -> bool:
         if not p:
             continue
         want_port = None
-        if p.startswith("[") and "]" in p:  # "[::1]:8080"
+        if p.startswith("[") and "]" in p:
             p, _, rest = p[1:].partition("]")
             want_port = int(rest[1:]) if rest.startswith(":") and rest[1:].isdigit() else None
-        elif p.count(":") == 1:  # "example.com:8080" (an IPv6 address has several colons)
+        elif p.count(":") == 1:
             p, _, pp = p.partition(":")
             want_port = int(pp) if pp.isdigit() else None
         if want_port is not None and want_port != port:
@@ -142,8 +117,6 @@ def ignored(host: str, port: int, patterns) -> bool:
     return False
 
 
-# Which way a request goes
-
 def _env(env, *names) -> str:
     for n in names:
         v = (env.get(n) or env.get(n.upper()) or "").strip()
@@ -153,7 +126,6 @@ def _env(env, *names) -> str:
 
 
 def _proxy_url(value: str):
-    """("http"|"socks", host, port, url) for a proxy URL, or None when it isn't one we can use."""
     if "://" not in value:
         value = "http://" + value
     u = urllib.parse.urlsplit(value)
@@ -171,17 +143,15 @@ def _proxy_url(value: str):
 
 
 def route(url: str, env=None, settings=None) -> Route:
-    """How a request to `url` leaves the app. `env` and `settings` (parse_gnome's) are for tests."""
     env = os.environ if env is None else env
     u = urllib.parse.urlsplit(url)
     if u.scheme not in ("http", "https") or not u.hostname:
-        return Route("direct")  # file:// (tests, a local feed)
+        return Route("direct")
     port = u.port or (443 if u.scheme == "https" else 80)
     if _env(env, u.scheme + "_proxy"):
         return Route("env", origin="env")
     every = _env(env, "all_proxy")
     if every:
-        # urllib ignores all_proxy; Clash's "copy proxy command" sets it, often as socks5://.
         p = _proxy_url(every)
         no = _env(env, "no_proxy")
         if p and not (no and urllib.request.proxy_bypass_environment(u.hostname, {"no": no})):
@@ -206,8 +176,6 @@ def route(url: str, env=None, settings=None) -> Route:
         return Route("socks", sp[0], sp[1], "gnome")
     return Route("direct")
 
-
-# SOCKS5 (RFC 1928), no authentication: the name is resolved by the proxy, as socks5h does.
 
 def _recv(sock, n: int) -> bytes:
     data = b""
@@ -286,19 +254,15 @@ def opener(r: Route):
 
 
 def urlopen(req, timeout: float):
-    """urllib.request.urlopen, through this computer's proxy (route)."""
     url = req.full_url if isinstance(req, urllib.request.Request) else req
     r = route(url)
-    if r.key() != _said[0] and url.startswith("http"):  # a file:// test feed would flip it back and forth
+    if r.key() != _said[0] and url.startswith("http"):
         _said[0] = r.key()
         Log.d("net: %s%s" % (r.kind, " %s %s" % (r.origin, r.where) if r.where else ""))
     return opener(r).open(req, timeout=timeout)
 
 
-# The hint
-
 def listening(port: int, timeout: float = 0.3) -> bool:
-    """Something accepts a TCP connection on 127.0.0.1:`port` within `timeout`. Nothing is sent."""
     return reachable("127.0.0.1", port, timeout)
 
 
@@ -311,9 +275,6 @@ def reachable(host: str, port: int, timeout: float = 1.0) -> bool:
 
 
 def hint(env=None, gsettings=None, probe=listening, reach=reachable) -> tuple:
-    """("system",) a proxy is in use and answers; ("dead", "host:port") the proxy in use doesn't
-    answer; ("pac",) GNOME's proxy is automatic, which the app can't use; ("app", port) a proxy app
-    listens but no proxy is set; ("none",). See AICheck.proxy_line."""
     env = os.environ if env is None else env
     settings = gnome(gsettings) if gsettings is not None else gnome()
     r = route(PROBE_URL, env, settings)

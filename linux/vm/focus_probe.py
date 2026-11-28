@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""A stand-in meeting app for the focus test: a maximized native-Wayland GTK window with a text box
-that logs every focus change to /tmp/focus-probe.log. Click Cicada's notes window (real input through
-QEMU) and this window must stay active."""
 import os
 import time
 

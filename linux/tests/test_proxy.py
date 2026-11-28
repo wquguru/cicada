@@ -1,5 +1,3 @@
-"""Which way requests go (proxy.py): the environment's proxy, else GNOME's manual one (HTTPS, the HTTP
-one, else SOCKS), its ignore-hosts, and real requests through a fake HTTP proxy and a fake SOCKS5 one."""
 from __future__ import annotations
 
 import http.server
@@ -45,7 +43,7 @@ class Settings(unittest.TestCase):
         self.assertIs(True, s["use-same-proxy"])
         self.assertEqual(("10.0.2.2", 7890), (s["https.host"], s["https.port"]))
         self.assertEqual([], s["ftp.host"])
-        self.assertEqual({}, proxy.parse_gnome(""))  # no gsettings: the Mac running the tests
+        self.assertEqual({}, proxy.parse_gnome(""))
 
     def test_ignore_hosts(self):
         pats = ["localhost", "127.0.0.0/8", "::1", ".corp.example", "*.lan", "intra.example:8080", "10.1.2.3"]
@@ -73,7 +71,7 @@ class Routes(unittest.TestCase):
         self.assertEqual("direct", proxy.route("https://zenmux.ai/", {}, s).kind)
 
     def test_gnome_ignores_and_other_modes(self):
-        self.assertEqual("direct", proxy.route("http://127.0.0.1:11434/v1", {}, gnome()).kind)  # a local service
+        self.assertEqual("direct", proxy.route("http://127.0.0.1:11434/v1", {}, gnome()).kind)
         self.assertEqual("direct", proxy.route("https://localhost/", {}, gnome()).kind)
         self.assertEqual("direct", proxy.route("https://zenmux.ai/", {}, gnome(mode="auto")).kind)
         self.assertEqual("direct", proxy.route("https://zenmux.ai/", {}, gnome(mode="none")).kind)
@@ -82,14 +80,14 @@ class Routes(unittest.TestCase):
 
     def test_environment_first(self):
         env = {"https_proxy": "http://127.0.0.1:7897"}
-        self.assertEqual("env", proxy.route("https://zenmux.ai/", env, gnome()).kind)  # urllib reads it
-        self.assertEqual("10.0.2.2:7891", proxy.route("http://example.com/", env, gnome()).where)  # no http_proxy
+        self.assertEqual("env", proxy.route("https://zenmux.ai/", env, gnome()).kind)
+        self.assertEqual("10.0.2.2:7891", proxy.route("http://example.com/", env, gnome()).where)
         self.assertEqual("env", proxy.route("https://zenmux.ai/", {"HTTPS_PROXY": "http://h:1"}, {}).kind)
         self.assertEqual("10.0.2.2:7890", proxy.route("https://zenmux.ai/", {"https_proxy": " "}, gnome()).where)
         r = proxy.route("https://zenmux.ai/", {"all_proxy": "socks5://127.0.0.1:7890"}, gnome())
         self.assertEqual(("socks", "127.0.0.1", 7890, "env"), r.key()[:4])
         r = proxy.route("https://zenmux.ai/", {"ALL_PROXY": "http://u:p@127.0.0.1:7890"}, {})
-        self.assertEqual(("http", "127.0.0.1:7890"), (r.kind, r.where))  # credentials stay out of `where`
+        self.assertEqual(("http", "127.0.0.1:7890"), (r.kind, r.where))
         self.assertEqual("direct", proxy.route("https://zenmux.ai/", {"all_proxy": "socks5://h:1", "no_proxy": "zenmux.ai"}, gnome()).kind)
 
 
@@ -123,7 +121,6 @@ class _Echo(http.server.BaseHTTPRequestHandler):
 
 
 class _Socks(socketserver.BaseRequestHandler):
-    """A SOCKS5 proxy without authentication that remembers the name it was asked for."""
     asked: list = []
 
     def handle(self):
@@ -160,8 +157,6 @@ class _Socks(socketserver.BaseRequestHandler):
 
 
 class Through(unittest.TestCase):
-    """Real requests: the opener a route picks carries them through the proxy."""
-
     def serve(self, server):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
@@ -169,7 +164,6 @@ class Through(unittest.TestCase):
         return server.server_address[1]
 
     def test_http_proxy(self):
-        # An HTTP proxy gets the absolute URL; the echo server plays the proxy here.
         port = self.serve(http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Echo))
         r = proxy.Route("http", "127.0.0.1", port, "gnome", "http://127.0.0.1:%d" % port)
         with proxy.opener(r).open(urllib.request.Request("http://cicada.invalid/x"), timeout=5) as resp:
@@ -182,7 +176,7 @@ class Through(unittest.TestCase):
         _Socks.asked.clear()
         with proxy.opener(r).open(urllib.request.Request("http://localhost:%d/y" % web), timeout=5) as resp:
             self.assertEqual(b"path=/y", resp.read())
-        self.assertEqual([("localhost", web)], _Socks.asked)  # the name, resolved by the proxy
+        self.assertEqual([("localhost", web)], _Socks.asked)
 
     def test_dead_socks_is_an_oserror(self):
         s = socket.socket()

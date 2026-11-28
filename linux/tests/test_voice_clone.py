@@ -1,5 +1,3 @@
-"""我自己的声音 (issue #32): the recording kept like the key, Ming's request with `references`, the
-voice a language falls back to, and the Mac's pace and length checks."""
 from __future__ import annotations
 
 import base64
@@ -89,17 +87,14 @@ class Pace(unittest.TestCase):
         self.assertEqual(["大", "家", "好", "hello", "it's", "2"], vref.tokens("大家好, Hello it’s 2!"))
 
     def test_too_slow_is_caught_like_the_mac(self):
-        # 54 characters over 12 s of speech: 4.5 a second, an ordinary pace.
         self.assertIsNone(vref.check(concat(silence(0.5), tone(12), silence(0.5)), PASSAGE))
         p = vref.pace(PASSAGE, concat(silence(1), tone(12), silence(2)))
         self.assertAlmostEqual(len(vref.tokens(PASSAGE)) / 12, p, delta=0.05, msg="silence at both ends left out")
-        # The same over 14 s of a recital at a third of it.
         self.assertEqual("slow", vref.check(tone(14), PASSAGE[:30]))
         self.assertTrue(vref.is_slow("hello there everyone", 1.5))
         self.assertFalse(vref.is_slow("hello there everyone", 2.0))
 
     def test_the_quiet_around_the_reading_is_cut(self):
-        # A second of silence after the last word made Ming answer every sentence with 0.4 s of nothing.
         cut = vref.trim(concat(silence(1.5), tone(11), silence(1.2)))
         self.assertAlmostEqual(11 + 2 * vref.TRIM_PAD, len(cut) / 16000, delta=0.05)
         self.assertEqual(16000 * 3, len(vref.trim(silence(3))), "nothing to cut by in silence")

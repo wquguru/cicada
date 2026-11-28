@@ -1,7 +1,3 @@
-"""The tray icon (the Mac's menu bar panel), through Ayatana AppIndicator: Ubuntu's top bar shows it
-(the AppIndicator extension ships enabled), as do KDE, Xfce and most others. Ubuntu installs the C
-library but not its GObject typelib, so it's called through ctypes with our own Gtk.Menu. Plain GNOME
-has no tray; then there is none, and the records window's header bar carries 开始听 instead."""
 from __future__ import annotations
 
 import ctypes
@@ -12,7 +8,6 @@ from ..core.support import Log
 
 
 def _gpointer(obj) -> int:
-    """The C pointer behind a PyGObject object (its __gpointer__ capsule)."""
     get = ctypes.pythonapi.PyCapsule_GetPointer
     get.restype = ctypes.c_void_p
     get.argtypes = [ctypes.py_object, ctypes.c_char_p]
@@ -51,7 +46,6 @@ class Tray:
         self.lib = lib
         self.icon = icon or "cicada"
         self.badged = (False, None)
-        # An absolute path works as the icon "name", so no icon theme install is needed.
         self.ind = lib.app_indicator_new(b"cicada", (icon or "cicada").encode(), self.CATEGORY_APPLICATION_STATUS)
         lib.app_indicator_set_status(self.ind, self.STATUS_ACTIVE)
         lib.app_indicator_set_title(self.ind, L("知了").encode())
@@ -71,21 +65,16 @@ class Tray:
             i.set_sensitive(sensitive)
             menu.append(i)
             return i
-        # The AI service when only the user can fix it (AIServiceStrip.swift, the panel's top): what's
-        # wrong, and a click opens 设置 › AI 服务. One that stays until the user changes something also
-        # puts the dot on the icon (below).
         from .aicheck_view import blocking, strip_words
         broken = strip_words(self.app)
         if broken:
             item("⚠ " + broken[0].rstrip("。.") + " · " + L("打开设置"), lambda: self.app.show_settings(ai=True))
             menu.append(Gtk.SeparatorMenuItem())
-        # A new version, with the accent dot the Mac's panel gives it; greyed while it downloads.
         upd = self.app.updates.menu_label()
         if upd:
             item("● " + upd, self.app.updates.install, sensitive=self.app.updates.progress is None
                  and not self.app.updates.after_meeting)
             menu.append(Gtk.SeparatorMenuItem())
-        # A status header, as the design's tray menu: what's happening, then the actions.
         self.status_item = item(self._status(), None, False)
         if listening:
             self.detail_item = item(self._detail(), None, False)
@@ -93,7 +82,6 @@ class Tray:
             self.detail_item = None
         menu.append(Gtk.SeparatorMenuItem())
         item(L("结束") if listening else L("开始听"), self.app.request_stop)
-        # 麦克风, the Mac panel's 打开麦克风: on mid-meeting, the room joins the same meeting.
         if self.app.listen.source_kind != "file" or not listening:
             mic = Gtk.CheckMenuItem.new_with_label(L("麦克风"))
             mic.set_active(self.app.mic_on)
@@ -108,16 +96,13 @@ class Tray:
         menu.append(Gtk.SeparatorMenuItem())
         item(LF("退出 %@", L("知了")), self.app.quit)
         menu.show_all()
-        menu.connect("show", lambda *_: self.app.updates.menu_opened())  # an hour-old check: check again
+        menu.connect("show", lambda *_: self.app.updates.menu_opened())
         self.lib.app_indicator_set_menu(self.ind, _gpointer(menu))
-        self.menu = menu  # the indicator holds a ref too; keep ours so Python doesn't free it early
+        self.menu = menu
         self.lib.app_indicator_set_label(self.ind, (self._clock() if listening else "").encode(), b"")
         self._badge(self.app.updates.update, blocking(self.app))
 
     def _badge(self, update, problem) -> None:
-        """The Mac's menu bar dot on the top-bar icon: the same icon with an orange dot top right, for
-        something only the user can fix or else a new version. The icon's description says which (the
-        Mac's tooltip; screen readers and the indicator read it)."""
         on = problem is not None or update is not None
         desc = L("知了") + (" · " + problem if problem else " · " + LF("有新版本 %@", update.version) if update else "")
         if (on, desc) == self.badged:
@@ -146,7 +131,6 @@ class Tray:
         return LF("%@ · %lld 句", session_store.display_title(s), len(s.lines))
 
     def tick(self) -> None:
-        """Once a second while listening: the clock in the top bar and the menu's header."""
         if not self.app.listen.listening:
             return
         self.status_item.set_label(self._status())
@@ -156,9 +140,6 @@ class Tray:
 
 
 def badged_icon(icon: str) -> str | None:
-    """A copy of the app icon (an SVG, 100 units square) with the accent dot over its top right
-    corner and a white ring around it, written once under the data folder. The logo itself stays
-    in one place (site/icon.svg); this only adds the dot."""
     try:
         with open(icon, encoding="utf-8") as f:
             svg = f.read()

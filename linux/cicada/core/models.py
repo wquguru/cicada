@@ -1,6 +1,3 @@
-"""The meeting record, field for field the Mac app's `session.json` (SessionStore.swift, Notes.swift),
-so a record moves between the platforms unchanged. Each type maps to and from a JSON object;
-jsonfmt.write sorts the keys and leaves out nulls, as the Mac's encoder does."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -11,7 +8,6 @@ from . import jsonfmt
 
 
 def iso_write(at: datetime) -> str:
-    """Whole seconds, UTC, "Z": what Swift's `.iso8601` writes (and expects back)."""
     return at.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -33,16 +29,15 @@ def now() -> datetime:
 
 @dataclass
 class TranscriptLine:
-    id: str = ""  # "h<n>-<segment>" for heard lines, "m<n>" for the user's own
-    t: float = 0.0  # seconds from the start of the session
-    speaker: str = "them"  # "them" (heard) or "me" (the Mac's microphone)
+    id: str = ""
+    t: float = 0.0
+    speaker: str = "them"
     src: str = ""
     dst: str | None = None
     srcLang: str = ""
     dstLang: str = ""
-    voice: int | None = None  # experimental voice id on the Mac; Linux doesn't tell voices apart
-    via: str | None = None  # 电脑和会议室: "room" when the room mic heard it; absent for the computer's audio
-    # Words the AI service fixed (correction.py); `src` stays what was heard. None when there are none.
+    voice: int | None = None
+    via: str | None = None
     fixes: list | None = None
 
     def copy(self) -> "TranscriptLine":
@@ -51,7 +46,6 @@ class TranscriptLine:
 
     @property
     def shown(self) -> str:
-        """What the line says once its fixes are in: shown, searched, exported and read by the notes."""
         if not self.fixes:
             return self.src
         from .correction import apply
@@ -73,14 +67,11 @@ class TranscriptLine:
 
 @dataclass
 class LineFix:
-    """A word the AI service said speech recognition got wrong in a finished line ("莫拉" → "Morpho"),
-    the Mac's LineFix (Correction.swift). The line keeps what was heard, so a reader that doesn't know
-    fixes still shows the heard text; a fix whose words are no longer in the line is skipped."""
     from_: str = ""
     to: str = ""
-    ask: bool | None = None  # waiting for the user (a name sound can't check): not applied until confirmed
-    off: bool | None = None  # the user said no (改回 or 不对): kept so the line isn't fixed that way again
-    user: bool | None = None  # the user's own: said 对, or wrote it (改这句…); no later pass drops it
+    ask: bool | None = None
+    off: bool | None = None
+    user: bool | None = None
 
     @property
     def applied(self) -> bool:
@@ -99,7 +90,6 @@ class LineFix:
 
 
 def _num(v, fallback):
-    """Keeps an int an int, so "start" : 0 writes back as 0."""
     n = num(v)
     return fallback if n is None else n
 
@@ -122,7 +112,7 @@ class NoteItem:
     text: str = ""
     owner: str | None = None
     support: int = 0
-    t: float | None = None  # when it was said (first evidence line)
+    t: float | None = None
 
     def to_json(self) -> dict:
         return {"text": self.text, "owner": self.owner, "support": self.support, "t": self.t}
@@ -133,7 +123,6 @@ class NoteItem:
 
     @property
     def owner_shown(self) -> str | None:
-        """The owner as stored ("你", "对方", "说话人2" or a name) in the UI language (Notes.swift's ownerShown)."""
         from .strings import L, LF
         o = self.owner
         if not o:
@@ -147,7 +136,6 @@ class NoteItem:
 
     @property
     def with_owner(self) -> str:
-        """The to-do with its owner after it: "（对方）" in Chinese, " (Them)" in English."""
         from .strings import LF
         shown = self.owner_shown
         return self.text + (LF("待办的负责人 %@", shown) if shown else "")
@@ -155,7 +143,6 @@ class NoteItem:
 
 @dataclass
 class NoteTerm:
-    """A name or term as the notes settled on it, and how speech recognition heard it."""
     name: str = ""
     note: str = ""
     heard: list = field(default_factory=list)
@@ -170,13 +157,10 @@ class NoteTerm:
 
     @staticmethod
     def ordered(terms: list) -> list:
-        """Corrected spellings first: what a reader can't work out alone."""
         return [t for t in terms if t.heard] + [t for t in terms if not t.heard]
 
     @staticmethod
     def keeping_order(old: list, new: list) -> list:
-        """The reply's terms in the order they were shown before, new ones after: the model often
-        returns the same names reshuffled, which would make the chips jump on every update."""
         rank: dict = {}
         for i, t in enumerate(old):
             rank.setdefault(t.name, i)
@@ -188,7 +172,7 @@ class FishboneBranch:
     label: str = ""
     detail: str = ""
     t: float | None = None
-    support: int = 0  # how many transcript lines back this branch; 0 is shown as weak
+    support: int = 0
 
     def to_json(self) -> dict:
         return {"label": self.label, "detail": self.detail, "t": self.t, "support": self.support}
@@ -217,14 +201,13 @@ class NoteTopic:
     title: str = ""
     summary: str = ""
     points: list = field(default_factory=list)
-    pointTimes: list | None = None  # when each point was said, parallel to points
+    pointTimes: list | None = None
     fishbone: Fishbone | None = None
 
     def point_time(self, i: int) -> float | None:
         return self.pointTimes[i] if self.pointTimes is not None and i < len(self.pointTimes) else None
 
     def to_json(self) -> dict:
-        # pointTimes keeps its nulls: Swift writes [12.4, null].
         return {"start": self.start, "title": self.title, "summary": self.summary, "points": list(self.points),
                 "pointTimes": self.pointTimes, "fishbone": self.fishbone.to_json() if self.fishbone else None}
 
@@ -239,14 +222,13 @@ class NoteTopic:
 
 @dataclass
 class MeetingNotes:
-    """Written by Ling while the meeting runs, rewritten over the whole transcript when it ends."""
     title: str | None = None
     summary: str = ""
     topics: list = field(default_factory=list)
     conclusions: list = field(default_factory=list)
     todos: list = field(default_factory=list)
     terms: list = field(default_factory=list)
-    covered: int = 0  # how many transcript lines these notes cover
+    covered: int = 0
     final: bool = False
     updatedAt: datetime | None = None
 
@@ -285,14 +267,10 @@ class Session:
     renamed: bool | None = None
     voiceNames: dict | None = None
     voiceGuesses: dict | None = None
-    # An imported recording (the Mac's 导入录音): its file name, where it was, and true until
-    # transcribing it finished. Linux doesn't import yet; the fields are kept so a record survives.
     sourceFile: str | None = None
     sourcePath: str | None = None
     importing: bool | None = None
-    # Heard through the microphone in the room (the Mac's 会议室) for some or all of it.
     room: bool | None = None
-    # Keys this version doesn't know (a newer Mac's), written back as they came so a record survives.
     extra: dict = field(default_factory=dict)
 
     KEYS = ("id", "title", "startedAt", "endedAt", "lines", "hasAudio", "notes", "renamed", "voiceNames",
@@ -300,8 +278,6 @@ class Session:
 
     @property
     def duration(self) -> float:
-        """Until it ended; a record that never got an end (the app quit mid-meeting) runs to its last
-        line rather than to now. The live meeting shows its own clock."""
         if self.endedAt is not None:
             return (self.endedAt - self.startedAt).total_seconds()
         return self.lines[-1].t if self.lines else 0.0

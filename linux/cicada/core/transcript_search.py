@@ -1,11 +1,7 @@
-"""Searching a meeting's lines, shared by the notes window and the records window, so a search finds
-the same lines (misheard names included) and marks them the same way in both (the Mac's
-TranscriptSearch.swift)."""
 from __future__ import annotations
 
 
 def terms(query: str, notes: list = ()) -> list:
-    """The query, plus every way the notes say that name was heard (江充 also finds 江松)."""
     q = query.strip()
     if not q:
         return []
@@ -25,20 +21,16 @@ def line_matches(line, terms_: list) -> bool:
 
 
 def matches(lines: list, terms_: list) -> list:
-    """The ids of the lines a search finds, in order."""
     if not terms_:
         return []
     return [l.id for l in lines if line_matches(l, terms_)]
 
 
 def spans(text: str, terms_: list) -> list:
-    """Where each term is in `text` (case-insensitive), as merged (start, end) pairs: every occurrence
-    gets marked."""
     low = text.lower()
     found = []
     for t in terms_:
         t = t.lower()
-        # lower() can change a string's length (İ): then its offsets don't fit `text`, so leave it unmarked.
         if not t or len(low) != len(text):
             continue
         i = low.find(t)

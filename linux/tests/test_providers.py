@@ -1,5 +1,3 @@
-"""AI 服务: the service table, how each one's requests are shaped, per-service keys, and the client
-against each service (no network: a fake transport that records where each request went)."""
 from __future__ import annotations
 
 import base64
@@ -21,13 +19,11 @@ from cicada.core.translator import Translator, is_noise  # noqa: E402
 
 
 class Fake:
-    """Answers every request with `respond(url, body)`; speech with `speech(url, body)`."""
-
     def __init__(self, respond, speech=None):
         self.respond = respond
         self.speech = speech
-        self.sent = []      # (url, body or "")
-        self.streamed = []  # (url, body)
+        self.sent = []
+        self.streamed = []
 
     def send(self, url, method, body, headers, timeout):
         self.sent.append((url, body or ""))
@@ -74,7 +70,6 @@ class Table(Base):
         self.assertEqual("google/gemini-3.8-flash-tts", c.voice_model)
         ling = AppSettings().ai_config()
         self.assertEqual(("Ming-3.0-audio-flash", "Ling-3.1-flash"), (ling.hear_model, ling.text_model))
-        # Ling keeps its own key ("model"); a service never named falls back to Ling.
         self.assertEqual("Ling-3.0-flash", AppSettings(model="Ling-3.0-flash").ai_config().text_model)
         self.assertEqual("ling", providers.named("openai").id)
 
@@ -93,7 +88,7 @@ class Table(Base):
     def test_custom_address(self):
         self.assertEqual("https://api.example.com/v1/", providers.custom_base("api.example.com/v1"))
         self.assertEqual("http://127.0.0.1:1234/v1/", providers.custom_base("127.0.0.1:1234/v1"))
-        self.assertIsNone(providers.custom_base("http://api.example.com/v1"))  # http only on this computer
+        self.assertIsNone(providers.custom_base("http://api.example.com/v1"))
         self.assertIsNone(providers.custom_base(" "))
 
     def test_settings_keep_the_service_across_a_restart(self):
@@ -164,7 +159,6 @@ class Client(Base):
     def test_requests_go_to_the_service_in_its_shape(self):
         fake = Fake(lambda u, b: reply("LANG: en\nORIGINAL: Hi.\nTRANSLATION: 嗨。", finish=None))
         ling, _ = self.client(fake)
-        # No finish reason: Ling's search essays come without one, other services may just omit it.
         r = ling.chat("c", "i", TRANSLATE, model="qwen/qwen3.8-omni-flash", audio=bytes([1]))
         self.assertIn("ORIGINAL: Hi.", r)
         url, body = fake.sent[0]
@@ -173,7 +167,6 @@ class Client(Base):
         self.assertEqual({"enabled": False}, b["reasoning"])
         self.assertNotIn("thinking", b)
         self.assertEqual("input_audio", b["messages"][1]["content"][0]["type"])
-        # Text calls use the service's text model.
         ling.chat("c", "i", TRANSLATE)
         self.assertEqual("inclusionai/ling-3.0-flash", jsonfmt.parse(fake.sent[1][1])["model"])
 
@@ -193,7 +186,7 @@ class Client(Base):
         self.assertEqual(OK, ling.check())
         self.assertFalse(ling.hears)
         self.assertFalse(ling.can_hear)
-        self.assertTrue(ling.usable)  # notes and translation still work
+        self.assertTrue(ling.usable)
         self.assertIn("a/b", ling.text_catalog)
         s.aiHearModels.clear()
         ling.key_changed()
@@ -220,15 +213,12 @@ class Client(Base):
         self.assertEqual("https://zenmux.ai/api/v1/audio/speech", url)
         self.assertEqual(("google/gemini-3.8-flash-tts", "Puck", True), (b["model"], b["voice"], b["stream"]))
         self.assertNotIn("language_id", b)
-        # A voice that isn't this service's (a Ming name left in settings) becomes its first one.
         list(ling.speech("Hello", voice="US_Emma"))
         self.assertEqual("Kore", jsonfmt.parse(fake.streamed[1][1])["voice"])
-        # OpenRouter streams the PCM bytes themselves, without `stream`.
         raw = Fake(lambda u, b: reply("ok"), lambda u, b: StreamResponse(200, iter(()), "audio/pcm", iter([b"\x05\x00", b"\x06\x00"])))
         ling, _ = self.client(raw, "openrouter")
         self.assertEqual([b"\x05\x00", b"\x06\x00"], list(ling.speech("Hi", voice=None)))
         self.assertNotIn("stream", jsonfmt.parse(raw.streamed[0][1]))
-        # One JSON with a WAV in it.
         wav = b"RIFF\x00\x00\x00\x00WAVEfmt \x10\x00\x00\x00" + bytes(16) + b"data\x04\x00\x00\x00\x07\x00\x08\x00"
         one = Fake(lambda u, b: reply("ok"), lambda u, b: StreamResponse(
             200, iter(()), "application/json", iter([jsonfmt.write({"audio": base64.b64encode(wav).decode()}).encode()])))
@@ -263,10 +253,8 @@ class Words(Base):
         self.assertIn("ZenMux", problem(LingError(LingError.NETWORK), "ZenMux")[1])
         self.assertEqual(("network", "字幕和纪要等 Ling 恢复 · 连上后自动继续"), problem(LingError(LingError.TIMEOUT), "Ling"))
         self.assertIsNone(problem(LingError(LingError.HTTP, 400), "Ling")[0])
-        # A gateway's 502 in front of the server: the service's trouble, not the network or the key.
         self.assertEqual(("busy", "ZenMux 暂时出错（HTTP 502），稍后再试。"), problem(LingError(LingError.HTTP, 502), "ZenMux"))
         self.assertEqual(("busy", "Ling 暂时出错（HTTP 503），稍后再试。"), problem(LingError(LingError.HTTP, 503), "Ling"))
-        # 其他（兼容 OpenAI） is UI text: in English it reads as the settings name it.
         from cicada.core import strings
         res = [os.path.join(os.path.dirname(__file__), "..", "..", "Resources")]
         strings.load("en", res)

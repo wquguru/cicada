@@ -1,8 +1,3 @@
-"""The look: the Mac app's, drawn with GTK (canvas "知了 Linux · 对齐 Mac"). Its palette (AGENTS.md ›
-Design): ground #F3F4F6, white sheets, ink #15171C, one accent #E8552B for "live", greys #5A5F6B /
-#6B7080. Sizes are the Mac's numbers in px (text() turns them into points, which GTK renders 4/3
-larger); every widget the theme would draw (switches, dropdowns, title buttons) is styled here, so
-Yaru's orange and its large controls never show."""
 from __future__ import annotations
 
 import math
@@ -482,7 +477,6 @@ def install_css() -> None:
 
 
 def prefers_dark() -> bool:
-    """GNOME's 外观 › 深色 (org.gnome.desktop.interface color-scheme), else the GTK theme's name."""
     try:
         source = Gio.SettingsSchemaSource.get_default()
         if source and source.lookup("org.gnome.desktop.interface", True):
@@ -503,9 +497,6 @@ def classes(widget, *names):
     return widget
 
 
-# The language text is tagged with, so fontconfig picks the matching CJK face: Japanese kanji drawn
-# with the Chinese font look wrong to a Japanese reader (and the other way round). No CJK family is
-# named in the CSS for that reason. Set from the UI language at start; content passes its own.
 DEFAULT_LANG = "zh-cn"
 
 
@@ -526,8 +517,6 @@ def text(s: str, size: int = 13, cls: str = "ink", bold: bool = False, wrap: boo
     if wrap:
         l.set_line_wrap(True)
         l.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
-        # Wrapped text asks for a modest width and takes what it's given, so a long English line
-        # doesn't stretch its window.
         l.set_max_width_chars(width_chars)
     elif ellipsize:
         l.set_ellipsize(Pango.EllipsizeMode.END)
@@ -536,16 +525,12 @@ def text(s: str, size: int = 13, cls: str = "ink", bold: bool = False, wrap: boo
 
 
 def retext(l: Gtk.Label, s: str) -> None:
-    """New text in a label made by text(), keeping its size, weight and language (set_text would drop them)."""
     size, lang, bold = l.cicada_format
-    # `size` is the Mac's number, in px: Pango sizes are points (4/3 px at 96 dpi), so 0.75 of it;
-    # in points, GNOME's text scaling still applies. Bold is the Mac's semibold (Noto has no 600).
     l.set_markup('<span size="%d" lang="%s"%s>%s</span>' % (round(size * 768), lang, ' weight="bold"' if bold else "", esc(s)))
 
 
 def marked(s: str, terms: list, size: int = 13, cls: str = "ink", current: bool = False, lang: str | None = None,
            width_chars: int = 40) -> Gtk.Label:
-    """text() with every search term highlighted in place (the current match in the accent)."""
     from ..core.transcript_search import spans
     l = text(s, size, cls, lang=lang, width_chars=width_chars)
     merged = spans(s, terms)
@@ -565,9 +550,6 @@ def marked(s: str, terms: list, size: int = 13, cls: str = "ink", current: bool 
 
 def fixed(line, size: int = 13, cls: str = "ink", terms: list = (), current: bool = False, lang: str | None = None,
           width_chars: int = 40) -> Gtk.Label:
-    """A line as shown (改正听错的词): each fixed word underlined in grey (the Mac's dotted underline;
-    Pango has no dotted one), a word waiting for the user on a pale wash. While searching, the search
-    marks instead."""
     from ..core.correction import apply
     if terms or not line.fixes:
         return marked(line.shown, list(terms), size, cls, current, lang=lang or line.srcLang, width_chars=width_chars)
@@ -595,7 +577,6 @@ def fixed(line, size: int = 13, cls: str = "ink", terms: list = (), current: boo
 
 
 def fixed_words(items, on_revert) -> Gtk.Widget:
-    """Under a line: each fixed word, what it was heard as, and 改回. `items`: [(line id, fix)]."""
     from ..core.correction import label
     w = Wrap(6)
     for line_id, f in items:
@@ -608,7 +589,7 @@ def fixed_words(items, on_revert) -> Gtk.Widget:
         row.pack_start(lab, False, False, 0)
         b = Gtk.Button(label=L("改回"))
         classes(b, "fixlink")
-        b.set_can_focus(False)  # the notes window never takes focus
+        b.set_can_focus(False)
         b.connect("clicked", lambda *_a, i=line_id, f=f: on_revert(i, f))
         row.pack_start(b, False, False, 0)
         w.add(panel(pad(row, 3, 8), "fixchip"))
@@ -616,7 +597,6 @@ def fixed_words(items, on_revert) -> Gtk.Widget:
 
 
 def soft_button(label: str, on_click, dark: bool = False) -> Gtk.Button:
-    """The Mac's SoftButton: dark for the answer, soft grey for the rest. Never takes focus."""
     b = Gtk.Button(label=label)
     classes(b, "darkbtn" if dark else "softbtn")
     b.set_can_focus(False)
@@ -625,8 +605,6 @@ def soft_button(label: str, on_click, dark: bool = False) -> Gtk.Button:
 
 
 def fix_toast(fixes, message: str) -> Gtk.Widget:
-    """The last fix decision said back (the Mac's FixToast): dark, with 撤销 while there is something
-    to undo. Shown in place, not as an overlay: the notes window lays out top to bottom."""
     row = hbox(14)
     row.pack_start(text(message, 13, "", wrap=False), True, True, 0)
     if fixes.can_undo:
@@ -686,7 +664,6 @@ def icon_button(icon_name: str, tooltip: str, on_click, extra: str = "", px: int
 
 
 def link(label: str, on_click) -> Gtk.Button:
-    """A text action inside a sentence: rendered as a flat link-coloured button."""
     b = Gtk.Button(label=label)
     classes(b, "quietbtn")
     b.set_relief(Gtk.ReliefStyle.NONE)
@@ -695,10 +672,6 @@ def link(label: str, on_click) -> Gtk.Button:
 
 
 def status_line(tone: str, s: str, action: str | None = None, on_action=None) -> Gtk.EventBox:
-    """A service in trouble, said the same way wherever it shows (the Mac's StatusLine): a dot, what
-    waits for what · what still works, and at most one action. Colour sits in the dot only, so a
-    passing wait doesn't read as a fault: "waiting" (yellow) comes back by itself, "needsyou" (red)
-    needs the user, "info" (grey) is just so they know."""
     row = hbox(8)
     d = Gtk.Box()
     d.set_size_request(6, 6)
@@ -714,7 +687,7 @@ def status_line(tone: str, s: str, action: str | None = None, on_action=None) ->
         b.add(text(action, 12, "ink", bold=True, wrap=False, ellipsize=False))
         classes(b, "quietbtn", "statusaction")
         b.set_relief(Gtk.ReliefStyle.NONE)
-        b.set_can_focus(False)  # the notes window never takes focus
+        b.set_can_focus(False)
         b.set_valign(Gtk.Align.CENTER)
         b.connect("clicked", lambda *_: on_action())
         row.pack_end(b, False, False, 0)
@@ -766,7 +739,6 @@ def clear(box: Gtk.Container) -> None:
 
 
 def panel(widget, *cls) -> Gtk.EventBox:
-    """A styled container (GTK 3 boxes don't draw backgrounds; an EventBox does)."""
     e = Gtk.EventBox()
     e.add(widget)
     classes(e, *cls)
@@ -774,7 +746,6 @@ def panel(widget, *cls) -> Gtk.EventBox:
 
 
 def segmented(options, current, on_change) -> Gtk.Box:
-    """Two or three linked toggles, one checked: GNOME's view switcher in miniature."""
     box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
     classes(box, "segmented")
     buttons = {}
@@ -798,7 +769,6 @@ def segmented(options, current, on_change) -> Gtk.Box:
 
 
 def boxed(rows) -> Gtk.Widget:
-    """A boxed list: rows separated by hairlines inside one rounded white card."""
     box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
     for i, r in enumerate(rows):
         if i:
@@ -809,8 +779,6 @@ def boxed(rows) -> Gtk.Widget:
 
 def prow(title: str, control: Gtk.Widget | None = None, subtitle: str | None = None, title_widget=None,
          subtitle_widget=None) -> Gtk.Widget:
-    """One preferences row: title (and a grey subtitle) on the left, its control on the right.
-    `subtitle_widget`: a grey line the caller rewrites later, in place of `subtitle`."""
     row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
     left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
     left.set_valign(Gtk.Align.CENTER)
@@ -838,8 +806,6 @@ def icon_tile(icon_name: str, size: int = 64, glyph: int = 30, tone: str = "") -
 
 
 def breathing_dot(small: bool = False) -> Gtk.Widget:
-    """BreathingDot: an accent dot with a ring swelling out of it ("live", without blinking).
-    small: the Mac's 6 px one (the records list)."""
     d = dot(True)
     if small:
         d.set_size_request(6, 6)
@@ -849,8 +815,6 @@ def breathing_dot(small: bool = False) -> Gtk.Widget:
 
 
 def ring_pixbuf(fraction: float, px: int = 26, track: str = "#3A3D45", color: str = "#E8552B"):
-    """The countdown ring around the logo (ListenPill's ending state), as an SVG: Ubuntu ships the SVG
-    pixbuf loader but not the cairo bindings a drawn widget would need."""
     from gi.repository import GdkPixbuf
     r = 11.75
     c = 2 * math.pi * r
@@ -867,11 +831,9 @@ def ring_pixbuf(fraction: float, px: int = 26, track: str = "#3A3D45", color: st
 
 
 def place_tag(line) -> Gtk.Widget:
-    """现场 / 线上 beside the other side's label in a meeting that heard both (the Mac's PlaceTag): filled
-    for the room microphone, outlined for the computer's audio."""
     room = line.via == "room"
     l = text(L("现场") if room else L("线上"), 10, "", wrap=False, ellipsize=False)
-    pad(l, 0, 5)  # a margin: GTK 3 ignores CSS padding on an EventBox
+    pad(l, 0, 5)
     c = panel(l, "placetag", *(["room"] if room else []))
     c.set_valign(Gtk.Align.CENTER)
     c.set_tooltip_text(L("会议室的麦克风听到的") if room else L("电脑里放出来的"))
@@ -879,17 +841,14 @@ def place_tag(line) -> Gtk.Widget:
 
 
 def me_tag() -> Gtk.Widget:
-    """My own line (the Mac's MeTag): said through 同声传译, so what the other side heard was its
-    translation. 你 in the accent, then an outlined 同传 pill."""
     pill = text(L("同传"), 10, "", wrap=False, ellipsize=False)
-    pad(pill, 1, 5)  # a margin: GTK 3 ignores CSS padding on an EventBox
+    pad(pill, 1, 5)
     p = panel(pill, "metag")
     p.set_valign(Gtk.Align.CENTER)
     box = hbox(5)
-    box.set_halign(Gtk.Align.START)  # the tooltip covers the tag, not the row
+    box.set_halign(Gtk.Align.START)
     box.pack_start(text(L("你"), 11, "accent", bold=True, wrap=False, ellipsize=False), False, False, 0)
     box.pack_start(p, False, False, 0)
-    # Linux turns it on and off (开始说, the shortcut), it has no key to hold: not the Mac's tooltip.
     box.set_tooltip_text(L("同声传译时说的，对方听到的是译文"))
     return box
 
@@ -897,15 +856,13 @@ def me_tag() -> Gtk.Widget:
 def chip(s: str, now: bool = False) -> Gtk.Widget:
     l = text(s, 11, "", bold=True, wrap=False, ellipsize=False)
     if now:
-        pad(l, 1, 6)  # a margin: GTK 3 ignores CSS padding on an EventBox
+        pad(l, 1, 6)
     c = panel(l, "chip", "now" if now else "time")
     c.set_valign(Gtk.Align.BASELINE)
     return c
 
 
 class _Fraction(Gtk.Bin):
-    """Gives its child `fraction` of the width it is given (the Mac's GeometryReader), asking for none."""
-
     def __init__(self, child: Gtk.Widget, fraction: float):
         super().__init__()
         self.fraction = fraction
@@ -919,15 +876,11 @@ class _Fraction(Gtk.Bin):
 
 
 class Wrap(Gtk.Fixed):
-    """The Mac's FlowLayout: children left to right at their natural size, wrapping onto the next
-    line. (A FlowBox lines its children up in columns, which spreads a row of chips apart.)"""
-
     def __init__(self, spacing: int = 6):
         super().__init__()
         self.spacing = spacing
 
     def _lines(self, width: int):
-        """[(row height, [(child, x, w, h)…])…] for this width."""
         lines, row, x, h = [], [], 0, 0
         for c in self.get_children():
             if not c.get_visible():
@@ -971,7 +924,6 @@ class Wrap(Gtk.Fixed):
 
 
 def skeleton(fraction: float = 1.0, height: int = 12) -> Gtk.Widget:
-    """SkeletonBar: a placeholder line with a light sweeping across it (the .skeleton CSS)."""
     bar = Gtk.Box()
     bar.set_size_request(-1, height)
     classes(bar, "skeleton", "thin" if height < 10 else "")
@@ -979,7 +931,6 @@ def skeleton(fraction: float = 1.0, height: int = 12) -> Gtk.Widget:
 
 
 def sound_bars() -> Gtk.Widget:
-    """SoundBars: four small orange bars rising and falling, "listening" at the size of a line of text."""
     row = hbox(3)
     for i in range(4):
         b = Gtk.Box()
@@ -990,9 +941,6 @@ def sound_bars() -> Gtk.Widget:
 
 
 class Toasts:
-    """GNOME-style toast at the bottom of a window: one at a time, an optional action, gone after
-    a few seconds (or when the next one comes). `on_timeout` runs when it expires unacted."""
-
     def __init__(self, overlay: Gtk.Overlay):
         self.revealer = Gtk.Revealer()
         self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_UP)
@@ -1041,13 +989,10 @@ class Toasts:
 
 
 def loudness(rms: float) -> float:
-    """-50 dBFS (a quiet room) to 0 dBFS on a log scale, so speech sits mid-bar instead of pinning it."""
     return 0.0 if rms <= 0 else max(0.0, min(1.0, (20 * math.log10(rms) + 50) / 50))
 
 
 def no_wheel(combo: Gtk.ComboBox, scroll: Gtk.ScrolledWindow) -> None:
-    """A GTK 3 dropdown changes its value under the mouse wheel; scrolling a page past one would
-    silently change (and save) a setting. The wheel scrolls the page instead."""
     def wheel(_w, event):
         adj = scroll.get_vadjustment()
         ok, _dx, dy = event.get_scroll_deltas()

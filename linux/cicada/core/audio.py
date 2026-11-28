@@ -1,6 +1,3 @@
-"""Where listening gets its sound: 16 kHz mono Int16 (array('h')), pushed from any thread. On Linux
-the PulseAudio/PipeWire monitor of the speakers (app/capture.py); in tests, the CLI and the sample
-meeting, a file."""
 from __future__ import annotations
 
 import math
@@ -14,8 +11,6 @@ RATE = 16000
 
 
 class AudioSource:
-    """Set on_samples / on_ended before start(); both are called on the source's own thread.
-    on_ended(None) when a file finished, else why the source stopped."""
     on_samples = None
     on_ended = None
 
@@ -27,8 +22,6 @@ class AudioSource:
 
 
 class PcmAudioSource(AudioSource):
-    """Plays 16 kHz samples into listening, in real time or as fast as it can (`speed` 0)."""
-
     def __init__(self, load, speed: float = 1.0):
         self._load = load if callable(load) else (lambda: Wav.read_file(load))
         self.speed = speed
@@ -41,13 +34,13 @@ class PcmAudioSource(AudioSource):
     def _run(self) -> None:
         try:
             pcm = self._load()
-        except Exception as e:  # noqa: BLE001 - any unreadable file ends the source
+        except Exception as e:  # noqa: BLE001
             from .support import Log
             Log.d("file source: unreadable %s" % type(e).__name__)
             if self.on_ended:
                 self.on_ended("unreadable")
             return
-        chunk = RATE // 10  # 100 ms, like a capture callback
+        chunk = RATE // 10
         started = time.monotonic()
         i = 0
         while i < len(pcm) and not self._stopped:
@@ -58,7 +51,6 @@ class PcmAudioSource(AudioSource):
                 if wait > 0:
                     time.sleep(wait)
             i += chunk
-        # A second of silence so the last sentence's pause is heard.
         if self.on_samples and not self._stopped:
             self.on_samples(array("h", bytes(RATE * 2)))
         if self.on_ended:
@@ -89,7 +81,6 @@ class Wav:
 
     @staticmethod
     def read(data: bytes) -> array:
-        """A PCM16 WAV of any rate and channel count, as 16 kHz mono."""
         if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
             raise ValueError("not a WAV")
         pos = 12
@@ -121,7 +112,6 @@ class Wav:
 
     @staticmethod
     def resample(mono, rate: int) -> array:
-        """Box average then pick: plenty for speech going to a recognizer."""
         def clamp(x):
             return int(max(-32768, min(32767, x)))
         if rate == RATE:
@@ -143,8 +133,6 @@ class Wav:
 
 
 def sink_description(pactl_sinks: str, name: str) -> str | None:
-    """The description of sink `name` in `pactl list sinks` output (the onboarding shows the default
-    output by it). The field names are English under LC_MESSAGES=C; the description stays translated."""
     if not name:
         return None
     current = None

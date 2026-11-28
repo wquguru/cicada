@@ -1,6 +1,3 @@
-"""我自己的声音 (the Mac's VoiceCloneSheet and VoiceRecorder): read a passage for 10–15 s, Ming hears
-what it says, listen to the original and to the clone, then keep it (voice_reference). The
-recording stays in memory until 用这个声音; the network runs on worker threads."""
 from __future__ import annotations
 
 import threading
@@ -18,8 +15,6 @@ from . import ui
 
 
 def own_and_other(app) -> tuple:
-    """My language, and one to interpret it into (the room's, else English or Chinese): Ming hears
-    the recording through the interpreting prompt, whose ORIGINAL line is what it says."""
     mine = app.settings.speak_from_code
     other = app.speak.target
     if voicemod.key(other) == voicemod.key(mine):
@@ -28,16 +23,12 @@ def own_and_other(app) -> tuple:
 
 
 def transcribe(app, samples: array) -> str:
-    """What the recording says, as Ming hears it; "" when it heard nothing usable."""
     mine, other = own_and_other(app)
     heard = app.translator.interpret(Wav.bytes(samples), mine, other)
     return heard[0].strip() if heard else ""
 
 
 class Recorder:
-    """The microphone into memory, 16 kHz mono, stopping by itself at 15 s. Phases as on the Mac:
-    idle, recording, checking (Ming hears it), ready, failed (`why`). `on_change` comes on the main loop."""
-
     def __init__(self, app, on_change):
         self.app = app
         self.on_change = on_change
@@ -56,7 +47,6 @@ class Recorder:
         return len(self.samples) / RATE
 
     def start(self, source=None) -> None:
-        """`source`: an AudioSource (a WAV for tests); else the real microphone, not 知了 麦克风."""
         from .capture import SystemAudio
         self.cancel()
         self._gen += 1
@@ -74,7 +64,7 @@ class Recorder:
             with self._lock:
                 self.samples.extend(samples)
             if samples:
-                self.level = (sum(x * x for x in samples) / len(samples)) ** 0.5 / 32768.0  # RMS; ui.loudness shows it
+                self.level = (sum(x * x for x in samples) / len(samples)) ** 0.5 / 32768.0
 
         def ended(why):
             if gen != self._gen:
@@ -82,7 +72,7 @@ class Recorder:
             if why:
                 Log.d("voice clone: microphone ended %s" % why)
                 GLib.idle_add(lambda: self._fail(L("麦克风没收到声音，请检查麦克风权限")) or False)
-            else:  # a file ran out
+            else:
                 GLib.idle_add(lambda: self.finish() or False)
         source.on_samples = got
         source.on_ended = ended
@@ -118,7 +108,6 @@ class Recorder:
         self.on_change()
 
     def finish(self) -> None:
-        """Stops and has Ming hear it; ready when it is long enough, understood and not too slow."""
         if self.phase != "recording":
             return
         self._stop()
@@ -165,13 +154,11 @@ class Recorder:
 
 
 class VoiceCloneDialog:
-    """The sheet: record, then review. `on_done(saved)` when it closes."""
-
     def __init__(self, app, parent=None, on_done=None):
         self.app = app
         self.on_done = on_done
         self.consent = False
-        self.playing = None          # "original" or "clone" while one plays
+        self.playing = None
         self._play_gen = 0
         self.recorder = Recorder(app, self.render)
         d = Gtk.Dialog(transient_for=parent, modal=True)
@@ -182,7 +169,7 @@ class VoiceCloneDialog:
         d.connect("destroy", lambda *_: self._gone())
         self.window = d
         self.body = ui.vbox(16)
-        self.body.set_size_request(504, -1)  # 560 with the padding, as on the Mac
+        self.body.set_size_request(504, -1)
         d.get_content_area().pack_start(ui.pad(self.body, 28), True, True, 0)
         self._last = None
         self.render()
@@ -218,13 +205,10 @@ class VoiceCloneDialog:
         if cb:
             cb(saved)
 
-    # Layout
-
     def render(self) -> None:
         if self.window is None:
             return
         r = self.recorder
-        # The meter ticks ten times a second: only its labels change then, not the whole sheet.
         shape = (r.phase, r.why, self.consent, self.playing, self.app.ling.speaks)
         if shape == self._last and r.phase == "recording" and hasattr(self, "_clock"):
             ui.retext(self._clock, clock(r.seconds))
@@ -326,7 +310,7 @@ class VoiceCloneDialog:
         row.pack_start(b, False, False, 0)
         words = ui.vbox(2, ui.text(title, 13, "ink", bold=True, wrap=False), ui.text(detail, 12, "tertiary", wrap=False))
         for l in words.get_children():
-            l.set_max_width_chars(36)  # one line each, cut short, so the sheet keeps the Mac's width
+            l.set_max_width_chars(36)
         row.pack_start(words, True, True, 0)
         if tag:
             t = ui.text(tag, 11, "", wrap=False)
@@ -335,15 +319,12 @@ class VoiceCloneDialog:
             row.pack_end(t, False, False, 0)
         return ui.panel(ui.pad(row, 12, 14), "voicewash" if accent else "")
 
-    # Actions
-
     def rerecord(self) -> None:
         self._play_gen += 1
         self.playing = None
         self.recorder.start()
 
     def play(self, which: str) -> None:
-        """The original from memory, or the clone saying the sample line, on the speakers."""
         from .room import Player
         if self.playing == which:
             self._play_gen += 1

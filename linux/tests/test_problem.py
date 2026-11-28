@@ -1,5 +1,3 @@
-"""Something only the user can fix (problem.py, the Mac's AIServiceStrip.blocking): which reasons
-count, and when the notification is due."""
 from __future__ import annotations
 
 import os
@@ -45,11 +43,11 @@ class When(unittest.TestCase):
     def test_blocking_once_a_meeting_only_while_listening_and_put_away(self):
         n = Notices()
         n.start()
-        self.assertIsNone(n.tick(0, False, "invalidKey", False))  # not listening
-        self.assertIsNone(n.tick(1, True, "invalidKey", True))    # the notes window says it
+        self.assertIsNone(n.tick(0, False, "invalidKey", False))
+        self.assertIsNone(n.tick(1, True, "invalidKey", True))
         self.assertEqual("blocking", n.tick(2, True, "invalidKey", False))
         self.assertIsNone(n.tick(3, True, "invalidKey", False))
-        self.assertIsNone(n.tick(4, True, "noCredit", False))     # another one, same meeting
+        self.assertIsNone(n.tick(4, True, "noCredit", False))
         n.start()
         self.assertEqual("blocking", n.tick(5, True, "noCredit", False))
 
@@ -71,13 +69,12 @@ class When(unittest.TestCase):
         n = Notices()
         n.start()
         n.tick(0, True, "unreachable", False)
-        n.tick(100, True, None, False)  # back
+        n.tick(100, True, None, False)
         self.assertIsNone(n.tick(110, True, "unreachable", False))
         self.assertIsNone(n.tick(200, True, "unreachable", False))
         self.assertEqual("unreachable", n.tick(230, True, "unreachable", False))
 
     def test_unreachable_counts_while_the_window_shows_it(self):
-        # Down for 2 minutes with the window up, then put away: due at once.
         n = Notices()
         n.start()
         n.tick(0, True, "unreachable", True)

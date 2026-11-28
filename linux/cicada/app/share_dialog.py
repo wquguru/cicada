@@ -1,6 +1,3 @@
-"""分享…: a meeting as a link on cicada.indaloop.app (the Mac's ShareViews.swift). Settings, then the
-server's review, then the link (and its password) or what the review stopped. A meeting already
-shared opens on its link. The network runs on a worker thread; the dialog never blocks the app."""
 from __future__ import annotations
 
 import threading
@@ -26,7 +23,6 @@ def client() -> ShareClient:
 
 
 def can_share(app, s) -> bool:
-    """Not while the meeting is still going, nor before an import has its text, nor with nothing in it."""
     has_notes = s.notes is not None and not s.notes.is_empty
     return bool(s.lines or has_notes) and s.id != app.store.live and not s.importing
 
@@ -59,7 +55,7 @@ class ShareDialog:
         d.connect("destroy", lambda *_: self._gone())
         self.window = d
         self.body = ui.vbox(16)
-        self.body.set_size_request(372, -1)  # 420 with the padding, as on the Mac
+        self.body.set_size_request(372, -1)
         d.get_content_area().pack_start(ui.pad(self.body, 24), True, True, 0)
         r = ShareStore.read(s.id)
         if r is not None and r.expiresAt > time.time():
@@ -68,14 +64,11 @@ class ShareDialog:
         self.render()
         d.show_all()
 
-    # Steps
-
     def render(self) -> None:
         ui.clear(self.body)
         {"settings": self._settings, "working": self._working, "blocked": self._blocked, "done": self._done,
          "failed": self._failed}[self.step]()
         self.body.show_all()
-        # Shrink back after a taller step, once the new content has its size.
         GLib.idle_add(lambda: self.window is not None and self.window.resize(1, 1) and False)
 
     def _header(self, title: str) -> None:
@@ -120,7 +113,6 @@ class ShareDialog:
         if self.show_options:
             self._options(go)
         else:
-            # The choices already made, in one line; 更改 opens them in place.
             line = ui.hbox(8)
             line.pack_start(ui.text(share.summary(self.use_password, self.days, self.names), 13, "secondary", wrap=False),
                             True, True, 0)
@@ -141,7 +133,6 @@ class ShareDialog:
         self.window.set_default(go)
 
     def _options(self, go) -> None:
-        """Password, expiry, names and the preview's summary, as the Mac lists them once 更改 is pressed."""
         def password(v):
             self.use_password = v
             self.render()
@@ -217,11 +208,7 @@ class ShareDialog:
         row.set_size_request(-1, 80)
         self.body.pack_start(row, False, False, 0)
 
-    # Blocked
-
     def _left_after(self) -> bool:
-        """Would anything be left to share once the flagged parts are out? (A notes-only share whose
-        notes were flagged has nothing; the server would refuse an empty document.)"""
         notes_left = self.has_notes and not self.drop_notes and not any(h.get("part") == "notes" for h in self.hits)
         if self.scope != "full":
             return notes_left
@@ -240,7 +227,7 @@ class ShareDialog:
             quote = self.s.lines[lines[0]].src if lines else ""
         q = ui.text(quote, 12, "secondary", width_chars=44)
         q.set_lines(2)
-        q.set_ellipsize(Pango.EllipsizeMode.END)  # two lines at most
+        q.set_ellipsize(Pango.EllipsizeMode.END)
         box = ui.vbox(3, ui.text("%s · %s" % (what, place), 12, "ink", bold=True, width_chars=44), q)
         return ui.panel(ui.pad(box, 10), "sharehit")
 
@@ -275,14 +262,10 @@ class ShareDialog:
             self.drop_notes = True
         self.go()
 
-    # Done
-
     def _message(self, r) -> str:
         return share.clipboard_text(r, session_store.display_title(self.s))
 
     def _copy_control(self, r) -> Gtk.Widget:
-        """复制 puts the link and the password on the clipboard as one message; with a password, its
-        arrow copies either alone, for whoever sends them apart."""
         def copy(text, what):
             self._copy(text, what)
             self.render()
@@ -390,8 +373,6 @@ class ShareDialog:
         self.body.pack_start(self._buttons(ui.button(L("关闭"), self.close, "outline"),
                                            ui.button(L("重试"), self.go, "darkbtn")), False, False, 0)
 
-    # Parts
-
     def _copy(self, text: str, what: str) -> None:
         Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(text, -1)
         self.copied = what
@@ -422,7 +403,6 @@ class ShareDialog:
             self.window.destroy()
 
     def state(self) -> dict:
-        """For the control socket: where the dialog is and what it shows."""
         r = self.record
         return {"step": self.step, "session": self.s.id, "scope": self.scope, "days": self.days, "names": self.names,
                 "password": self.use_password, "summary": self.summary, "busy": self.busy, "confirm": self.confirm,
@@ -433,7 +413,6 @@ class ShareDialog:
 
 
 def open_for(app, s, parent=None) -> ShareDialog:
-    """The one share dialog: a new record replaces whatever was open."""
     old = getattr(app, "share_dialog", None)
     if old is not None:
         old.close()

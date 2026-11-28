@@ -1,10 +1,3 @@
-"""说话人识别: telling the other side's voices apart (SpeakerID.swift). Each heard line's audio becomes a
-voiceprint (WeSpeaker ResNet34-LM, VoxCeleb, CC BY 4.0), voiceprints are grouped as they arrive, and a
-voice is only named once it has a few lines. The thresholds are the Mac's (tuned on AMI meetings).
-
-The model runs in native/voiceprint.c (libcicada-voice), loaded with ctypes: a stock Ubuntu desktop has no
-BLAS and Python can't run a ResNet in real time. Without the library or the weights the feature is
-unavailable and listening carries on as before."""
 from __future__ import annotations
 
 import copy
@@ -18,10 +11,7 @@ from . import strings
 from .support import Log, clock
 
 
-# Voiceprints
-
 def _root() -> str:
-    # linux/ in the source tree, cicada-linux/ in the installed one: the folder holding cicada/.
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -49,7 +39,7 @@ class Voiceprints:
     def __init__(self, lib, model):
         self._lib = lib
         self._model = model
-        self._lock = threading.Lock()  # one at a time: each already uses up to four cores
+        self._lock = threading.Lock()
 
     @staticmethod
     def load() -> "Voiceprints | None":
@@ -73,7 +63,6 @@ class Voiceprints:
         return Voiceprints(lib, model)
 
     def embed(self, samples) -> list | None:
-        """A unit-length 256-d voiceprint of 16 kHz mono 16-bit samples (an array('h')), or None when too short."""
         n = len(samples)
         if n < self.MIN_SECONDS * 16000:
             return None
@@ -84,12 +73,7 @@ class Voiceprints:
         return list(out) if ok else None
 
 
-# Grouping
-
 class VoiceClusterer:
-    """Groups voiceprints as lines arrive, never revising a line already labelled. A line joins the
-    closest voice when similar enough; a long line unlike every voice starts a new one; anything else
-    stays unlabelled ("对方"). Tuned on AMI dev meetings (VoiceClusterer, SpeakerID.swift)."""
     NEW_SECONDS = 2.0
     JOIN = 0.5
     START_NEW = 0.5
@@ -98,11 +82,10 @@ class VoiceClusterer:
         self.sums: list = []
 
     def merge(self, frm: int, into: int) -> None:
-        """The user said two voices are one: later lines like either go to `into`."""
         if not (0 <= frm < len(self.sums) and 0 <= into < len(self.sums)) or frm == into:
             return
         self.sums[into] = [a + b for a, b in zip(self.sums[into], self.sums[frm])]
-        self.sums[frm] = [0.0] * len(self.sums[frm])  # never the closest again
+        self.sums[frm] = [0.0] * len(self.sums[frm])
 
     def label(self, v: list, seconds: float) -> int | None:
         best, best_sim = -1, -1.0
@@ -122,8 +105,6 @@ class VoiceClusterer:
 
 
 class Tagger:
-    """Voiceprints on their own thread (while Ming hears the same segment), labelled in arrival order."""
-
     def __init__(self):
         self._model = None
         self._tried = False
@@ -143,7 +124,6 @@ class Tagger:
             return self._model
 
     def reset(self) -> None:
-        """A new meeting: forget the voices of the last one."""
         with self._gate:
             self.clusterer = VoiceClusterer()
 
@@ -162,8 +142,6 @@ class Tagger:
             return self.clusterer.label(vector, seconds)
 
 
-# What the transcript shows (SpeakerLabels)
-
 SHOWN_AFTER = 5
 
 
@@ -174,17 +152,12 @@ def _cjk(c: str) -> bool:
 
 
 def substantive(text: str) -> bool:
-    """A line long enough to say whose voice it is: three words, or four characters of Chinese,
-    Japanese or Korean. "Yeah." or a stray "." don't count towards a name."""
     if sum(1 for w in text.split() if any(c.isalpha() for c in w)) >= 3:
         return True
     return sum(1 for c in text if _cjk(c)) >= 4
 
 
 def voice_numbers(lines) -> dict:
-    """Voice id → 1-based speaker number for the voices on show: a voice gets one once it has
-    SHOWN_AFTER substantive lines, and only when two voices have, so a one-to-one call stays 对方.
-    Numbers follow the order voices got there, so a number never moves once shown."""
     count, reached = {}, {}
     for i, l in enumerate(lines):
         if l.speaker != "them" or l.voice is None or not substantive(l.src):
@@ -199,13 +172,11 @@ def voice_numbers(lines) -> dict:
 
 
 def numbers(lines) -> dict:
-    """Line id → speaker number; lines without one show as 对方."""
     number = voice_numbers(lines)
     return {l.id: number[l.voice] for l in lines if l.speaker == "them" and l.voice in number}
 
 
 def names(s) -> dict:
-    """Speaker number → name: the user's, else Ling's guess (unless the user turned it down)."""
     if s.voiceNames is None and s.voiceGuesses is None:
         return {}
     out = {}
@@ -220,7 +191,6 @@ def names(s) -> dict:
 
 
 def guessed(s) -> dict:
-    """Speaker number → Ling's guess, for the voices whose shown name is that guess."""
     out = {}
     for v, n in voice_numbers(s.lines).items():
         if (s.voiceNames or {}).get(str(v)) is None and (s.voiceGuesses or {}).get(str(v)) is not None:
@@ -229,7 +199,6 @@ def guessed(s) -> dict:
 
 
 def run_starts(lines, nums: dict) -> set:
-    """Lines where the speaker changes: the transcript names the speaker there only, as chat apps do."""
     out, last = set(), None
     for l in lines:
         key = "me" if l.speaker == "me" else ("n%d" % nums[l.id] if l.id in nums else "?")
@@ -240,19 +209,14 @@ def run_starts(lines, nums: dict) -> set:
 
 
 def label(number: int, shown: dict) -> str:
-    """"George", else "说话人 2"."""
     return shown.get(number) or strings.LF("说话人 %lld", number)
 
 
 def says_who(s, nums: dict) -> bool:
-    """Whether lines say who spoke. An imported file has no "other side" to call 对方: its lines are
-    named only once its voices are told apart (TranscriptExport.named)."""
     return s.sourceFile is None or bool(nums)
 
 
 def speaker_name(line, nums: dict, shown: dict) -> str:
-    """你 · 同传 (said through 同声传译), a speaker, 对方 (no voices told apart) or 未识别 (a voice not on
-    show) (TranscriptExport.speakerName)."""
     if line.speaker == "me":
         return strings.L("你 · 同传")
     if line.id in nums:
@@ -261,14 +225,13 @@ def speaker_name(line, nums: dict, shown: dict) -> str:
 
 
 def named(notes, shown: dict):
-    """The notes as shown: Ling wrote "说话人 6" before anyone named them; show the name since given."""
     if not shown or notes is None:
         return notes
 
     def swap(text):
         if text is None or ("说话人" not in text and "Speaker" not in text):
             return text
-        for n, name in sorted(shown.items(), key=lambda kv: -kv[0]):  # 说话人 12 before 说话人 1
+        for n, name in sorted(shown.items(), key=lambda kv: -kv[0]):
             for form in ("说话人 %d" % n, "说话人%d" % n, "Speaker %d" % n):
                 text = text.replace(form, name)
         return text
@@ -288,8 +251,6 @@ def shown_count(lines) -> int:
     return len(set(numbers(lines).values()))
 
 
-# People the notes mention (NoteTerm.people)
-
 ROLES = ["首席", "执行官", "主席", "总裁", "董事", "经理", "创始人", "记者", "主持", "研究员", "分析师", "教授", "老师",
          "教师", "官员", "部长", "议员", "候选人", "嘉宾", "发言人", "CEO", "CFO", "CTO", "host", "analyst", "reporter", "founder"]
 
@@ -299,8 +260,6 @@ def people(terms) -> list:
 
 
 def suggestions(s, voice: int) -> list:
-    """For renaming a voice: its current name, Ling's guess, then people the notes mention, without
-    names other voices already have; at most four (SpeakerEditor.suggestions)."""
     nums = voice_numbers(s.lines)
     number = nums.get(voice)
     shown = names(s)
@@ -318,8 +277,6 @@ def suggestions(s, voice: int) -> list:
     return out[:4]
 
 
-# Names from the conversation (SpeakerNameGuess), Ling's prompt word for word
-
 INSTRUCTION = (
     "Who are the people labelled 说话人N? Name one only when the transcript makes it clear: they "
     "introduce themselves on a line labelled with their own 说话人N; someone addresses them by name just "
@@ -332,11 +289,10 @@ INSTRUCTION = (
     "you are unsure of. Reply as JSON: {\"speakers\": [{\"speaker\": 2, \"name\": \"George\", \"evidence\": \"L12\"}]}, "
     "the evidence being the line with the name; an empty list if none. Check each name's spelling before replying.")
 
-EVIDENCE_REACH = 2  # "Okay, Amos, thank you" comes right after Amos's last words
+EVIDENCE_REACH = 2
 
 
 def content(s) -> str | None:
-    """The transcript as Ling sees it, newest 400 lines, with speaker labels; None when no voices are shown."""
     nums = numbers(s.lines)
     if not nums:
         return None
@@ -349,10 +305,7 @@ def content(s) -> str | None:
 
 
 def read(reply: str, s):
-    """(found: voice → VoiceGuess, refuted: voice → name). A name given on a line the voice neither said
-    nor spoke next to is refuted; a name Ling gives two voices goes to the one with more lines."""
     from .models import VoiceGuess
-    # Without JSON mode (a host that refuses it) the object may come in a fence or a sentence.
     a, z = reply.find("{"), reply.rfind("}")
     try:
         obj = json.loads(reply[a:z + 1]) if 0 <= a < z else None
@@ -402,7 +355,6 @@ def read(reply: str, s):
 
 
 def holds(g, v: int, s) -> bool:
-    """Whether a stored guess still stands: its evidence line is found again and the voice speaks there."""
     if "“" not in g.evidence:
         return True
     at, quote = g.evidence.split("“", 1)
@@ -417,9 +369,6 @@ def holds(g, v: int, s) -> bool:
 
 
 class Namer:
-    """Asks Ling for names on its own: once two voices are on show, again every 20 lines, and once more
-    when the meeting ends. Guesses go straight into the meeting (voiceGuesses); the user corrects."""
-
     def __init__(self, ling, store, changed=None):
         self.ling = ling
         self.store = store
@@ -441,7 +390,7 @@ class Namer:
                 return
             nums = voice_numbers(s.lines)
             if all((s.voiceNames or {}).get(str(v)) is not None for v in nums):
-                return  # everyone already has a name the user gave
+                return
             self.busy.add(sid)
             self._asked[sid] = len(s.lines)
 

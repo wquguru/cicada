@@ -1,23 +1,16 @@
-"""The meeting's recording, as on the Mac (AudioFiles.swift): AAC written as ADTS (`system.aac`) while
-the meeting runs, which stays readable up to the last frame if the app is killed, then rewrapped into
-`system.m4a` without re-encoding once it ends (or at the next launch). The GStreamer side is
-app/media.py; this is the part that needs no GStreamer, so it tests on the Mac."""
 from __future__ import annotations
 
 import os
 
-SAMPLES_PER_FRAME = 1024  # AAC-LC
+SAMPLES_PER_FRAME = 1024
 _RATES = (96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350)
 
 
 def partial(path: str) -> str:
-    """system.m4a → system.aac (AudioFileWriter.partial)."""
     return os.path.splitext(path)[0] + ".aac"
 
 
 def frames(data: bytes):
-    """(offset, length, sample rate) of each whole ADTS frame; stops at the first damaged or cut one
-    (a meeting the app didn't get to close ends mid-frame)."""
     i = 0
     n = len(data)
     while i + 7 <= n:
@@ -36,8 +29,6 @@ def seconds(data: bytes) -> float:
 
 
 def cut(data: bytes, until: float | None) -> bytes:
-    """The whole frames up to `until` seconds (all of them for None): the silent tail of a meeting that
-    ended by itself goes, as the Mac's export timeRange cuts it, and a torn last frame always goes."""
     end = 0
     t = 0.0
     for off, length, rate in frames(data):
@@ -49,7 +40,6 @@ def cut(data: bytes, until: float | None) -> bytes:
 
 
 def trim(path: str, until: float | None) -> None:
-    """Cuts the ADTS file at `path` in place (see cut)."""
     with open(path, "rb") as f:
         data = f.read()
     kept = cut(data, until)

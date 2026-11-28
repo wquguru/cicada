@@ -1,5 +1,3 @@
-"""改正听错的词: which of the AI service's proposed fixes to take, and the line as shown once they are
-in. A port of the Mac's Correction.swift, rule for rule (its tests are in tests/test_fixes.py)."""
 from __future__ import annotations
 
 import os
@@ -10,14 +8,10 @@ from .models import LineFix
 
 
 def _word(c: str) -> bool:
-    """A character of a Latin word: ASCII letters and digits."""
     return c.isascii() and c.isalnum()
 
 
 def core(frm: str, to: str) -> tuple:
-    """The part an edit changes, as a word: "解除质压" → "解除质押" is "质压" → "质押" (at least two
-    characters, so one refusal doesn't block every 压 → 押), and a Latin word stays whole
-    ("Un450P三" → "Uniswap V3", not "450P三" → "iswap V3")."""
     a, b = frm, to
     i = 0
     while i < min(len(a), len(b)) and a[i] == b[i]:
@@ -28,14 +22,12 @@ def core(frm: str, to: str) -> tuple:
 
     def from_edge(k):
         return (k < len(a) and _word(a[k])) or (k < len(b) and _word(b[k]))
-    # Only a change that starts or ends inside a Latin word takes the rest of the word.
     if from_edge(i):
         while i > 0 and _word(a[i - 1]):
             i -= 1
     if (len(a) - j - 1 >= 0 and _word(a[len(a) - j - 1])) or (len(b) - j - 1 >= 0 and _word(b[len(b) - j - 1])):
         while j > 0 and _word(a[len(a) - j]):
             j -= 1
-    # Two characters at least, taken from the Chinese side: "FFT制押" → "FFT质押" is "制押" → "质押".
     while len(a) - j - i < 2 or len(b) - j - i < 2:
         if j > 0 and not _word(a[len(a) - j]):
             j -= 1
@@ -48,15 +40,10 @@ def core(frm: str, to: str) -> tuple:
 
 
 def label(f) -> tuple:
-    """A fix as the UI names it (听成 X → Y, 已改回 X): the changed words, or the whole fix when it
-    only adds or drops words ("in" → "in now", whose changed part alone would be "" → "now")."""
     cf, ct = core(f.from_, f.to)
     return (f.from_, f.to) if not cf or not ct else (cf, ct)
 
 def word(s: str, text: str) -> int:
-    """Where `s` stands as words of its own in `text` (its offset, or -1): a Latin edge of it never runs
-    on into a Latin word around it. `core` pads a fix to two characters, so the word list learned
-    "S平 → X平", which matched inside "iOS平台" and made it "iOX平台"."""
     if not s:
         return -1
     i = text.find(s)
@@ -70,11 +57,8 @@ def word(s: str, text: str) -> int:
 
 
 def apply(fixes: list, src: str) -> tuple:
-    """The line as shown: each applied fix replaces its words where they still are. The marks are the
-    replaced words as (start, end) character offsets into the text, for the underline."""
     text = src
-    spans = []  # replacement and its character offset, kept valid as the text changes
-    # The user's own last: written against the line as it was shown, other fixes in.
+    spans = []
     ordered = [f for f in fixes if f.user is not True] + [f for f in fixes if f.user is True]
     for f in ordered:
         if not f.applied or not f.from_:
@@ -92,11 +76,6 @@ def apply(fixes: list, src: str) -> tuple:
     return text, marks
 
 
-# Deciding which of the service's proposed fixes to take, without asking it again. Its own confidence
-# isn't enough: in a 21-minute test it rated "快销 → 区块" and "苍蝇 → 方向" above 0.85. So a Chinese
-# word may only be swapped for one that sounds alike, a Latin word only for a near spelling, and a new
-# name only once the user says so.
-
 APPLY, ASK, DROP = "apply", "ask", "drop"
 APPLY_AT = 0.6
 SPELLING_AT = 0.8
@@ -105,15 +84,12 @@ ASK_AT = 0.8
 
 @dataclass
 class Edit:
-    """A fix the service proposed: the subtitle's words, what was said, how sure it is."""
     from_: str
     to: str
     confidence: float
 
 
 def decide(e: Edit, known, rejected) -> str:
-    """`known(heard, word)`: the user confirmed this heard form for this word (the word list).
-    `rejected(heard, word)`: they said no to it in this meeting."""
     cf, ct = core(e.from_, e.to)
     if not cf or not ct or cf.lower() == ct.lower() or rejected(e.from_, e.to) or rejected(cf, ct):
         return DROP
@@ -128,22 +104,16 @@ def decide(e: Edit, known, rejected) -> str:
     if latin_from and latin_to and cf.isascii() and ct.isascii() and e.confidence >= SPELLING_AT \
             and cf.lower() != ct.lower() and distance(cf.lower(), ct.lower()) <= 2:
         return APPLY
-    # A new name (Chinese heard as a Latin name, or a respelled one): sound can't check it. A
-    # name has a capital or a digit; "X平台 → X platform" is a translation, and one 对 to it
-    # taught the word list 平台 → platform, which then rewrote every 平台 in the meeting.
     if latin_to and e.confidence >= ASK_AT and name_shaped(ct):
         return ASK
     return DROP
 
 
 def name_shaped(s: str) -> bool:
-    """Latin text that could be a name: a capital or a digit in it (Morpho, GPT4o), not "platform"."""
     return any(c.isascii() and (c.isupper() or c.isdigit()) for c in s)
 
 
 def translation(heard: str, word: str) -> bool:
-    """A Chinese word "fixed" into a plain English one (平台 → platform): a translation, not a
-    misheard name."""
     return han(heard) and any(_latin_letter(c) for c in word) and word.isascii() and not name_shaped(word)
 
 
@@ -151,10 +121,6 @@ def _latin_letter(c: str) -> bool:
     return c.isascii() and c.isalpha()
 
 
-# Toneless pinyin per character. Ubuntu's Python has no Mandarin transform, so the table is the Mac's
-# own: generated once from Apple's ICU/CLDR Han-Latin transform (kCFStringTransformMandarinLatin, then
-# diacritics stripped) for U+4E00–U+9FFF, 20,924 characters, one "<char>\t<syllable>" per line. Data,
-# not a dependency; the same readings the Mac compares, so both decide alike.
 _PINYIN: dict | None = None
 
 
@@ -172,7 +138,6 @@ def _table() -> dict:
 
 
 def pinyin(s: str) -> list:
-    """One toneless syllable per character; a character the table doesn't know stays itself."""
     t = _table()
     return [t.get(c, c.lower()) for c in s]
 
@@ -189,8 +154,6 @@ def _split(syllable: str) -> tuple:
 
 
 def sounds_alike(a: str, b: str) -> bool:
-    """Same number of syllables, and on average three quarters alike: a syllable counts whole when
-    equal, half when its initial or its final matches (质/追, 销/照). 苍蝇/方向 is a quarter."""
     x, y = pinyin(a), pinyin(b)
     if len(x) != len(y) or not x:
         return False
@@ -207,7 +170,6 @@ def sounds_alike(a: str, b: str) -> bool:
 
 
 def han(s: str) -> bool:
-    """Every character a Han ideograph (Swift's isIdeographic)."""
     def ideograph(c):
         o = ord(c)
         return (0x3400 <= o <= 0x4DBF or 0x4E00 <= o <= 0x9FFF or 0xF900 <= o <= 0xFAFF or 0x20000 <= o <= 0x3134F
@@ -228,11 +190,6 @@ def distance(a: str, b: str) -> int:
 
 
 def parse(reply: str, subtitle: str):
-    """The service's reply to a sentence sent with fixes asked for: {"translation": "…", "fixes":
-    [{"from", "to", "confidence"}]} → (translation, [Edit]). None when it isn't that shape, and the
-    caller treats it as a failed translation. Fixes whose words aren't in the subtitle are dropped:
-    the service sometimes quotes them rephrased."""
-    # Asked for JSON in the prompt only: take the outermost {…}, fenced or not.
     a, b = reply.find("{"), reply.rfind("}")
     if a < 0 or b <= a:
         return None
@@ -251,9 +208,6 @@ def parse(reply: str, subtitle: str):
 
 
 def merge(old: list, new: list) -> list:
-    """What a line's fixes become after the service answered for it again (a joined line, or a
-    recheck with the lines after it in view): the user's decisions stay (said no, said yes, wrote it),
-    and of the rest only what is proposed again. So a recheck that no longer proposes a fix takes it back."""
     kept = [f for f in old if f.off is True or f.user is True]
     fresh = []
     for n in new:
@@ -264,14 +218,6 @@ def merge(old: list, new: list) -> list:
 
 
 def user_edit(shown: str, edited: str, src: str, fixes: list):
-    """改这句…: the user rewrote the line as shown. What changed, as a fix on top of the others: the
-    changed span grown to whole tokens (a Latin word, or one CJK character), and further, a token at a
-    time, until it holds a letter and is the only such span in the line. An added word ("lock that
-    in." → "lock that in now.") is then "in" → "in now" on this line, never "." on every line.
-    `swap` is whether words were replaced (not only added or dropped): only a swap may go to the rest
-    of the meeting and teach the word list. `heard` is the words in `src` when they are there, else
-    the heard words of the fix the user corrected again ("莫纳" → "Morpho" → "Monad").
-    (fix, heard, swap), or None: no change (Correction.swift's userEdit)."""
     new = edited.strip()
     if not new or new == shown:
         return None
@@ -286,7 +232,6 @@ def user_edit(shown: str, edited: str, src: str, fixes: list):
 
     def latin(c: str) -> bool:
         return c.isascii() and c.isalnum()
-    # Tokens of the shown line, as (start, end): a run of ASCII letters and digits, else one character.
     tokens = []
     k = 0
     while k < len(a):
@@ -304,7 +249,6 @@ def user_edit(shown: str, edited: str, src: str, fixes: list):
         t = next((t for t in tokens if t[0] <= end - 1 < t[1]), None)
         if t is not None:
             end = t[1]
-    # A dropped word ("in now." → "in.") grows too, so neither side of the fix is empty.
     while True:
         span = a[start:end]
         if any(c.isalnum() for c in span) and span and a.count(span) == 1 and b[start:len(b) - (len(a) - end)]:

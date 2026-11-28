@@ -1,10 +1,3 @@
-"""存到文件夹: a settled meeting written as one Markdown file into a folder the user chose
-(docs/folder-export.md, the Mac's FolderExport.swift). The file name and frontmatter are a contract
-with the Mac and the other ports (Tests/fixtures/folder-export); the body is 导出…'s Markdown.
-
-The exporter keeps an index beside the records (FolderExport.json): the folder, each record's file
-and the records still to write. Every write runs on one worker thread, in order: rendering, writing
-and updating the index, so two flushes never race over the same file."""
 from __future__ import annotations
 
 import errno
@@ -20,22 +13,16 @@ from . import jsonfmt, session_store
 from .models import iso_read, iso_write, now
 from .support import Log, Paths
 
-DENIED = "denied"    # the folder won't let Cicada write (its permissions)
-MISSING = "missing"  # the folder, or the drive it was on, is gone
-FAILED = "failed"    # anything else; `problem_message` says what
+DENIED = "denied"
+MISSING = "missing"
+FAILED = "failed"
 
 PROBE = ".cicada-check"
 
-# Path, wildcard and link characters some system or vault refuses (vaults sync between systems,
-# so the union of their rules).
 _BANNED = set('/\\:*?"<>|#^[]')
 
 
-# The format
-
 def name(s) -> str:
-    """The record's own name: what the user called it, else the notes' title, else the imported
-    file's name. Never display_title, which is localized and carries a date."""
     renamed = s.renamed if s.renamed is not None else not s.title.startswith("会议 ")
     if renamed:
         return s.title
@@ -51,8 +38,6 @@ def _trim(s: str) -> str:
 
 
 def safe_name(n: str) -> str:
-    """At most 120 UTF-8 bytes, cut at a code point (the spec's cut; Python's stdlib has no
-    grapheme clusters, and the Mac cuts at scalars too)."""
     spaced = "".join(" " if c in _BANNED or ord(c) < 0x20 else c for c in n)
     out = _trim(" ".join(spaced.split()))
     if len(out.encode("utf-8")) > 120:
@@ -71,7 +56,6 @@ def _local(at: datetime, tz=None) -> datetime:
 
 
 def _offset(at: datetime) -> str:
-    """+08:00, +00:00 for UTC (never Z)."""
     off = at.utcoffset() or timedelta(0)
     minutes = int(off.total_seconds()) // 60
     sign = "-" if minutes < 0 else "+"
@@ -91,7 +75,6 @@ def stem(s, tz=None) -> str:
 
 
 def file_name(st: str, taken) -> str:
-    """`stem.md`, or `stem 2.md`, `stem 3.md`… while `taken(name)` says that one is."""
     n = 1
     while True:
         candidate = "%s.md" % st if n == 1 else "%s %d.md" % (st, n)
@@ -101,8 +84,6 @@ def file_name(st: str, taken) -> str:
 
 
 def quote(s: str) -> str:
-    """A JSON-style double-quoted string, which YAML reads as is. Not json.dumps: it writes \\b and
-    \\f, where the contract wants \\u0008 and \\u000c."""
     out = ['"']
     for c in s:
         if c == "\\":
@@ -125,7 +106,7 @@ def quote(s: str) -> str:
 
 def frontmatter(s, tz=None) -> str:
     ended = s.endedAt or s.startedAt
-    languages = sorted({l.srcLang for l in s.lines})  # str order is code point order
+    languages = sorted({l.srcLang for l in s.lines})
     notes = "none" if s.notes is None or s.notes.is_empty else ("final" if s.notes.final else "draft")
     minutes = max(0, int((ended - s.startedAt).total_seconds() // 60))
     return "".join([
@@ -145,21 +126,16 @@ def frontmatter(s, tz=None) -> str:
 
 
 def document(s, voices: bool = False) -> str:
-    """The frontmatter, then exactly what 导出… writes."""
     return frontmatter(s) + session_store.markdown(s, voices=voices)
 
 
-# Where to put it
-
 def obsidian_configs() -> list:
-    """Obsidian's obsidian.json: the .deb / AppImage one, then the Flatpak's."""
     config = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     return [os.path.join(config, "obsidian", "obsidian.json"),
             os.path.expanduser("~/.var/app/md.obsidian.Obsidian/config/obsidian/obsidian.json")]
 
 
 def obsidian_vaults(text: str, exists=os.path.isdir) -> list:
-    """Obsidian's vaults (its obsidian.json), the most recently opened first; only ones that exist."""
     try:
         root = json.loads(text)
     except (ValueError, TypeError):
@@ -191,7 +167,6 @@ def all_vaults() -> list:
 
 
 def vault_of(folder: str, vaults=None) -> str | None:
-    """The Obsidian vault the folder is in (or is), if any."""
     for v in all_vaults() if vaults is None else vaults:
         v = v.rstrip("/") or "/"
         if folder == v or folder.startswith(v + "/"):
@@ -200,11 +175,9 @@ def vault_of(folder: str, vaults=None) -> str | None:
 
 
 def documents_dir() -> str:
-    """The XDG documents folder (xdg-user-dir DOCUMENTS), else ~/Documents. The app asks GLib first."""
     home = os.path.expanduser("~")
     try:
         out = subprocess.run(["xdg-user-dir", "DOCUMENTS"], capture_output=True, text=True, timeout=2).stdout.strip()
-        # Unset, it answers the home folder itself: not a documents folder.
         if out and os.path.normpath(out) != os.path.normpath(home):
             return out
     except (OSError, subprocess.SubprocessError):
@@ -213,7 +186,6 @@ def documents_dir() -> str:
 
 
 def default_folder(vaults=None, documents: str | None = None) -> str:
-    """The suggestion: the most recently opened Obsidian vault's Cicada folder, else Documents › Cicada."""
     vaults = all_vaults() if vaults is None else vaults
     if vaults:
         return os.path.join(vaults[0], "Cicada")
@@ -221,13 +193,10 @@ def default_folder(vaults=None, documents: str | None = None) -> str:
 
 
 def short_path(folder: str) -> str:
-    """"工作笔记 › Cicada": the folder and the one it is in."""
     folder = os.path.normpath(folder)
     parent = os.path.dirname(folder)
     return "%s › %s" % (os.path.basename(parent) or parent, os.path.basename(folder) or folder)
 
-
-# Writing (off the main loop)
 
 def _classify(e: BaseException, folder: str) -> tuple:
     if isinstance(e, PermissionError) or getattr(e, "errno", None) in (errno.EACCES, errno.EPERM):
@@ -238,8 +207,6 @@ def _classify(e: BaseException, folder: str) -> tuple:
 
 
 def ensure(folder: str) -> tuple | None:
-    """The folder exists, or is made when only it is missing: never a drive that isn't mounted, so
-    only the last folder, and only when its parent is there."""
     if os.path.exists(folder):
         return None if os.path.isdir(folder) else (MISSING, "")
     if not os.path.isdir(os.path.dirname(os.path.normpath(folder))):
@@ -254,7 +221,6 @@ def ensure(folder: str) -> tuple | None:
 
 
 def probe(folder: str) -> tuple | None:
-    """Writes and removes a hidden file: the check after choosing a folder."""
     p = ensure(folder)
     if p is not None:
         return p
@@ -269,8 +235,6 @@ def probe(folder: str) -> tuple | None:
 
 
 def write_atomic(path: str, data: bytes) -> None:
-    """A temporary file in the same folder, then renamed over: a vault or sync client never sees half
-    a file. Hidden, so a vault doesn't list it meanwhile; the umask's mode, like any saved file."""
     folder = os.path.dirname(path)
     tmp = os.path.join(folder, ".cicada-%s.tmp" % secrets.token_hex(4))
     try:
@@ -286,8 +250,6 @@ def write_atomic(path: str, data: bytes) -> None:
 
 
 def write_jobs(jobs: list, folder: str, ours: dict) -> list:
-    """jobs: (id, stem, old name, bytes). Outcomes: ("wrote", id, name), ("unchanged", id) or
-    ("stopped", problem, message). Stops at the first problem: the rest would fail the same way."""
     p = ensure(folder)
     if p is not None:
         return [("stopped",) + p]
@@ -312,10 +274,9 @@ def write_jobs(jobs: list, folder: str, ours: dict) -> list:
                 pass
         try:
             write_atomic(path, data)
-        except Exception as e:  # noqa: BLE001 - every failure is a problem shown, never a dead worker
+        except Exception as e:  # noqa: BLE001
             out.append(("stopped",) + _classify(e, folder))
             return out
-        # Renamed: the old file goes, only the one Cicada wrote.
         if old and old != n:
             try:
                 os.remove(os.path.join(folder, old))
@@ -327,12 +288,10 @@ def write_jobs(jobs: list, folder: str, ours: dict) -> list:
 
 
 class Index:
-    """FolderExport.json: the Mac's keys, written the way its JSONEncoder writes them."""
-
     def __init__(self, folder: str = "", files=None, pending=None, lastFile=None, lastAt=None):
         self.folder = folder
-        self.files = dict(files or {})   # record id → the file name Cicada wrote
-        self.pending = list(pending or [])  # records waiting to be written
+        self.files = dict(files or {})
+        self.pending = list(pending or [])
         self.lastFile = lastFile
         self.lastAt = lastAt
 
@@ -357,26 +316,21 @@ class Index:
 
 
 def index_path() -> str:
-    """Beside the records' folder, as the Mac keeps it beside Sessions."""
     return os.path.join(Paths.data(), "FolderExport.json")
 
 
 class FolderExporter:
-    """Writes settled meetings into the chosen folder. Triggers come from any thread; the work runs
-    on one worker. `on_change` listeners fire on the worker (the app hops to its main loop);
-    `on_denied` is the one notification after a meeting, until a write works again."""
-
     def __init__(self, store, settings, index_file: str | None = None, delay: float = 2.0):
         self.store = store
         self.settings = settings
         self.index_file = index_file or index_path()
         self.delay = delay
-        self.settling = lambda sid: False  # the meeting's final notes pass is running or waiting
-        self.voices = lambda: False        # 说话人识别 on: the body names voices, as 导出… does
+        self.settling = lambda sid: False
+        self.voices = lambda: False
         self.on_denied = None
-        self.problem = None                # None, DENIED, MISSING or FAILED
+        self.problem = None
         self.problem_message = ""
-        self.checking = False              # checking a newly chosen folder
+        self.checking = False
         self._gate = threading.RLock()
         self._work = ThreadPoolExecutor(max_workers=1, thread_name_prefix="FolderExport")
         self._timer = None
@@ -416,19 +370,14 @@ class FolderExporter:
             return self.on and sid in self.index.pending
 
     def ready(self, s) -> bool:
-        """Ended, not being imported, with something said, and not the live meeting."""
         return s.endedAt is not None and not s.importing and bool(s.lines) and s.id != self.store.live
 
     def unwritten(self) -> list:
-        """Settled records not written to this folder yet (以前的会议)."""
         with self._gate:
             files, pending = set(self.index.files), set(self.index.pending)
         return [s for s in self.store.all() if self.ready(s) and s.id not in files and s.id not in pending]
 
-    # Triggers
-
     def ended(self, sid: str) -> None:
-        """A meeting ended: written once it is settled."""
         if not self.on:
             return
         with self._gate:
@@ -438,7 +387,6 @@ class FolderExporter:
         self._schedule()
 
     def saved(self, sid: str) -> None:
-        """A record was saved: rewritten if it was written, written if it is waiting."""
         if not self.on:
             return
         with self._gate:
@@ -449,14 +397,12 @@ class FolderExporter:
         self._schedule()
 
     def settled(self, sid: str) -> None:
-        """The meeting's final notes pass is over, done or not."""
         with self._gate:
             waiting = self.on and sid in self.index.pending
         if waiting:
             self._schedule()
 
     def write_all(self) -> None:
-        """也存一份: every settled record not written yet. Never a notification."""
         if not self.on:
             return
         ids = [s.id for s in self.unwritten()]
@@ -466,25 +412,19 @@ class FolderExporter:
         self._submit(False)
 
     def retry(self) -> None:
-        """At launch and when a window comes forward: what is still waiting."""
         with self._gate:
             waiting = self.on and bool(self.index.pending)
         if waiting:
             self._schedule(0.5, from_meeting=False)
 
     def deleted(self, sid: str) -> None:
-        """The record went; its file stays."""
         with self._gate:
             self.index.files.pop(sid, None)
             if sid in self.index.pending:
                 self.index.pending.remove(sid)
             self._save()
 
-    # Choosing the folder
-
     def choose(self, folder: str) -> None:
-        """A new folder (or the same one after a fix): a new index for a new folder, and a check that
-        it can be written now, while settings is open, rather than when a meeting ends."""
         folder = os.path.normpath(os.path.expanduser(folder))
         self.settings.exportFolder = folder
         self.settings.exportOn = True
@@ -517,8 +457,6 @@ class FolderExporter:
             self.problem, self.problem_message = None, ""
         self._changed()
 
-    # Writing
-
     def _schedule(self, delay: float | None = None, from_meeting: bool = True) -> None:
         with self._gate:
             if self._timer is not None:
@@ -533,7 +471,6 @@ class FolderExporter:
         self._work.submit(self._flush, from_meeting)
 
     def wait(self) -> None:
-        """Until every write asked for so far is done (tests, the debug commands)."""
         with self._gate:
             t, self._timer = self._timer, None
         if t is not None and t.is_alive():
@@ -544,7 +481,7 @@ class FolderExporter:
     def _flush(self, from_meeting: bool) -> None:
         try:
             self._flush_now(from_meeting)
-        except Exception as e:  # noqa: BLE001 - keep the worker alive for the next try
+        except Exception as e:  # noqa: BLE001
             Log.d("folder export: flush failed %s" % type(e).__name__)
 
     def _flush_now(self, from_meeting: bool) -> None:
@@ -564,7 +501,7 @@ class FolderExporter:
                     continue
                 try:
                     jobs.append((sid, stem(s), self.index.files.get(sid), document(s, self.voices()).encode("utf-8")))
-                except Exception as e:  # noqa: BLE001 - one record that won't render must not hold up the rest
+                except Exception as e:  # noqa: BLE001
                     Log.d("folder export: %s not rendered %s" % (sid, type(e).__name__))
             self._save()
             ours = dict(self.index.files)
@@ -574,7 +511,7 @@ class FolderExporter:
         stopped = None
         with self._gate:
             if self.index.folder != folder:
-                return  # another folder was chosen meanwhile
+                return
             for o in outcomes:
                 if o[0] == "wrote":
                     self.index.files[o[1]] = o[2]
@@ -599,7 +536,6 @@ class FolderExporter:
             self.on_denied()
 
     def _save(self) -> None:
-        """Under the gate."""
         try:
             os.makedirs(os.path.dirname(self.index_file), exist_ok=True)
             write_atomic(self.index_file, jsonfmt.write(self.index.to_json()).encode("utf-8"))
@@ -607,7 +543,6 @@ class FolderExporter:
             Log.d("folder export: index not saved %s" % type(e).__name__)
 
     def state(self) -> dict:
-        """For the debug socket."""
         with self._gate:
             return {"on": self.on, "folder": self.folder, "problem": self.problem, "message": self.problem_message,
                     "checking": self.checking, "index": self.index.to_json(), "unwritten": [s.id for s in self.unwritten()]}

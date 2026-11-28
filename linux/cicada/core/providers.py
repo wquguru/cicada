@@ -1,13 +1,3 @@
-"""The AI services the port can use (AIProviders.swift, plus what hears audio). Ling is the
-reference: Ming hears each stretch of audio and answers language, original and translation in one
-call, and only Ling clones the user's voice. The others are OpenAI-compatible and hear through an
-audio-input chat model with the same prompt (tools/audio-probe measured them against Ming, 2026-11:
-about as accurate, 0.5–2 s slower). OpenAI itself is left out: a port needs a model that hears,
-and its audio models are untested.
-
-Recommended models come first in every menu and are the defaults. For hearing, the first is the one
-that wrote nothing for a clip without speech: a made-up line ends up in the notes and, when
-interpreting, in the room."""
 from __future__ import annotations
 
 import base64
@@ -21,27 +11,27 @@ from .jsonfmt import arr, obj, string
 @dataclass(frozen=True)
 class Model:
     id: str
-    note: str = ""  # why it is recommended: a Chinese UI key, localized where shown
+    note: str = ""
 
 
 @dataclass(frozen=True)
 class CloudVoice:
     id: str
-    gender: str  # "女" / "男", a Chinese UI key
+    gender: str
 
 
 @dataclass(frozen=True)
 class Provider:
     id: str
     name: str
-    base: str | None            # None for "custom": the user's address
-    site: str | None            # where to create a key
+    base: str | None
+    site: str | None
     text_models: tuple = ()
     hear_models: tuple = ()
-    voice_models: tuple = ()    # empty: this service can't speak into the room here
-    voices: tuple = ()          # of `voice_models` (Gemini TTS: the same names in every language)
+    voice_models: tuple = ()
+    voices: tuple = ()
     clones: bool = False
-    spacing: float = 0.1        # Ling allows ~2 request starts a second; the aggregators far more
+    spacing: float = 0.1
 
     @property
     def has_voices(self) -> bool:
@@ -71,8 +61,6 @@ ZENMUX = Provider(
     voice_models=(Model("google/gemini-3.8-flash-tts", "效果和价格最均衡"), Model("google/gemini-3.8-flash-lite-tts", "更省")),
     voices=GEMINI_VOICES)
 
-# Any OpenAI-compatible address (a company gateway, Ollama…). Its hear model must take audio in;
-# voices only when the user names a speech model.
 CUSTOM = Provider("custom", "其他（兼容 OpenAI）", None, None)
 
 ALL = (LING, OPENROUTER, ZENMUX, CUSTOM)
@@ -85,7 +73,7 @@ def named(raw: str) -> Provider:
 def _host(host_or_url: str) -> str:
     s = (host_or_url or "").strip()
     if "://" not in s and s.count(":") > 1 and "/" not in s:
-        return s.strip("[]").lower()  # a bare IPv6 address
+        return s.strip("[]").lower()
     try:
         host = urllib.parse.urlsplit(s if "://" in s else "http://" + s).hostname
     except ValueError:
@@ -94,14 +82,10 @@ def _host(host_or_url: str) -> str:
 
 
 def is_local(host_or_url: str) -> bool:
-    """This computer."""
     return _host(host_or_url) in ("localhost", "127.0.0.1", "::1")
 
 
 def is_nearby(host_or_url: str) -> bool:
-    """This computer or the local network (AIProvider.isNearby): plain http is allowed and a key
-    isn't needed. Private IPv4 (10/8, 172.16/12, 192.168/16), link-local, Tailscale's 100.64/10,
-    IPv6 unique and link-local addresses, and `.local` names."""
     h = _host(host_or_url)
     if is_local(h) or h.endswith(".local"):
         return True
@@ -117,8 +101,6 @@ def is_nearby(host_or_url: str) -> bool:
 
 
 def custom_base(raw: str) -> str | None:
-    """The address as typed, normalized: https, or http only on this computer or the local network
-    (Ollama, LM Studio, a GPU box at home or work, a Tailscale address); ends in "/"."""
     s = (raw or "").strip()
     if not s:
         return None
@@ -139,9 +121,6 @@ def custom_base(raw: str) -> str | None:
 
 
 def thought(root: dict) -> bool:
-    """The model thought before answering, which makes every translation slow (AIConfig.thought):
-    a `reasoning_content` (or `reasoning`) field, reasoning tokens in the usage, or a `<think>`
-    block in the answer."""
     choices = arr((root or {}).get("choices"))
     message = obj((obj(choices[0]) or {}).get("message")) if choices else None
     message = message or {}
@@ -159,49 +138,37 @@ def thought(root: dict) -> bool:
 
 @dataclass
 class AIConfig:
-    """What one call needs to know about the service in use, resolved from settings each time."""
     provider: Provider
-    base: str | None            # None: a custom service without a valid address yet
+    base: str | None
     text_model: str
     hear_model: str
-    voice_model: str | None = None   # None: no voices with this service
+    voice_model: str | None = None
     voice_base: str | None = None
     custom_voice: str | None = None
     extra: dict = field(default_factory=dict)
-    # Where the hear model is asked: a custom service's own hear address (the text model and an
-    # audio model often run as separate servers). None: the text address; "" (only from
-    # config_from): an address typed that isn't valid.
     hear_base: str | None = None
-    # A custom service's notes (实时纪要, 说话人): another model, and with 另一个服务 another server
-    # with its own key. None: the same as translation.
     notes_model: str | None = None
     notes_base: str | None = None
-    # 另一个服务 is picked: notes use their own key file when there is one.
     notes_own_service: bool = False
-    # 另一个服务 with an address that can't be used (http to the internet): notes fail the check.
     notes_bad_address: bool = False
 
     @property
     def notes_apart(self) -> bool:
-        """Notes go somewhere translation doesn't: they get their own check, result and start gate."""
         return self.provider.id == "custom" and (self.notes_model is not None or self.notes_base is not None
                                                  or self.notes_own_service)
 
     @property
     def for_notes(self) -> "AIConfig":
-        """What a notes call is sent with: notes' model at notes' address, the rest as translation."""
         if not self.notes_apart:
             return self
         return replace(self, text_model=self.notes_model or self.text_model, base=self.notes_base or self.base)
 
     @property
     def hear_url(self) -> str | None:
-        """The address every hear call (and the check's hear step) goes to."""
         return self.base if self.hear_base is None else (self.hear_base or None)
 
     @property
     def own_hear_address(self) -> bool:
-        """The hear model is at an address of its own, not the text model's."""
         return self.hear_base is not None and self.hear_base != self.base
 
     @property
@@ -214,7 +181,6 @@ class AIConfig:
 
     @property
     def voices(self) -> tuple:
-        """The voices the room can pick from with this service (Ling's are in voices.py)."""
         if not self.has_voices or self.is_ling:
             return ()
         if self.provider.id == "custom":
@@ -222,10 +188,6 @@ class AIConfig:
         return self.provider.voices
 
     def shape(self, body: dict, max_tokens: int, template_kwargs: bool = True) -> None:
-        """Each service turns thinking off its own way (AIConfig.shape on the Mac). A custom service
-        gets `chat_template_kwargs` (vLLM, SGLang and llama.cpp pass it to the chat template, which
-        is how Qwen3 turns thinking off); `template_kwargs` False leaves it out for a server that
-        refused it."""
         body["max_tokens"] = max_tokens
         body["temperature"] = 0.2
         if self.is_ling:
@@ -236,8 +198,6 @@ class AIConfig:
             body["chat_template_kwargs"] = {"enable_thinking": False}
 
     def audio_part(self, wav: bytes, model: str) -> dict:
-        """One WAV in a user message: Ming takes a data URL; the others the standard `input_audio`,
-        except that Qwen's omni models want the data URL inside it (DashScope's form)."""
         b64 = base64.b64encode(wav).decode()
         if self.is_ling:
             return {"type": "audio_url", "audio_url": {"url": "data:audio/wav;base64," + b64}}
@@ -247,7 +207,6 @@ class AIConfig:
 
 
 def config_from(settings) -> AIConfig:
-    """The service, its address and models from the app's settings (Settings.swift › aiConfig)."""
     p = named(settings.aiProvider)
     models, hears, voices = settings.aiModels, settings.aiHearModels, settings.aiVoiceModels
     if p.id == "ling":
@@ -258,12 +217,8 @@ def config_from(settings) -> AIConfig:
         voice = (voices.get("custom") or "").strip()
         voice_base = custom_base(settings.aiCustomVoiceBase) if settings.aiCustomVoiceBase.strip() else base
         name = settings.aiCustomVoice.strip()
-        # The hear model's own address (empty: the text model's); "" marks one typed that isn't valid.
         typed = (getattr(settings, "aiCustomHearBase", "") or "").strip()
         hear_base = (custom_base(typed) or "") if typed else None
-        # Notes (Settings.swift › aiConfig): their model (empty or the translation one: none of their
-        # own), and with 另一个服务 their address (empty or the same: translation's). Off keeps the
-        # address typed, so switching back and forth loses nothing.
         text = (models.get("custom") or "").strip()
         notes_model = (models.get("custom.notes") or "").strip()
         own = bool(getattr(settings, "aiCustomNotesOwn", False))
@@ -282,9 +237,6 @@ _NOT_CHAT = re.compile(r"(embed|whisper|tts|asr|transcribe|dall-e|image|moderati
 
 
 def catalog(data: str | dict, recommended: list, hears: bool) -> list:
-    """Model ids from a `/models` reply, recommended ones first: those that answer in text, and for
-    `hears` only those that take audio in. ZenMux lists modalities at the top level, OpenRouter under
-    `architecture`; a service that says nothing keeps everything but obvious non-chat names."""
     from .jsonfmt import parse_object
     root = parse_object(data) if isinstance(data, str) else data
     ids = []
@@ -299,7 +251,7 @@ def catalog(data: str | dict, recommended: list, hears: bool) -> list:
         if outs and "text" not in outs:
             continue
         if ins and ins == ["audio"]:
-            continue  # speech-to-text only: no prompt, no translation
+            continue
         if hears and "audio" not in ins:
             continue
         if not outs and _NOT_CHAT.search(mid):
@@ -310,9 +262,6 @@ def catalog(data: str | dict, recommended: list, hears: bool) -> list:
 
 
 def hosts(c: AIConfig, notes: bool = True) -> list:
-    """Every host a custom service's uses go to, in order, once each: text, notes (when at their own
-    address; `notes` False leaves them out), hear, and the voice if set up (AISettings.swift ›
-    customHosts, keyHosts)."""
     urls = [c.base] + ([c.for_notes.base] if notes and c.notes_apart else []) + [c.hear_url] \
         + ([c.voice_base] if c.has_voices else [])
     out = []
@@ -324,7 +273,5 @@ def hosts(c: AIConfig, notes: bool = True) -> list:
 
 
 def only_host(c: AIConfig) -> str | None:
-    """Where a custom service's audio and text go, when every use shares one host; None when they
-    differ."""
     h = hosts(c)
     return h[0] if len(h) == 1 else None

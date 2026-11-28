@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Writes a synthetic long meeting (N lines, bilingual, with notes) into the dev build's records,
-for checking how the UI copes.  long_session.py 1500"""
 import json, os, sys
 n = int(sys.argv[1]) if len(sys.argv) > 1 else 1500
 sid = "20261101-090000"

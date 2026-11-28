@@ -1,9 +1,3 @@
-"""The X11 details GTK 3 doesn't cover. With set_accept_focus(False) GTK still lists
-WM_TAKE_FOCUS in WM_PROTOCOLS, so on every click Mutter hands focus away from the meeting app for a
-moment (the "globally active" input model) before giving it back; a blip a browser-based meeting app
-sees as blur. Listing only WM_DELETE_WINDOW (the "no input" model) leaves focus alone. And a window
-Mutter maps over the focused one without focusing it is marked as demanding attention, which GTK
-can't take back (no_attention)."""
 from __future__ import annotations
 
 import ctypes
@@ -33,12 +27,10 @@ def _lib():
 
 
 def never_take_focus(gdk_window) -> None:
-    """Drops WM_TAKE_FOCUS from an X11 window's protocols. No-op off X11."""
     _protocols(gdk_window, False)
 
 
 def take_focus(gdk_window) -> None:
-    """Lists WM_TAKE_FOCUS again, for the moment the window needs the keyboard (its search)."""
     _protocols(gdk_window, True)
 
 
@@ -71,9 +63,6 @@ class _Event(ctypes.Union):
 
 
 def no_attention(gdk_window) -> None:
-    """Takes back _NET_WM_STATE_DEMANDS_ATTENTION (an EWMH request to the root window). The notes
-    window gets it whenever it's shown over the meeting app; the dock then counts it as urgent and
-    spends the next click of 知了's icon on it (it can't take focus) instead of the records window."""
     xid = gdk_window.get_xid() if hasattr(gdk_window, "get_xid") else None
     if not xid:
         return
@@ -84,10 +73,10 @@ def no_attention(gdk_window) -> None:
             return
         e = _Event()
         m = e.xclient
-        m.type, m.send_event, m.window, m.format = 33, 1, xid, 32  # ClientMessage
+        m.type, m.send_event, m.window, m.format = 33, 1, xid, 32
         m.message_type = x.XInternAtom(d, b"_NET_WM_STATE", 0)
-        m.data[0], m.data[1], m.data[3] = 0, x.XInternAtom(d, b"_NET_WM_STATE_DEMANDS_ATTENTION", 0), 1  # remove; from an app
-        x.XSendEvent(d, x.XDefaultRootWindow(d), 0, (1 << 19) | (1 << 20), ctypes.byref(e))  # Substructure Notify | Redirect
+        m.data[0], m.data[1], m.data[3] = 0, x.XInternAtom(d, b"_NET_WM_STATE_DEMANDS_ATTENTION", 0), 1
+        x.XSendEvent(d, x.XDefaultRootWindow(d), 0, (1 << 19) | (1 << 20), ctypes.byref(e))
         x.XFlush(d)
         x.XCloseDisplay(d)
     except OSError as e:

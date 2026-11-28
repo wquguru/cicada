@@ -1,5 +1,3 @@
-"""存到文件夹: the file name and frontmatter are a contract with the Mac and the other ports
-(Tests/fixtures/folder-export), then the exporter against a folder in a temporary directory."""
 from __future__ import annotations
 
 import json
@@ -61,7 +59,6 @@ class FormatTests(unittest.TestCase):
     def test_escapes(self):
         for given, want in cases()["escapes"]:
             self.assertEqual(want, fx.quote(given), given)
-        # Short forms only for \n \r \t; json.dumps would write \b and \f.
         self.assertEqual('"\\u0008\\u000c\\u001f"', fx.quote("\b\f\x1f"))
 
     def test_collisions(self):
@@ -69,7 +66,6 @@ class FormatTests(unittest.TestCase):
             self.assertEqual(c["want"], fx.file_name(c["stem"], lambda n, t=c["taken"]: n in t))
 
     def test_name_precedence(self):
-        """The user's title, else the notes', else the imported file's; never the display title."""
         s = session()
         s.renamed = False
         s.title = default_title(s.startedAt)
@@ -79,7 +75,6 @@ class FormatTests(unittest.TestCase):
         s.sourceFile = "Weekly sync.m4a"
         self.assertEqual("Weekly sync", fx.name(s))
         self.assertIn('source: "file"\nnotes: "none"', fx.frontmatter(s))
-        # An older record (no `renamed`): any title but the default one is the user's.
         s.renamed = None
         s.title = "周会"
         self.assertEqual("周会", fx.name(s))
@@ -157,21 +152,17 @@ class ExporterTests(unittest.TestCase):
         self.assertIn("\n---\n# 产品路线评审\n", text)
         self.assertEqual([], self.ex.index.pending)
         self.assertEqual(name, self.ex.index.lastFile)
-        # Unchanged: not written again.
         mtime = os.stat(os.path.join(self.folder, name)).st_mtime_ns
         self.ex.saved("20261106-140000")
         self.ex.wait()
         self.assertEqual(mtime, os.stat(os.path.join(self.folder, name)).st_mtime_ns)
-        # Renamed: the file moves.
         self.store.rename("20261106-140000", "路线")
         self.store.flush()
         self.ex.saved("20261106-140000")
         self.ex.wait()
         self.assertEqual([name.replace("产品路线评审", "路线")], self.files())
-        # Deleted in Cicada: the file stays.
         self.ex.deleted("20261106-140000")
         self.assertEqual(1, len(self.files()))
-        # The index survives a restart.
         self.assertEqual(self.ex.index.folder, self.exporter().index.folder)
 
     def test_never_overwrites_a_foreign_file(self):
@@ -218,19 +209,19 @@ class ExporterTests(unittest.TestCase):
         self.ex.wait()
         self.assertEqual({}, self.ex.index.files)
         self.assertEqual(2, len(self.ex.unwritten()))
-        self.assertEqual(2, len(self.files()))  # the old folder's files stay
+        self.assertEqual(2, len(self.files()))
 
     def test_missing_then_back(self):
         self.ex.choose(self.folder)
         self.ex.wait()
         s = self.add()
-        shutil.rmtree(os.path.dirname(self.folder))  # the drive went
+        shutil.rmtree(os.path.dirname(self.folder))
         self.ex.ended(s.id)
         self.ex.wait()
         self.assertEqual(fx.MISSING, self.ex.problem)
         self.assertEqual([s.id], self.ex.index.pending)
         self.assertEqual(0, self.denied)
-        os.makedirs(os.path.dirname(self.folder))  # back: only the last folder is made again
+        os.makedirs(os.path.dirname(self.folder))
         self.ex.retry()
         self.ex.wait()
         self.assertIsNone(self.ex.problem)
@@ -246,7 +237,7 @@ class ExporterTests(unittest.TestCase):
         self.ex.write_all()
         self.ex.wait()
         self.assertEqual(fx.DENIED, self.ex.problem)
-        self.assertEqual(0, self.denied)  # never for 也存一份
+        self.assertEqual(0, self.denied)
         self.ex.ended("20261106-140000")
         self.ex.wait()
         self.ex.ended("20261106-150000")

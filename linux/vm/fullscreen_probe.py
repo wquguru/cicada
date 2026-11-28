@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""A stand-in for a full-screen video player: a native-Wayland GTK window, full screen, black."""
 import os
 os.environ["GDK_BACKEND"] = "wayland"
 import gi  # noqa: E402

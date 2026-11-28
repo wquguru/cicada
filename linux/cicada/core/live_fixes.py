@@ -1,8 +1,3 @@
-"""改正听错的词, between the translation and the records (the Mac's LiveFixes.swift): which fixes a line
-takes, which wait for the user (待确认), and what the user's answers and edits teach the word list.
-Who wins: the user's own decisions, then the word list, then a recheck, then the first live guess.
-UI-free and thread-safe (replies arrive on worker threads); the app shows `pending`, `asking` and
-`toast` and passes taps back. `on_change` fires on whichever thread made the change."""
 from __future__ import annotations
 
 import threading
@@ -15,9 +10,7 @@ from .models import LineFix
 from .strings import L, LF
 from .support import Log
 
-# The card asks about at most this many names in a row; the rest wait for after the meeting.
 ASK_AT_ONCE = 3
-# How long a toast (with 撤销) stays.
 TOAST_SECONDS = 6.0
 
 
@@ -30,15 +23,13 @@ def _key(f: LineFix) -> str:
 
 
 class FixContext:
-    """What a finished sentence's request carries so the service can also point out misheard words."""
-
     def __init__(self, words: list, topic: str | None = None, recent: list | None = None,
                  following: list | None = None, summary: str | None = None):
-        self.topic = topic  # the meeting's title once it has one: the field tells "质押" from "制约"
-        self.words = words  # the user's word list (Vocabulary.prompt_lines)
-        self.recent = recent or []  # the lines just before, as shown
-        self.following = following or []  # on a second pass: the lines after it
-        self.summary = summary  # the notes' summary so far
+        self.topic = topic
+        self.words = words
+        self.recent = recent or []
+        self.following = following or []
+        self.summary = summary
 
 
 class LiveFixes:
@@ -48,15 +39,10 @@ class LiveFixes:
         self.settings = settings
         self.on_change = None
         self._gate = threading.RLock()
-        # Fixes said no to in this meeting ("from→to"), and how often each heard form was turned down
-        # overall this run: twice and it leaves the word list.
         self._refused: set = set()
         self._refusals: dict = {}
-        # 稍后再看 on the card: still waiting, but asked again only after the meeting.
         self._deferred: set = set()
-        # What 撤销 puts back: the lines' fixes and the word list as they were.
         self._undo: list = []
-        # The last thing the user did, said back with 撤销 for a few seconds: (text, monotonic time).
         self.toast = None
 
     def meeting_started(self) -> None:
@@ -67,10 +53,7 @@ class LiveFixes:
         if self.on_change is not None:
             self.on_change()
 
-    # The service's proposals
-
     def context(self, text: str) -> FixContext | None:
-        """What a finished sentence's request carries; None while fixing is off."""
         if not self.settings.fixMisheard:
             return None
         ctx = FixContext(self.vocabulary.prompt_lines())
@@ -87,8 +70,6 @@ class LiveFixes:
         return ctx
 
     def received(self, text: str, edits: list) -> None:
-        """The service's proposals for a line heard as `text` (none at all is an answer too: on a
-        second pass it takes back what isn't proposed again)."""
         if not self.settings.fixMisheard:
             return
         hit = self.store.line_heard(text)
@@ -102,7 +83,6 @@ class LiveFixes:
                 Log.d("fix %s c=%.2f line=%s" % (verdict, e.confidence, line.id))
                 if verdict == correction.APPLY:
                     fresh.append(LineFix(e.from_, e.to))
-                    # A listed word counts as used whichever way the fix was found (a sound-alike too).
                     self.vocabulary.used(correction.core(e.from_, e.to)[1])
                 elif verdict == correction.ASK and self.settings.askNames:
                     fresh.append(LineFix(e.from_, e.to, ask=True))
@@ -114,8 +94,6 @@ class LiveFixes:
             self._set(fixes, line.id, sid)
 
     def apply_known(self, line_id: str, sid: str) -> None:
-        """The word list's confirmed heard forms, fixed without asking anyone: also with no AI service.
-        Two characters at least, so a single 压 never turns into 押 everywhere."""
         if not self.settings.fixMisheard:
             return
         with self._gate:
@@ -127,8 +105,6 @@ class LiveFixes:
         out = list(fixes)
         for t in self.vocabulary.snapshot():
             for h in t.heard:
-                # A heard form two words claim (两个都留) is never fixed silently. A translation a yes taught
-                # before that was refused (平台 → platform) isn't either; one the user typed is.
                 if len(h) < 2 or correction.word(h, src) < 0 or _pair(h, t.word) in self._refused \
                         or (t.source != "user" and correction.translation(h, t.word)) or self.vocabulary.owners(h, t.word):
                     continue
@@ -144,10 +120,7 @@ class LiveFixes:
         self.store.set_fixes(sid, line_id, fixes)
         self._changed()
 
-    # 待确认
-
     def pending(self, sid: str) -> list:
-        """待确认 in a meeting: each (from → to) once, oldest first, as (line, fix)."""
         seen, out = set(), []
         for l in self.store.lines(sid):
             for f in l.fixes or []:
@@ -157,8 +130,6 @@ class LiveFixes:
         return out
 
     def asking(self, sid: str):
-        """What the notes window's card asks now: (line, fix, position, of), not what was put off
-        (稍后再看), and only the first few, so a burst of names doesn't keep the card up all meeting."""
         with self._gate:
             open_ = [p for p in self.pending(sid) if _key(p[1]) not in self._deferred]
         if not open_:
@@ -166,15 +137,12 @@ class LiveFixes:
         return open_[0][0], open_[0][1], 1, min(len(open_), ASK_AT_ONCE)
 
     def later(self, fix: LineFix, sid: str) -> None:
-        """× on the card: asked again after the meeting (the record's banner, 人名和术语)."""
         with self._gate:
             self._remember(sid, [])
             self._deferred.add(_key(fix))
         self._say(L("已收进人名和术语，稍后再看"))
 
     def answer(self, fix: LineFix, yes: bool, sid: str) -> None:
-        """对 / 不对 on a waiting fix: every line in the meeting waiting on the same change follows, and
-        a yes goes into the word list so the next meeting fixes it without asking."""
         c = correction.core(fix.from_, fix.to)
         with self._gate:
             touched = [l for l in self.store.lines(sid)
@@ -194,7 +162,6 @@ class LiveFixes:
                 self._set(fixes, l.id, sid)
             if yes:
                 self.vocabulary.confirm(c[0], c[1])
-                # The rest of the meeting heard the same way follows now, not with the next line.
                 for l in others:
                     self.apply_known(l.id, sid)
             else:
@@ -203,12 +170,10 @@ class LiveFixes:
         self._say(LF("已改 %@ → %@，记进词表", c[0], c[1]) if yes else LF("这场不再问 %@", c[0]))
 
     def revert(self, fix: LineFix, line_id: str, sid: str) -> None:
-        """改回: this line goes back to what was heard, and the meeting stops making this change."""
         with self._gate:
             l = self.store.line(sid, line_id)
             if l is None or not l.fixes:
                 return
-            # The one still on: an earlier, already undone copy of the same change may sit before it.
             same = [i for i, f in enumerate(l.fixes) if f.from_ == fix.from_ and f.to == fix.to]
             k = next((i for i in same if l.fixes[i].applied), same[0] if same else None)
             if k is None:
@@ -227,12 +192,7 @@ class LiveFixes:
         Log.d("fix reverted line=%s" % line_id)
         self._say(LF("已改回 %@，这场不再改", correction.label(fix)[0]))
 
-    # 改这句…
-
     def same_heard(self, line_id: str, sid: str, edited: str):
-        """How many lines of the meeting the same edit would change ("整场同样听成 木娜 的 2 处都改"):
-        (heard, count, swap), or None when the edit changes nothing. An edit that only adds or drops
-        words stays on its line (count 1, nothing to learn)."""
         l = self.store.line(sid, line_id)
         if l is None:
             return None
@@ -243,8 +203,6 @@ class LiveFixes:
         return e[1], max(1, n), e[2]
 
     def edit(self, line_id: str, sid: str, edited: str, everywhere: bool, remember: bool) -> int:
-        """The user rewrote a line (改这句…): what changed becomes their own fix, on this line or on every
-        line showing the same words, and with `remember` the heard form joins the word list."""
         with self._gate:
             l = self.store.line(sid, line_id)
             e = correction.user_edit(l.shown, edited, l.src, l.fixes or []) if l else None
@@ -257,30 +215,22 @@ class LiveFixes:
             for t in targets:
                 fixes = []
                 for f in t.fixes or []:
-                    # The same change made again replaces any earlier copy (say, one undone with 改回).
                     if f.from_ == fix.from_ and f.to == fix.to:
                         continue
                     f = f.copy()
-                    # A guess still waiting on the same words is answered by the edit: not that.
                     if f.ask is True and (heard in f.from_ or f.from_ in heard):
                         f.ask, f.off = None, True
                     fixes.append(f)
                 self._set(fixes + [fix.copy()], t.id, sid)
             word = correction.core(fix.from_, fix.to)[1].strip()
-            # Only a change made everywhere teaches the word list (a one-off must not), and only a
-            # word for a word (`learnable`).
             learned = remember and everywhere and learnable(heard, word) is not None
             if learned:
                 self.vocabulary.confirm(heard, word, source="user")
         Log.d("fix edited lines=%d learned=%s" % (len(targets), learned))
-        # A swap reads as the words swapped; an added or dropped word as the span it changed
-        # ("in → in now", not "in → now").
         a, b = (heard, word) if swap else (fix.from_, fix.to)
         self._say(LF("已改 %lld 处：%@ → %@，记进词表", len(targets), a, b) if learned
                   else LF("已改 %lld 处：%@ → %@", len(targets), a, b))
         return len(targets)
-
-    # 撤销
 
     def _remember(self, sid: str, line_ids: list) -> None:
         lines = {l.id: l for l in self.store.lines(sid)}
@@ -310,13 +260,11 @@ class LiveFixes:
         self._changed()
 
     def toast_text(self) -> str | None:
-        """The toast while it is still up."""
         t = self.toast
         return t[0] if t and time.monotonic() - t[1] < TOAST_SECONDS else None
 
 
 def fixed_words(lines: list) -> list:
-    """The words fixed in a meeting, most fixed first: (word, heard forms, count) (人名和术语)."""
     out: dict = {}
     for l in lines:
         for f in l.fixes or []:

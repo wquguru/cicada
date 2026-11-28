@@ -1,5 +1,3 @@
-"""保存会议录音's parts that need no GStreamer: the ADTS file (core/aac.py), the record's hasAudio, and
-the listening engine handing the recorder every sample the lines are timed by."""
 from __future__ import annotations
 
 import os
@@ -13,7 +11,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
-import test_core as tc  # noqa: E402 - its helpers; a module import, so its tests aren't collected twice
+import test_core as tc  # noqa: E402
 from cicada.core import aac  # noqa: E402
 from cicada.core.audio import RATE, PcmAudioSource  # noqa: E402
 from cicada.core.listen import ListenEngine, RoomMix  # noqa: E402
@@ -26,7 +24,6 @@ from cicada.core.translator import Translator  # noqa: E402
 
 
 def adts(n: int, rate_index: int = 8, body: int = 20) -> bytes:
-    """n ADTS frames (16 kHz by default) with `body` bytes each."""
     length = 7 + body
     head = bytes([0xFF, 0xF1, 0x40 | (rate_index << 2), 0x40 | ((length >> 11) & 0x03),
                   (length >> 3) & 0xFF, ((length & 0x07) << 5) | 0x1F, 0xFC])
@@ -40,13 +37,13 @@ class Adts(unittest.TestCase):
         self.assertAlmostEqual(250 * 1024 / 16000, aac.seconds(data))
 
     def test_a_torn_last_frame_goes(self):
-        data = adts(10) + adts(1)[:12]  # killed mid-write
+        data = adts(10) + adts(1)[:12]
         self.assertEqual(adts(10), aac.cut(data, None))
 
     def test_cuts_at_the_meetings_end(self):
-        data = adts(100)  # 6.4 s
+        data = adts(100)
         kept = aac.cut(data, 3.0)
-        self.assertAlmostEqual(3.008, aac.seconds(kept), places=3)  # whole frames, up to the first one past 3 s
+        self.assertAlmostEqual(3.008, aac.seconds(kept), places=3)
         self.assertEqual(data, aac.cut(data, 60))
 
     def test_partial_name(self):
@@ -65,7 +62,6 @@ class HasAudio(tc.Base):
         self.assertTrue(store.get(s.id).hasAudio)
         with open(os.path.join(os.path.dirname(store.audio_path(s.id)), "session.json"), encoding="utf-8") as f:
             self.assertIn('"hasAudio" : true', f.read())
-        # The app quit before rewrapping: the next launch finds it.
         self.assertEqual([s.id], SessionStore().unfinished_audio())
 
     def test_without_one_it_says_none(self):
@@ -124,7 +120,6 @@ class Recording(tc.Base):
         store, engine = self.engine()
         rec, heard = self.run_meeting(engine)
         self.assertTrue(rec.closed)
-        # The lines' clock is the samples the lane heard: the file holds exactly those.
         self.assertEqual(round(heard * RATE), rec.samples)
         self.assertTrue(rec.finished.wait(5))
         self.assertIsNone(rec.until)
@@ -148,17 +143,14 @@ class Recording(tc.Base):
 
 
 def loud(pcm, a, b):
-    """The largest sample between a and b seconds."""
     return max((abs(v) for v in pcm[int(a * RATE):int(b * RATE)]), default=0)
 
 
 class Mix(unittest.TestCase):
-    """电脑和会议室: the room mic goes into the meeting's one recording, at its place on the clock (#19)."""
-
     def test_the_room_is_added_where_it_was_heard(self):
         rec = FakeRecorder()
         mix = RoomMix(rec)
-        for i in range(30):  # 3 s of the computer at 1000, in 0.1 s buffers; the room at 500 from 1 s to 2 s
+        for i in range(30):
             mix.write(array("h", [1000] * 1600))
             if 10 <= i < 20:
                 mix.room(array("h", [500] * 1600), i * 1600)
@@ -174,7 +166,7 @@ class Mix(unittest.TestCase):
         mix = RoomMix(rec)
         for i in range(20):
             mix.write(array("h", [0] * 1600))
-            if i >= 5:  # the room's buffer for each 0.1 s arrives half a second after the computer's
+            if i >= 5:
                 mix.room(array("h", [700] * 1600), (i - 5) * 1600)
         mix.close()
         self.assertEqual(700, min(rec.pcm[:int(1.5 * RATE)]))
@@ -184,7 +176,7 @@ class Mix(unittest.TestCase):
         mix = RoomMix(rec)
         mix.write(array("h", [30000] * 1600))
         mix.room(array("h", [30000] * 1600), 0)
-        mix.room(array("h", [800] * 1600), 2 * RATE)  # the computer stopped sending: the room goes on
+        mix.room(array("h", [800] * 1600), 2 * RATE)
         mix.close()
         self.assertEqual(32767, rec.pcm[0])
         self.assertEqual(2 * RATE + 1600, rec.samples)
@@ -197,7 +189,6 @@ class Mix(unittest.TestCase):
         e = both_engine(store, "x")
         rec = FakeRecorder()
         e.recorder = lambda sid: rec
-        # In real time, as the sound server sends them: the computer's tone 0-1 s, the room's 0.5-2.1 s.
         main = PcmAudioSource(lambda: tc.concat(tc.tone(1.0), tc.silence(1.0)), speed=1)
         room = PcmAudioSource(lambda: tc.concat(tc.silence(0.5), tc.tone(1.6, amp=0.2), tc.silence(0.4)), speed=1)
         done = [threading.Event(), threading.Event()]

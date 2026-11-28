@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""Clicks at x,y on the VM's screen with a virtual absolute pointer made through /dev/uinput (run
-with sudo, inside the guest). GNOME's compositor sees it as a real device, so the click goes
-through Mutter's focus rules, which xdotool (XWayland only) and QEMU's pointer here don't reach.
-  sudo python3 click.py 1515 89                 a click
-  sudo python3 click.py 1515 89 --to 900 300    press there, drag to 900,300, release"""
 import fcntl
 import os
 import struct
@@ -24,13 +19,12 @@ for ev in (EV_KEY, EV_ABS):
 fcntl.ioctl(fd, UI_SET_KEYBIT, BTN_LEFT)
 for a in (ABS_X, ABS_Y):
     fcntl.ioctl(fd, UI_SET_ABSBIT, a)
-# struct uinput_user_dev: name[80], input_id (4 x u16), ff_effects_max, absmax[64], absmin[64], absfuzz[64], absflat[64]
 absmax = [0] * 64
 absmax[ABS_X], absmax[ABS_Y] = w - 1, h - 1
 dev = struct.pack("80sHHHHI", b"cicada-test-pointer", 3, 1, 1, 1, 0) + struct.pack("64i", *absmax) + struct.pack("64i", *([0] * 64)) * 3
 os.write(fd, dev)
 fcntl.ioctl(fd, UI_DEV_CREATE)
-time.sleep(1.0)  # let libinput pick the new device up
+time.sleep(1.0)
 
 
 def emit(t, c, v):

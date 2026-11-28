@@ -1,7 +1,3 @@
-"""会议记录, the main window: a header bar with 开始听 (or 正在听 · 结束) and the app menu; the
-meetings grouped by day and searchable on the left; the chosen meeting's notes and its bilingual
-transcript side by side on the right (stacked when the window is narrow). Export and delete answer
-with a toast; delete can be undone for a few seconds before the record is really removed."""
 from __future__ import annotations
 
 import math
@@ -32,40 +28,33 @@ class RecordsWindow(Gtk.Window):
         self.set_position(Gtk.WindowPosition.CENTER)
         self.set_wmclass("cicada", "Cicada")
         self.connect("delete-event", lambda *_: self.close_to_dock() or self.app.records_closed() or True)
-        # Minimized it isn't refilled on every change of a meeting; it catches up when it comes back.
         self.iconified = False
-        self.parked = False  # minimized by 知了 to keep its dock icon (Controller.keep_in_dock)
+        self.parked = False
         self.connect("window-state-event", self._state_changed)
         self.connect("hide", lambda *_: setattr(self, "iconified", False) or setattr(self, "parked", False))
         self.selected = None
-        self.pending_delete = None  # a record deleted but still undoable
+        self.pending_delete = None
         self.query = ""
-        # The search in the shown record (#33: a search opens the line, not just the meeting): its terms
-        # (misheard names too), the lines found, which one is being looked at.
         self.match_index = 0
         self._terms, self._matches, self._match_set, self._current = [], [], set(), None
-        self.mode = "both"  # transcript: "both" or "dst"
-        self._both = False  # the shown meeting has lines I said (同声传译): rows name 你 / 对方
-        self._nums, self._vnums, self._shown, self._speaker_key = {}, {}, {}, None  # 说话人识别 on show
+        self.mode = "both"
+        self._both = False
+        self._nums, self._vnums, self._shown, self._speaker_key = {}, {}, {}, None
         self._queued = False
-        self.player = None  # the shown record's recording (media.Player), while it has one to play
+        self.player = None
         self._player_sid = None
         self._dragging = False
-        self._hl_row = None  # the transcript row at the playhead
+        self._hl_row = None
         self._hl_line = None
-        self._bars = None  # the bouncing bars on it while playing
+        self._bars = None
         self._was_following = True
         self._scroll_anim = None
-        # 改这句…: the line being rewritten and what its editor opens with; the last fix toast shown.
         self._editing = None
         self._edit_start = ""
         self._fix_toast = None
 
         bar = Gtk.HeaderBar()
         bar.set_show_close_button(True)
-        # The title sits over the sidebar; the middle holds the listening capsule, as on the Mac.
-        # A stack, not a box: the pill cross-fades and changes width between states over 0.35 s, as
-        # the Mac's spring does, instead of jumping.
         self.listen_box = Gtk.Stack()
         self.listen_box.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self.listen_box.set_transition_duration(350)
@@ -78,7 +67,7 @@ class RecordsWindow(Gtk.Window):
         self.bar_side = ui.panel(ui.pad(ui.text(L("会议记录"), 13, "heading", bold=True, wrap=False), 0, 0, 0, 18), "sidebar-top")
         self.bar_side.set_size_request(260, -1)
         self.bar_side.get_child().set_valign(Gtk.Align.CENTER)
-        self.bar_side.set_no_show_all(True)  # with the sidebar: hidden while there are no meetings
+        self.bar_side.set_no_show_all(True)
         bar.pack_start(self.bar_side)
         bar.pack_end(self._app_menu())
         self.set_titlebar(bar)
@@ -90,21 +79,17 @@ class RecordsWindow(Gtk.Window):
         overlay.add(root)
         self.add(overlay)
 
-        # Sidebar
         side = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         self.sidebar = ui.panel(side, "sidebar")
         self.sidebar.set_size_request(260, -1)
-        self.sidebar.set_no_show_all(True)  # fill() decides: hidden while there are no meetings
+        self.sidebar.set_no_show_all(True)
         self.search = Gtk.SearchEntry()
         self.search.set_placeholder_text(L("搜索标题和对话"))
         self.search.connect("search-changed", self._searched)
-        # Enter goes to the next line found, as Ctrl+G does; Shift+Ctrl+G to the one before.
         self.search.connect("activate", lambda *_: self.step(1))
         self.search.connect("next-match", lambda *_: self.step(1))
         self.search.connect("previous-match", lambda *_: self.step(-1))
         ui.classes(self.search, "search")
-        # "Ctrl F" at the field's right end while it's empty, as the Mac shows ⌘F; the clear icon
-        # takes its place once something is typed.
         search_box = Gtk.Overlay()
         search_box.add(self.search)
         hint = ui.text("Ctrl F", 11, "secondary", wrap=False, ellipsize=False)
@@ -128,35 +113,25 @@ class RecordsWindow(Gtk.Window):
         side.show_all()
         root.pack_start(self.sidebar, False, False, 0)
 
-        # Content
         self.right = Gtk.ScrolledWindow()
         self.right.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         ui.pad(self.content, 6, 36, 28, 36)
         self.right.add(self.content)
         ui.classes(self.right, "sheet")
-        # Once the title scrolls away, a slim bar over the top of the page keeps the title, 导出…
-        # and the two columns' names in view (the Mac's pinned bar).
-        # A plain box shown and hidden: an overlay child takes the clicks under it even while a
-        # revealer hides its content.
         self.pinned = Gtk.Box()
         self.pinned.set_valign(Gtk.Align.START)
         self.pinned.set_no_show_all(True)
         page = Gtk.Overlay()
         page.add(self.right)
         page.add_overlay(self.pinned)
-        # Scrolled away from what is playing: one way back (the Mac's 回到正在播放 capsule).
         self.back_pill = self._back_pill()
         page.add_overlay(self.back_pill)
-        # The recording's player bar sits under the page, not in its header: the controls stay while
-        # the transcript scrolls.
         self.bottom = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         right_col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         right_col.pack_start(page, True, True, 0)
         right_col.pack_start(self.bottom, False, False, 0)
         root.pack_start(right_col, True, True, 0)
-        # Only a hand scrolls with the wheel / touchpad or moves the scrollbar; the follower sets the
-        # adjustment, which emits neither.
         self.right.connect("scroll-event", self._hand_scrolled)
         self.right.get_vscrollbar().connect("change-value", self._hand_scrolled)
         self.top_box = None
@@ -165,18 +140,14 @@ class RecordsWindow(Gtk.Window):
         self.connect("size-allocate", self._resized)
         self.connect("key-press-event", self._key)
         self._tick = GLib.timeout_add_seconds(1, self._clock)
-        # Closed: the recording stops; it is set up again when the window is next shown.
         self.connect("hide", lambda *_: (self._unload_player(), setattr(self, "_built_key", None)))
         self.fill()
 
     def _key(self, _w, event) -> bool:
-        """Ctrl+F searches (Ctrl+Q and Ctrl+, are app-wide accelerators)."""
         if event.state & Gdk.ModifierType.CONTROL_MASK and Gdk.keyval_name(event.keyval) in ("f", "F"):
             self.search.grab_focus()
             return True
         return False
-
-    # Header bar
 
     def _app_menu(self) -> Gtk.MenuButton:
         menu = Gtk.Menu()
@@ -197,11 +168,6 @@ class RecordsWindow(Gtk.Window):
         return b
 
     def _fill_listen_box(self) -> None:
-        """The listening switch, led by the logo (ListenPill.swift): a white capsule while idle
-        (logo, 知了, 开始听 or 会议已自动结束, the shortcut), an ink one while listening (the breathing
-        logo, 正在听, the level, the time, and 结束), and while the meeting is about to end by itself
-        a countdown ring round the logo, why, the seconds left and 继续记录. Built once per state;
-        the time, the level and the countdown update in place."""
         app = self.app
         listen = app.listen
         if listen.listening:
@@ -219,7 +185,6 @@ class RecordsWindow(Gtk.Window):
             box.set_valign(Gtk.Align.CENTER)
             box.set_halign(Gtk.Align.CENTER)
             if state == "setup":
-                # Not set up yet: the capsule says how much is left and opens the onboarding there.
                 b = Gtk.Button()
                 inner = ui.hbox(9, self._logo(22), ui.text(L("知了"), 13, "ink", bold=True, wrap=False, ellipsize=False),
                                 ui.panel(Gtk.Box(), "pillsep"),
@@ -230,7 +195,6 @@ class RecordsWindow(Gtk.Window):
                 sep.set_valign(Gtk.Align.CENTER)
                 b.add(inner)
                 ui.classes(b, "listenpill")
-                # A key the check found failing is fixed in 设置 › AI 服务, not in the onboarding.
                 b.connect("clicked", lambda *_: self.app.show_settings(ai=True) if self.app.ling.has_key and not self.app.key_works
                           else self.app.show_onboarding())
                 b.get_accessible().set_name(L("继续设置"))
@@ -300,7 +264,6 @@ class RecordsWindow(Gtk.Window):
                 box.pack_start(self._live_pill(show, keep, ending=True), False, False, 0)
             box.show_all()
             stack.add(box)
-            # The first state appears as is; later ones cross-fade (and the old one goes once faded).
             stack.set_transition_type(Gtk.StackTransitionType.NONE if first else Gtk.StackTransitionType.CROSSFADE)
             stack.set_visible_child(box)
 
@@ -320,16 +283,11 @@ class RecordsWindow(Gtk.Window):
             self._ring.set_from_pixbuf(ui.ring_pixbuf(left / self._ring_total))
 
     def _live_pill(self, show: Gtk.Widget, button: Gtk.Widget, ending: bool = False) -> Gtk.Widget:
-        """The ink capsule: 32 px high, 5 px in on the left and 4 px round the rest (ListenPill).
-        A plain box, not an EventBox: it honours CSS padding and has no window of its own, so the
-        breathing rings may run past its edge, as they do on the Mac."""
         pill = ui.classes(ui.hbox(10, show, button), "listenpill", "live", "ending" if ending else "on")
         pill.set_valign(Gtk.Align.CENTER)
         return pill
 
     def _breathing_logo(self, px: int) -> Gtk.Widget:
-        """BreathingMark: two rings swell out of the logo in turn while Cicada listens."""
-        # Plain boxes, not panels: an EventBox's own window would clip the ring drawn outside it.
         inner = ui.classes(ui.hbox(0, self._logo(px)), "breathemark")
         outer = ui.classes(ui.hbox(0, inner), "breathemark", "late")
         outer.set_valign(Gtk.Align.CENTER)
@@ -342,21 +300,18 @@ class RecordsWindow(Gtk.Window):
         if path:
             try:
                 from gi.repository import GdkPixbuf
-                # A pixbuf, not a cairo surface: stock Ubuntu has no python3-gi-cairo.
                 return Gtk.Image.new_from_pixbuf(GdkPixbuf.Pixbuf.new_from_file_at_size(path, px, px))
             except GLib.Error:
                 pass
         return ui.dot(True)
 
     def _shortcut_hint(self) -> str:
-        """The start / stop shortcut, when one is set ("Super ⇧ C", as the Mac shows ⌘R)."""
         from .settings_window import SHORTCUTS, gnome_shortcut
         if not gnome_shortcut("toggle"):
             return ""
         return SHORTCUTS["toggle"][2].replace(" + Shift + ", " ⇧ ")
 
     def _meter(self) -> bool:
-        """The level of what Cicada hears, newest on the right (LevelMeter): 8 bars, 15 px high."""
         if self._pill_state[0] != "live" or not self.app.listen.listening:
             return False
         self._levels = (self._levels + [ui.loudness(self.app.listen.level)])[-8:]
@@ -370,7 +325,6 @@ class RecordsWindow(Gtk.Window):
         return True
 
     def close_to_dock(self) -> None:
-        """✕: hidden, or with 在 Dock 中显示 on, minimized: the dock lists 知了 only while it has a window."""
         if self.app.settings.showInDock:
             self.parked = True
             self.iconify()
@@ -381,24 +335,17 @@ class RecordsWindow(Gtk.Window):
         if event.changed_mask & Gdk.WindowState.ICONIFIED and not event.new_window_state & Gdk.WindowState.WITHDRAWN:
             self.iconified = bool(event.new_window_state & Gdk.WindowState.ICONIFIED)
             if not self.iconified:
-                self.refresh()  # back from the dock: what changed while it was minimized
-                # Mapped minimized, Mutter flicks it to normal and back within a few ms: only a
-                # window still up a moment later was brought back (by the dock, or Alt+Tab).
+                self.refresh()
                 GLib.timeout_add(200, self._restored)
         return False
 
     def _restored(self) -> bool:
         if self.parked and not self.iconified and self.get_mapped() and self.is_active():
             self.parked = False
-            # Mapped minimized, it isn't drawn when it comes back (seen with the notes window up):
-            # presenting it, which it already is (active: the WM brought it back, not the flick),
-            # gets it drawn.
             self.present()
             self.set_focus(None)
             Log.d("dock: records window brought back")
         return False
-
-    # List
 
     def refresh(self) -> None:
         if self._queued:
@@ -484,7 +431,7 @@ class RecordsWindow(Gtk.Window):
 
     def _searched(self, entry) -> None:
         if entry.get_text() == self.query:
-            return  # SearchEntry's delayed signal for text already searched: keep the line being looked at
+            return
         self.query = entry.get_text()
         self.match_index = 0
         self.fill()
@@ -501,10 +448,7 @@ class RecordsWindow(Gtk.Window):
             if self.query.strip():
                 self._apply_search(scroll=True)
 
-    # The search in the shown record
-
     def _match_bar(self) -> Gtk.Widget:
-        """Where the search is in the shown record: 本场 2 / 7, and a way to the previous and next line."""
         self.match_count = ui.text("", 12, "secondary", wrap=False, ellipsize=False)
         bar = ui.hbox(2)
         bar.pack_start(self.match_count, True, True, 0)
@@ -524,7 +468,6 @@ class RecordsWindow(Gtk.Window):
         self.match_bar.set_visible(on)
 
     def _search_state(self, s) -> None:
-        """The search's terms and the lines it finds in `s` (none while there is no query or record)."""
         self._terms = transcript_search.terms(self.query, s.notes.terms if s.notes else []) if s is not None else []
         self._matches = transcript_search.matches(s.lines, self._terms) if s is not None else []
         self._match_set = set(self._matches)
@@ -541,7 +484,6 @@ class RecordsWindow(Gtk.Window):
         self._apply_search(scroll=True)
 
     def _apply_search(self, scroll: bool) -> None:
-        """Marks the shown record's lines for the search; with `scroll`, goes to the line being looked at."""
         s = self.app.store.get(self.selected) if self.selected else None
         if s is None or self.columns is None or getattr(self, "_sid", None) != s.id:
             self._search_state(None)
@@ -551,13 +493,10 @@ class RecordsWindow(Gtk.Window):
         if not scroll or self._current is None:
             return
         idx = next(i for i, l in enumerate(s.lines) if l.id == self._current)
-        self._more_rows_until(idx + 1)  # the batches may not have got that far yet
+        self._more_rows_until(idx + 1)
         row = self._rows[idx][1]
-        # Once the rows just built are laid out, and again once a long page has its final height.
         GLib.idle_add(lambda: self._centre(row) or False)
         GLib.timeout_add(200, lambda: self._centre(row) or False)
-
-    # Detail
 
     def _resized(self, _w, alloc) -> None:
         if self.columns is not None:
@@ -571,8 +510,6 @@ class RecordsWindow(Gtk.Window):
     pinned_heads = None
 
     def _pinned_bar(self, s) -> Gtk.Widget:
-        """The title (a click goes back to the top), 导出… and ⋯; under them, side by side, the two
-        columns' names, so a long scroll still says which side is the notes."""
         title = Gtk.Button()
         ui.classes(title, "flat", "pinned-title")
         self.pinned_title = ui.text(session_store.display_title(s), 14, "heading", bold=True, wrap=False)
@@ -589,8 +526,6 @@ class RecordsWindow(Gtk.Window):
         heads = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=40)
         heads.set_homogeneous(True)
         heads.pack_start(self._section_title(L("纪要")), True, True, 0)
-        # The transcript's side as its own head has it: 双语 / 只看译文 stays a click away (the Mac's
-        # bar keeps the transcript's language choice too).
         trans = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         trans.pack_start(self._section_title("%s %d" % (L("文字记录"), len(s.lines))), True, True, 0)
         if any(l.dst and l.dst != l.shown for l in s.lines):
@@ -611,7 +546,6 @@ class RecordsWindow(Gtk.Window):
         return ui.panel(box, "pinned-bar")
 
     def _pin(self) -> None:
-        """Show the pinned bar while the title block is above the top of the page."""
         top = self.top_box
         show = top is not None and top.get_mapped() and \
             self.right.get_vadjustment().get_value() > top.get_allocation().y + top.get_allocation().height
@@ -619,8 +553,6 @@ class RecordsWindow(Gtk.Window):
             self.pinned.set_visible(show)
 
     def _setup_page(self) -> Gtk.Widget:
-        """No meetings and not set up yet (Windows' Welcome › Checklist): what is left, ticked by what
-        really happened, each step opening the onboarding where it is. 同声传译 is optional."""
         app = self.app
         key, audio, sample = app.setup_done
         first = 0 if not key else 1 if not audio else 2 if not sample else 3
@@ -641,7 +573,6 @@ class RecordsWindow(Gtk.Window):
         speak = (LF("按 %@ 说话，线上的人听到翻译后的声音", SHORTCUTS["speak"][2].replace(" + Shift + ", " ⇧ "))
                  if gnome_shortcut("speak") else L("点纪要窗的麦克风说话，线上的人听到翻译后的声音"))
         service = L("接上 Ling") if app.settings.aiProvider == "ling" else LF("接上 %@", app.ling.provider.name)
-        # A key that the check found failing: why, and 去修 opens 设置 › AI 服务 (not the onboarding).
         from . import aicheck_view
         broken = aicheck_view.strip_words(app) if app.ling.has_key and not key else None
         key_line = (broken[1] or broken[0]) if broken else (L("只存在这台电脑上（只有你的账户能读）") if key else L("识别、翻译和纪要都靠它，约 1 分钟"))
@@ -674,7 +605,7 @@ class RecordsWindow(Gtk.Window):
             texts = ui.vbox(1, head, sub)
             texts.set_valign(Gtk.Align.CENTER)
             row = ui.hbox(14, disc)
-            row.pack_start(texts, True, True, 0)  # filled, so the words start at the left of every row
+            row.pack_start(texts, True, True, 0)
             action = None
             if now and i == 0 and broken:
                 action = ui.button(L("去修"), lambda: app.show_settings(ai=True), "darkbtn")
@@ -699,7 +630,6 @@ class RecordsWindow(Gtk.Window):
         self.app.changed()
 
     def _welcome_page(self) -> Gtk.Widget:
-        """No meetings yet, set up (Views.swift › welcome): the logo, one line, 开始听 and the sample."""
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         page.set_halign(Gtk.Align.CENTER)
         page.set_valign(Gtk.Align.CENTER)
@@ -774,7 +704,7 @@ class RecordsWindow(Gtk.Window):
             return
         if empty:
             d.pack_start(self._welcome_page(), True, True, 0)
-            if self.app.tray is not None:  # where 知了 is once this window is closed
+            if self.app.tray is not None:
                 hint = ui.text(L("关掉窗口后，知了在顶栏右上角"), 12, "secondary", wrap=False)
                 hint.set_halign(Gtk.Align.END)
                 d.pack_end(ui.pad(hint, 0, 18, 14, 0), False, False, 0)
@@ -814,7 +744,7 @@ class RecordsWindow(Gtk.Window):
                 self.player = media.Player(self.app.store.audio_path(s.id), on_change=self._player_changed)
                 self._player_sid = s.id
                 GLib.timeout_add(250, self._poll, self.player)
-            except Exception as e:  # noqa: BLE001 - a file GStreamer can't open: no player, the record still shows
+            except Exception as e:  # noqa: BLE001
                 Log.d("records: can't play %s" % type(e).__name__)
                 self.player = None
         self._playable = self.player is not None
@@ -823,14 +753,12 @@ class RecordsWindow(Gtk.Window):
             self.bottom.pack_start(self._player_bar(), False, False, 0)
             self.bottom.show_all()
 
-        # Title, meta, actions
         top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
         self.title_label = ui.text(session_store.display_title(s), 22, "heading", bold=True, selectable=True, width_chars=36)
         left.pack_start(self.title_label, False, False, 0)
         self.meta_label = ui.text(self._meta(s, live), 12, "tertiary", wrap=False)
         left.pack_start(self.meta_label, False, False, 0)
-        # 存到文件夹: where this record's file is, or why it isn't there yet (not while it's live).
         self.export_slot = ui.hbox(0)
         self.export_slot.set_margin_top(5)
         self.export_slot.set_no_show_all(True)
@@ -850,7 +778,6 @@ class RecordsWindow(Gtk.Window):
         if recording is not None:
             d.pack_start(ui.gap(recording, 14), False, False, 0)
 
-        # Notes | transcript
         self.columns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=40)
         self.columns.set_homogeneous(True)
         self.columns.set_margin_top(24)
@@ -886,7 +813,6 @@ class RecordsWindow(Gtk.Window):
         if s.lines:
             src, dst = s.lines[0].srcLang, s.lines[0].dstLang
             langs = " · " + (lang_name(src) if src == dst else lang_name(src) + " → " + lang_name(dst))
-        # Heard through a microphone in the room, and with the computer's audio too: as on the Mac.
         place = " · " + (L("电脑和会议室") if roommic.heard_both(s.lines) else L("会议室")) if s.room else ""
         return "%s · %s · %s%s%s" % (session_store._local_date(s.startedAt, L("M月d日 HH:mm")), L("正在听") if live else clock(s.duration),
                                      LF("%lld 句", len(s.lines)), langs, place)
@@ -895,17 +821,12 @@ class RecordsWindow(Gtk.Window):
         return (id(s.notes), s.notes.updatedAt if s.notes else None, self.app.notes.working_id == s.id, live)
 
     def _update_detail(self, s, live) -> None:
-        """The same meeting changed (a new line while listening, new notes, a rename): touch only what
-        changed. Rebuilding a long transcript on every line froze the window for half a second."""
         if self._audio_state(s, live) != self._built_key[3]:
-            # The recording was rewrapped (or went missing) since: the player bar and the time links change.
             self._built_key = None
             self.show_detail()
             return
         if (not self._both and s.sourceFile is None and any(l.speaker == "me" for l in s.lines)) or \
                 self._speaker_state_key(s) != self._speaker_key:
-            # My first sentence, or voices newly on show / renamed / merged: every row may now say
-            # someone else, so a full rebuild (the same key would come straight back here).
             self._built_key = None
             self.show_detail()
             return
@@ -930,7 +851,6 @@ class RecordsWindow(Gtk.Window):
         self._more_rows()
 
     def _refresh_rows(self, s) -> None:
-        """Rebuilds the rows shown so far whose line, speaker label or search marks changed."""
         starts = self._starts(s.lines)
         for i, l in enumerate(s.lines[:len(self._rows)]):
             if self._rows[i][0] != self._row_key(l, l.id in starts):
@@ -939,25 +859,19 @@ class RecordsWindow(Gtk.Window):
                 self.transcript.remove(old_row)
                 old_row.destroy()
                 self.transcript.pack_start(row, False, False, 0)
-                self.transcript.reorder_child(row, i + 1)  # after the header
+                self.transcript.reorder_child(row, i + 1)
                 row.show_all()
                 self._rows[i] = (k, row)
 
-    # The recording (保存会议录音)
-
     def _audio_state(self, s, live):
-        """What shows under the title: "live" (it is being recorded), "ready" (a recording to play),
-        "missing" (the record says it has one, the file is gone), "none" (no recording), or None."""
         from . import media
         if live:
             return "live" if self.app.listen.recording else None
         path = self.app.store.audio_path(s.id)
         if os.path.isfile(path):
-            # Without an AAC decoder (a record from a Mac on a stock computer) nothing true and
-            # useful can be said here: no bar.
             return "ready" if media.can_play() else None
         if os.path.isfile(aac.partial(path)):
-            return None  # being rewrapped into system.m4a: the bar comes a moment later
+            return None
         if s.hasAudio:
             return "missing"
         return "none" if s.lines else None
@@ -969,7 +883,6 @@ class RecordsWindow(Gtk.Window):
             return ui.text(L("找不到录音，没法播放"), 12, "secondary")
         if audio == "none":
             if not self.app.can_record:
-                # 保存会议录音 can't be turned on here (no AAC encoder): no link to a greyed-out switch.
                 return ui.text(L("这场会议没存录音 ·").rstrip(" ·"), 12, "secondary", wrap=False)
             line = ui.hbox(4, ui.text(L("这场会议没存录音 ·"), 12, "secondary", wrap=False, ellipsize=False))
             go = Gtk.Button()
@@ -979,10 +892,9 @@ class RecordsWindow(Gtk.Window):
             go.connect("clicked", lambda *_: self.app.show_settings(general=True))
             line.pack_start(go, False, False, 0)
             return line
-        return None  # "ready": the player bar is under the page (self.bottom)
+        return None
 
     def _player_bar(self) -> Gtk.Widget:
-        """Play / pause, where in the meeting, and the speed (RecordingPlayerBar), in a soft box."""
         p = self.player
         self._pb_icon = ui.icon("media-playback-start-symbolic", 13)
         play = Gtk.Button()
@@ -1009,7 +921,7 @@ class RecordsWindow(Gtk.Window):
         def moved(_w, _scroll, value):
             ui.retext(self._pb_time, clock(max(0, value)))
             if not self._dragging and self.player is not None:
-                self.player.seek(value)  # the keyboard
+                self.player.seek(value)
             return False
         scale.connect("change-value", moved)
         self._pb_scale = scale
@@ -1026,7 +938,6 @@ class RecordsWindow(Gtk.Window):
         row.pack_start(rate, False, False, 0)
         self._player_changed()
         bar = ui.panel(ui.pad(row, 8, 14, 8, 10), "playerbar")
-        # At most 680 wide in the middle of the page, as on the Mac.
         bar.set_halign(Gtk.Align.CENTER)
 
         def fit(_w, alloc):
@@ -1062,7 +973,6 @@ class RecordsWindow(Gtk.Window):
         self.back_pill.hide()
 
     def _poll(self, player) -> bool:
-        """Four times a second while a recording is loaded: the time, the bar, and the line being played."""
         if player is not self.player:
             return False
         if getattr(self, "_pb_play", None) is None or not self.get_visible():
@@ -1080,18 +990,15 @@ class RecordsWindow(Gtk.Window):
         return True
 
     def _hand_scrolled(self, *_args) -> bool:
-        """The wheel, the touchpad or the scrollbar moved the page: stop following what plays."""
         if self.player is not None and self.player.playing:
             adj = self.right.get_vadjustment()
-            if adj.get_upper() > adj.get_page_size():  # nothing to scroll: nothing moved
+            if adj.get_upper() > adj.get_page_size():
                 self._stop_scroll_anim()
                 self.player.user_scrolled()
                 self._update_pill()
         return False
 
     def _highlight(self, now: float, playing: bool, following: bool) -> None:
-        """The last line that began by now (a little ahead, so it lights as it starts) on a pale
-        accent; while playing, its bars bounce and the page keeps it in the middle until scrolled by hand."""
         s = self.app.store.get(self._player_sid) if self._player_sid else None
         if s is None:
             return
@@ -1102,14 +1009,14 @@ class RecordsWindow(Gtk.Window):
             else:
                 break
         if idx >= len(self._rows) and getattr(self, "_loader", None) is not None:
-            self._more_rows_until(idx + 1)  # played (or picked) past the rows built so far
+            self._more_rows_until(idx + 1)
         row = self._rows[idx][1] if 0 <= idx < len(self._rows) else None
         self._hl_line = s.lines[idx] if idx >= 0 else None
         changed = row is not self._hl_row
         if changed:
             old, self._hl_row = self._hl_row, row
             for r, on in ((old, False), (row, True)):
-                if r is None or r.get_parent() is None:  # a row rebuilt since (its line changed) is gone
+                if r is None or r.get_parent() is None:
                     continue
                 ctx = r.get_style_context()
                 ctx.add_class("playing") if on else ctx.remove_class("playing")
@@ -1122,7 +1029,6 @@ class RecordsWindow(Gtk.Window):
         self._update_pill()
 
     def _style_time(self, r) -> None:
-        """A row's time: accent and bold while it plays or is pointed at (with ▶ then), the link ink otherwise."""
         label = r.time_label
         ctx = r.get_style_context()
         on = ctx.has_class("playing") or ctx.has_class("hover")
@@ -1137,7 +1043,6 @@ class RecordsWindow(Gtk.Window):
             ui.retext(label, label.get_text())
 
     def _set_bars(self, row) -> None:
-        """Three bars bouncing at the right edge of the row playing (PlayingBars); none while paused."""
         bars = self._bars
         slot = getattr(row, "bars_slot", None) if row is not None else None
         if bars is not None and (slot is None or bars.get_parent() is not slot):
@@ -1146,7 +1051,6 @@ class RecordsWindow(Gtk.Window):
             self._bars = bars = None
         if slot is None or bars is not None:
             return
-        # CSS-filled boxes, not a drawing: stock Ubuntu has no python3-gi-cairo.
         moving = Gtk.Settings.get_default().get_property("gtk-enable-animations")
         bars, sticks = self._sticks("playbars", (8, 8, 8), Gtk.Align.END)
         bars.set_size_request(14, 12)
@@ -1169,7 +1073,6 @@ class RecordsWindow(Gtk.Window):
 
     @staticmethod
     def _sticks(cls: str, heights, align) -> tuple:
-        """A row of thin rounded bars (the Mac's capsules) of these heights, filled by CSS."""
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2 if cls == "playbars" else 1)
         sticks = []
         for h in heights:
@@ -1182,14 +1085,13 @@ class RecordsWindow(Gtk.Window):
         return box, sticks
 
     def _back_pill(self) -> Gtk.Widget:
-        """回到正在播放 · m:ss: a dark capsule at the bottom of the page while it doesn't follow."""
         b = Gtk.Button()
         ui.classes(b, "backpill")
         wave, _ = self._sticks("pillwave", (5, 11, 7, 9, 4), Gtk.Align.CENTER)
         wave.set_valign(Gtk.Align.CENTER)
         self._pill_label = ui.text("", 13, "ink", bold=True, wrap=False, ellipsize=False)
         inner = ui.hbox(6, wave, self._pill_label)
-        inner.show_all()  # the button itself is no_show_all: shown and hidden on its own
+        inner.show_all()
         b.add(inner)
         b.set_halign(Gtk.Align.CENTER)
         b.set_valign(Gtk.Align.END)
@@ -1199,7 +1101,6 @@ class RecordsWindow(Gtk.Window):
         return b
 
     def follow_playing(self) -> None:
-        """回到正在播放: follow the recording again, and scroll back to it."""
         if self.player is None:
             return
         self.player.follow()
@@ -1218,7 +1119,6 @@ class RecordsWindow(Gtk.Window):
             self.back_pill.hide()
 
     def _centre(self, row) -> None:
-        """Scrolls the row to the middle of the page under the pinned bar, eased over 0.25 s."""
         pos = row.translate_coordinates(self.content, 0, 0)
         if pos is None:
             return
@@ -1257,9 +1157,6 @@ class RecordsWindow(Gtk.Window):
             adj.set_value(max(0, min(y - adj.get_page_size() / 3, adj.get_upper() - adj.get_page_size())))
 
     def _more_menu(self, s) -> Gtk.MenuButton:
-        """The record as it is when pressed: 恢复自动标题 only for a renamed meeting the notes have
-        named, 删除 off for the live one (the Mac's context menu). The items stay; a menu filled
-        while it opens pops up empty, so they are updated on the press, before it opens."""
         menu = Gtk.Menu()
         sid = s.id
 
@@ -1285,7 +1182,7 @@ class RecordsWindow(Gtk.Window):
         b = Gtk.MenuButton()
         b.set_popup(menu)
         b.connect("button-press-event", update)
-        b.connect("toggled", update)  # the keyboard opens it too; the items are already right by then
+        b.connect("toggled", update)
         b.add(ui.icon("view-more-symbolic"))
         b.set_tooltip_text(L("更多操作"))
         ui.classes(b, "outline")
@@ -1298,7 +1195,6 @@ class RecordsWindow(Gtk.Window):
         col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         col.set_valign(Gtk.Align.START)
         col.pack_start(self._section_title(L("纪要")), False, False, 0)
-        # Ling wrote "说话人 2" before anyone was named: the name given since shows instead.
         n = speakers.named(s.notes, self._speakers(s)[2])
         working = self.app.notes.working_id == s.id
         if n is None or n.is_empty:
@@ -1318,7 +1214,6 @@ class RecordsWindow(Gtk.Window):
                 col.pack_start(ui.gap(b, 12), False, False, 0)
             return col
         if n.summary:
-            # The summary in a soft card, as the Mac sets it apart.
             summary = ui.panel(ui.pad(ui.text(n.summary, 14, "body", selectable=True, width_chars=50), 13, 16), "summarycard")
             col.pack_start(ui.gap(summary, 10), False, False, 0)
         for t in n.topics:
@@ -1330,7 +1225,7 @@ class RecordsWindow(Gtk.Window):
             for p in t.points:
                 bullet = ui.text("•", 11, "tertiary", wrap=False, ellipsize=False)
                 bullet.set_valign(Gtk.Align.START)
-                bullet.set_margin_top(2)  # level with the first line of 13 px text
+                bullet.set_margin_top(2)
                 line = ui.hbox(9, bullet)
                 line.pack_start(ui.text(p, 13, "body", selectable=True, width_chars=46), True, True, 0)
                 col.pack_start(ui.gap(line, 6), False, False, 0)
@@ -1363,10 +1258,8 @@ class RecordsWindow(Gtk.Window):
         has_dst = any(l.dst and l.dst != l.shown for l in s.lines)
         if has_dst:
             head.pack_end(ui.segmented([("both", L("双语")), ("dst", L("只看译文"))], self.mode, mode), False, False, 0)
-        # The review banner rides with the header, so the rows keep their places among col's children.
         self.fix_banner = ui.vbox(0)
         self._banner_key = None
-        # Inset as far as the rows' text, which sits 10 px inside their fill.
         col.pack_start(ui.pad(ui.vbox(0, head, self.fix_banner), 0, 10, 0, 10), False, False, 0)
         self.transcript = col
         self._both = s.sourceFile is None and any(l.speaker == "me" for l in s.lines)
@@ -1386,14 +1279,10 @@ class RecordsWindow(Gtk.Window):
         self._more_rows(first=True)
         return col
 
-    # 说话人识别
-
     def _speakers(self, s):
-        """(line id → number, voice → number, number → name) for the voices on show; empty when off."""
         if not self.app.settings.speakerVoices:
             return {}, {}, {}
         vnums = speakers.voice_numbers(s.lines)
-        # An imported file without voices on show has no "other side" to label.
         if not speakers.says_who(s, vnums):
             return {}, {}, {}
         return speakers.numbers(s.lines), vnums, (speakers.names(s) if vnums else {})
@@ -1401,18 +1290,15 @@ class RecordsWindow(Gtk.Window):
     def _speaker_state_key(self, s):
         _n, vnums, shown = self._speakers(s)
         busy = s.id in self.app.namer.busy
-        # The room side's first line in 电脑和会议室: every line of theirs now says where it was heard.
         return (tuple(sorted(vnums.items())), tuple(sorted(shown.items())), str(sorted((s.voiceGuesses or {}).keys())), busy,
                 roommic.heard_both(s.lines))
 
     def _row_key(self, l, start):
         fixes = tuple((f.from_, f.to, f.ask, f.off, f.user) for f in l.fixes or [])
-        # The search marks only lines it finds: typing a query doesn't rebuild the whole transcript.
         found = (tuple(self._terms), l.id == self._current) if l.id in self._match_set else None
         return (l.id, l.shown, l.dst, l.voice, start, fixes, self._editing == l.id, found)
 
     def _who(self, l):
-        """The label at a change of speaker, and its colour class."""
         if l.speaker == "me":
             return L("你"), "accent"
         n = self._nums.get(l.id)
@@ -1427,7 +1313,6 @@ class RecordsWindow(Gtk.Window):
         lbl = ui.text(text, 11, cls, bold=True, wrap=False)
         if not self._vnums:
             return lbl
-        # A click on whose line it is: say it was someone else's (这句是谁说的).
         b = Gtk.Button()
         b.add(lbl)
         b.set_relief(Gtk.ReliefStyle.NONE)
@@ -1456,8 +1341,6 @@ class RecordsWindow(Gtk.Window):
             self.toasts.show(text, L("撤销"), lambda: self.app.undo_speaker_edit(sid, snap), seconds=6)
 
     def _people(self, s) -> Gtk.Widget:
-        """Who is speaking, above the transcript: each person opens the editor; and a way out."""
-        # Chips wrap onto more lines rather than widen the window; each keeps its natural width in its cell.
         row = Gtk.FlowBox()
         row.set_selection_mode(Gtk.SelectionMode.NONE)
         row.set_column_spacing(6)
@@ -1488,8 +1371,6 @@ class RecordsWindow(Gtk.Window):
         return ui.gap(line, 12)
 
     def _editor(self, chip, voice) -> None:
-        """One voice: its name (Ling's guess and people the notes mention a click away), or merge it
-        into another voice (SpeakerEditor)."""
         s = self.app.store.get(self._sid)
         if s is None or voice not in self._vnums:
             return
@@ -1521,7 +1402,6 @@ class RecordsWindow(Gtk.Window):
         def apply():
             name = entry.get_text().strip()
             pop.popdown()
-            # Keeping Ling's name stores nothing, so a later, better guess can still replace it.
             if guess is not None and name == guess.name:
                 self._edited(*self.app.rename_speaker(self._sid, voice, None))
             elif (s.voiceNames or {}).get(str(voice)) is not None or name:
@@ -1572,14 +1452,12 @@ class RecordsWindow(Gtk.Window):
 
     def _row(self, l, start: bool = False):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        t = ui.text(clock(l.t), 11, "link", wrap=False, ellipsize=False)  # times in the logo's orange ink
+        t = ui.text(clock(l.t), 11, "link", wrap=False, ellipsize=False)
         t.set_size_request(44, -1)
         time_widget = t
         play_icon = None
         playable = getattr(self, "_playable", False)
         if playable:
-            # With a recording, a time plays from that line (the Mac's line times), and so does a
-            # click anywhere on the line; pointed at, it shows ▶ in the accent.
             t.set_size_request(-1, -1)
             play_icon = ui.icon("media-playback-start-symbolic", 8)
             ui.classes(play_icon, "accent")
@@ -1598,8 +1476,6 @@ class RecordsWindow(Gtk.Window):
         time_widget.set_margin_top(2)
         row.pack_start(time_widget, False, False, 0)
         texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        # Whose it is, where the speaker changes (as chat apps do): with voices told apart, or in a
-        # meeting I spoke in through 同声传译.
         if start and (self._both or self._vnums or self._places):
             label = self._speaker_label(l)
             if self._places and l.speaker != "me":
@@ -1608,7 +1484,7 @@ class RecordsWindow(Gtk.Window):
         translated = l.dst and l.dst != l.shown
         terms = self._terms if l.id in self._match_set else []
         found = l.id == self._current
-        selectable = []  # the line's text: a drag over it selects, and must not play
+        selectable = []
         if self._editing == l.id:
             texts.pack_start(self._line_editor(l), False, False, 0)
         else:
@@ -1623,7 +1499,6 @@ class RecordsWindow(Gtk.Window):
                 src.set_max_width_chars(46)
                 selectable.append(src)
                 texts.pack_start(src, False, False, 0)
-            # Pointing at a line: what its fixed words were heard as, 改回, and 改这句….
             tools = ui.hbox(8)
             applied = [(l.id, f) for f in l.fixes or [] if f.applied]
             if applied:
@@ -1643,12 +1518,10 @@ class RecordsWindow(Gtk.Window):
         panel.time_play = play_icon
         panel.bars_slot = None
         if playable:
-            # Where the bars bounce while this line plays: kept wide so the text doesn't move.
             panel.bars_slot = Gtk.Box()
             panel.bars_slot.set_size_request(14, -1)
             panel.bars_slot.set_margin_top(4)
             row.pack_end(panel.bars_slot, False, False, 0)
-        # 10 px of fill around the text, so the line playing reads as one rounded block.
         ui.pad(row, 9, 10, 9, 10)
         if self._editing != l.id:
             panel.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK |
@@ -1676,8 +1549,6 @@ class RecordsWindow(Gtk.Window):
         return self._row_key(l, start), panel
 
     def _tap_to_play(self, panel, labels, l) -> None:
-        """A click anywhere on the line plays from it; a drag (or a double click) that selects text
-        doesn't. The selectable labels take the presses over the text, so they report them too."""
         down = {}
 
         def press(_w, e):
@@ -1692,7 +1563,7 @@ class RecordsWindow(Gtk.Window):
             if abs(e.x_root - at[0]) > 4 or abs(e.y_root - at[1]) > 4:
                 return False
             if any(lb.get_selection_bounds()[0] for lb in labels):
-                return False  # text selected (a drag that came back, a shift-click)
+                return False
             self.play_line(l)
             return False
         for w in [panel, *labels]:
@@ -1700,16 +1571,12 @@ class RecordsWindow(Gtk.Window):
             w.connect("button-release-event", release)
 
     def play_line(self, l) -> None:
-        """Plays the recording from a line (also while paused); the page follows it again."""
         if self.player is None:
             return
         self.player.play_from(l.t)
         self._highlight(l.t, True, True)
 
-    # 改正听错的词: 改这句…, the review banner, the toast
-
     def _line_menu(self, event, line_id) -> bool:
-        """Right-click on a line: 改这句…."""
         if event.button != 3:
             return False
         menu = Gtk.Menu()
@@ -1722,14 +1589,13 @@ class RecordsWindow(Gtk.Window):
         return True
 
     def edit_line(self, line_id, start: str | None = None) -> None:
-        """Opens 改这句… on a line, with the line as shown (or `start`, the banner's suggestion)."""
         l = self.app.store.line(self._sid, line_id)
         if l is None:
             return
         before = self._editing
         self._editing, self._edit_start = line_id, start if start is not None else l.shown
         if before is not None and before != line_id:
-            self._rebuild_row(before)  # one editor at a time
+            self._rebuild_row(before)
         self._rebuild_row(line_id)
 
     def _rebuild_row(self, line_id) -> None:
@@ -1754,8 +1620,6 @@ class RecordsWindow(Gtk.Window):
                 return
 
     def _line_editor(self, l) -> Gtk.Widget:
-        """改这句…: the line as shown, to rewrite (the Mac's LineEditor). What changed becomes the user's
-        own fix, on every line heard the same way or only this one, and with 记进词表 the word list's."""
         fx, sid = self.app.fixes, self._sid
         box = ui.vbox(8)
         entry = Gtk.Entry()
@@ -1803,7 +1667,6 @@ class RecordsWindow(Gtk.Window):
                     keep.set_sensitive(state["everywhere"])
                     options.pack_start(all_, False, False, 0)
                     options.pack_start(one, False, False, 0)
-                # Only a word for a word can teach the list: an added or dropped word can't.
                 if swap:
                     options.pack_start(keep, False, False, 0)
             options.show_all()
@@ -1824,14 +1687,12 @@ class RecordsWindow(Gtk.Window):
         box.pack_start(foot, False, False, 0)
         def focus():
             entry.grab_focus()
-            entry.set_position(-1)  # the caret at the end, not the whole line selected
+            entry.set_position(-1)
             return False
         GLib.idle_add(focus)
         return box
 
     def _fill_fix_banner(self, s) -> None:
-        """Above a finished meeting's transcript (the Mac's FixReviewBanner): how many words were fixed,
-        and the ones waiting for the user, one at a time (对 / 不对 / 改成…)."""
         box = getattr(self, "fix_banner", None)
         if box is None:
             return
@@ -1861,7 +1722,6 @@ class RecordsWindow(Gtk.Window):
             row.pack_start(left, True, True, 0)
             row.pack_start(ui.soft_button(L("对"), lambda: fx.answer(fix, True, s.id), dark=True), False, False, 0)
             row.pack_start(ui.soft_button(L("不对"), lambda: fx.answer(fix, False, s.id)), False, False, 0)
-            # 改成…: the editor on that line, to write what was really said.
             row.pack_start(ui.soft_button(L("改成…"), lambda: self.edit_line(line.id)), False, False, 0)
             for b in row.get_children()[1:]:
                 b.set_valign(Gtk.Align.CENTER)
@@ -1871,7 +1731,6 @@ class RecordsWindow(Gtk.Window):
         box.show_all()
 
     def fix_toast(self) -> None:
-        """The last fix decision, with 撤销, as this window's toast (once per decision)."""
         fx = self.app.fixes
         text = fx.toast_text()
         if text is None or fx.toast is self._fix_toast:
@@ -1880,13 +1739,10 @@ class RecordsWindow(Gtk.Window):
         self.toasts.show(text, L("撤销") if fx.can_undo else None, fx.undo, seconds=6)
 
     def _starts(self, lines) -> set:
-        """Lines whose speaker label shows: a change of speaker, or in 电脑和会议室 of place too."""
         starts = speakers.run_starts(lines, self._nums)
         return starts | roommic.place_starts(lines) if self._places else starts
 
     def _more_rows(self, first: bool = False) -> None:
-        """Rows not shown yet: the first screenful at once, the rest in batches between frames, so
-        a two-hour meeting opens instantly."""
         built = self._built_key
 
         def step(count):
@@ -1910,7 +1766,6 @@ class RecordsWindow(Gtk.Window):
             self._loader = GLib.idle_add(step, 200)
 
     def _more_rows_until(self, count: int) -> None:
-        """The rows up to `count` built now: the playhead got there before the batches did."""
         s = self.app.store.get(self._sid)
         if s is None:
             return
@@ -1923,13 +1778,9 @@ class RecordsWindow(Gtk.Window):
 
     def _generate(self, sid) -> None:
         self.app.notes.generate(sid)
-        # Shown at once: the engine marks the record busy on its worker a moment later.
         GLib.timeout_add(150, lambda: self.refresh() or False)
 
-    # Actions
-
     def _share_button(self, s) -> Gtk.Widget:
-        """分享…, beside 导出…: off while the meeting is live or has nothing in it (share_dialog.can_share)."""
         sid = s.id
         b = ui.button(L("分享…"), lambda: self.share(sid), "outline", "emblem-shared-symbolic")
         b.set_sensitive(share_dialog.can_share(self.app, s))
@@ -1976,7 +1827,6 @@ class RecordsWindow(Gtk.Window):
         dialog.destroy()
 
     def delete(self, s) -> None:
-        """Hidden at once, removed when the toast goes without 撤销 (or when the app quits)."""
         if s.id == self.app.store.live:
             return
         self.commit_delete()
@@ -1988,19 +1838,16 @@ class RecordsWindow(Gtk.Window):
             self.pending_delete = None
             self.selected = s.id
             self.fill()
-        # Longer than an info toast: undo is the only way back.
         self.toasts.show(LF("已删除“%@”", session_store.display_title(s)), L("撤销"), undo, self.commit_delete, seconds=8)
 
     def commit_delete(self) -> None:
         sid, self.pending_delete = self.pending_delete, None
         if sid:
             self.app.store.delete(sid)
-            self.app.folder_export.deleted(sid)  # its file in the folder stays
+            self.app.folder_export.deleted(sid)
 
 
 def show_in_folder(path: str) -> None:
-    """Opens the file manager with the file selected (org.freedesktop.FileManager1), else the folder.
-    Asynchronous: a file manager that isn't running yet takes seconds to start."""
     uri = Gio.File.new_for_path(path).get_uri()
     folder = Gio.File.new_for_path(os.path.dirname(path)).get_uri()
 

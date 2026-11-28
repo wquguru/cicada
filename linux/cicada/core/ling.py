@@ -1,4 +1,3 @@
-"""The AI service (Ling by default, or another OpenAI-compatible one: providers.py) and the user's keys."""
 from __future__ import annotations
 
 import io
@@ -19,10 +18,6 @@ from .support import Log, Paths
 
 
 class AIKey:
-    """The user's AI keys, one file per service (`ling-api-key`, `ai-key-<service>`), mode 0600, in
-    ~/.config/cicada (as on the Mac): never in settings, logs or exports. `service` says which one
-    is in use; `path` pins one file (cli.py reads the Mac's)."""
-
     def __init__(self, path: str | None = None, service=None):
         self._path = path
         self.service = service or (lambda: "ling")
@@ -54,7 +49,6 @@ class AIKey:
         with self._lock:
             try:
                 os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-                # Created 0600 from the start: the key is never readable by others, even briefly.
                 fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(k)
@@ -80,15 +74,12 @@ class AIKey:
 
     @staticmethod
     def masked(key: str) -> str:
-        """"sk-••••••••••••3f9a" for display."""
         return "sk-…" if len(key) <= 8 else key[:3] + "•" * 12 + key[-4:]
 
 
-# Priorities, most urgent first.
 SPEAK, TRANSLATE, NOTES = 0, 1, 2
 PRIORITY_NAMES = {SPEAK: "speak", TRANSLATE: "translate", NOTES: "notes"}
 
-# Key states.
 NONE, UNCHECKED, CHECKING, OK, INVALID, UNREACHABLE = "none", "unchecked", "checking", "ok", "invalid", "unreachable"
 
 
@@ -100,18 +91,17 @@ class LingError(Exception):
         super().__init__("http%d" % status if kind == self.HTTP else kind)
         self.kind = kind
         self.status = status
-        self.retry_after = retry_after  # seconds the service asked us to wait (a 429's Retry-After)
+        self.retry_after = retry_after
 
 
 class Response:
     def __init__(self, status: int, body: str, retry_after: str | None = None):
         self.status = status
         self.body = body
-        self.retry_after = retry_after  # the Retry-After header, as sent
+        self.retry_after = retry_after
 
 
 def retry_after_seconds(value: str | None, now: float | None = None) -> float | None:
-    """A Retry-After header in seconds: a number, or an HTTP date. None when absent or unreadable."""
     if not value:
         return None
     try:
@@ -129,8 +119,6 @@ def retry_after_seconds(value: str | None, now: float | None = None) -> float | 
 
 
 class Clock:
-    """Time for the start gate and its waits; tests hand in a fake that moves on by itself."""
-
     @staticmethod
     def now() -> float:
         return time.monotonic()
@@ -141,8 +129,6 @@ class Clock:
 
 
 class StreamResponse:
-    """A reply read as it arrives: `lines` (server-sent events) or, for raw audio, `chunks` (bytes)."""
-
     def __init__(self, status: int, lines, content_type: str = "text/event-stream", chunks=None):
         self.status = status
         self.lines = lines
@@ -151,10 +137,6 @@ class StreamResponse:
 
 
 class UrlTransport:
-    """How requests leave the app: urllib through this computer's proxy (proxy.urlopen: the
-    environment's, else GNOME's manual one), or a fake in tests.
-    Raises TimeoutError on a timeout and OSError when the network fails."""
-
     @staticmethod
     def send(url: str, method: str, body: str | None, headers: dict, timeout: float) -> Response:
         req = urllib.request.Request(url, data=body.encode() if body is not None else None, method=method, headers=headers)
@@ -173,8 +155,6 @@ class UrlTransport:
 
     @staticmethod
     def stream(url: str, body: str, headers: dict, timeout: float) -> StreamResponse:
-        """A POST whose reply is read as it arrives (speech): by line for server-sent events, else in
-        raw pieces (OpenRouter's speech streams the PCM bytes themselves)."""
         req = urllib.request.Request(url, data=body.encode(), method="POST", headers=headers)
         try:
             r = proxy.urlopen(req, timeout=timeout)
@@ -193,7 +173,7 @@ class UrlTransport:
         def chunks():
             with r:
                 while True:
-                    b = r.read(4800)  # 0.1 s at 24 kHz: playback starts early
+                    b = r.read(4800)
                     if not b:
                         return
                     yield b
@@ -202,19 +182,16 @@ class UrlTransport:
 
 BASE = LING.base
 TTS_MODEL = LING.voice_models[0].id
-TTS_RATE = 24000  # Ming, Gemini TTS and Kokoro all speak 24 kHz
+TTS_RATE = 24000
 AUDIO_MODEL = LING.hear_models[0].id
-# Search essays (Ling.swift), and the canned refusal some audio prompts get.
 HIJACK_PREFIXES = ("根据现有检索证据", "暂未找到足够可靠的信息", "根据检索", "作为一个人工智能语言模型")
 
 
-# The custom service's check: one real sentence, timed (Ling.swift › check).
 CHECK_SENTENCE = ("Translate the text into Simplified Chinese. Reply with the translation only.\n\n"
                   "We will ship the new version on Friday after the design review.")
 
 
 def silence_wav(seconds: float = 0.5) -> bytes:
-    """A short quiet WAV (16 kHz mono 16-bit), to ask a model whether it takes audio at all."""
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(1)
@@ -224,18 +201,14 @@ def silence_wav(seconds: float = 0.5) -> bytes:
     return buf.getvalue()
 
 
-# The key file of the custom service's notes server (另一个服务), named as on the Mac.
 NOTES_KEY = "custom-notes"
 
 
 class _Gate:
-    """One server's request starts (by host): notes on another server don't wait behind
-    translation, and its 429 doesn't hold translation back."""
-
     def __init__(self):
         self.waiting: list = []
         self.last_start = -1e9
-        self.paused_until = 0.0  # after a 429 no request starts here before this (clock time)
+        self.paused_until = 0.0
 
 
 def _ling_config() -> AIConfig:
@@ -243,50 +216,32 @@ def _ling_config() -> AIConfig:
 
 
 class LingClient:
-    """One instance for the app, for whichever AI service the settings name (`config`). Request
-    *starts* go through one gate in priority order: Ling allows about 2 a second across every model
-    (≥ 0.6 s apart, overlapping is fine), the aggregators far more. Ling's gateway shapes every call
-    (see Ling.swift): thinking is always disabled, and the content goes in the system message with
-    a fixed user instruction, because a question-like user message gets a search essay back; such
-    replies are dropped. The other services get the same messages. Calls block: run them off the
-    UI thread."""
-    spacing: float | None = None  # tests only: overrides the service's
+    spacing: float | None = None
 
     def __init__(self, key: AIKey, transport=UrlTransport, config=None, clock=None, notes_key: AIKey | None = None):
         self.key = key
-        # 另一个服务's own key for notes; without one, notes use `key` ("不填就用上面的 key").
         self.notes_key_file = notes_key or AIKey(service=lambda: NOTES_KEY)
         self.transport = transport
         self.clock = clock or Clock()
         self.config = config or _ling_config
         self.key_state = NONE if self.current_key() is None else UNCHECKED
-        # Step by step, where the service stands (aicheck.py); `key_state` is its short form.
         self.check_result = aicheck.AICheck()
-        self.seconds: float | None = None   # how long the last good check took
-        # The last time the room voice spoke (or failed to) through this service: (ok, time).
+        self.seconds: float | None = None
         self.last_voice: tuple | None = None
-        # Words the "can't reach" hint from the proxy requests go through (proxy.py).
         self.proxy_hint = proxy.hint
-        # Debug control only: every check ends this way (a reason, or "lowBalance"), for screenshots.
         self.simulate: str | None = None
         self.text_catalog: list = []
         self.hear_catalog: list = []
-        # Notes' own server's text models from its `/models` (empty while notes share translation's address).
         self.notes_catalog: list = []
-        # Every model id the service lists, and those that take audio, to tell whether the chosen
-        # ones still exist (None: the service can't tell).
         self._listed: tuple = (None, None)
         self.rate_limited_at = None
         self._listeners = []
-        # Every server's start gate (_Gate, by host) shares this one lock.
         self._gate = threading.Condition()
         self._gates: dict = {}
         self._seq = 0
         self._check_lock = threading.Lock()
         self._check_seq = 0
-        self._checking = 0  # a check's own requests aren't real ones: they don't feed `observe`
-        # Custom addresses that refused `chat_template_kwargs` (a strict gateway answers 400 or 422
-        # to a field it doesn't know): left out there until settings change.
+        self._checking = 0
         self._plain_bases: set = set()
 
     def on_change(self, listener) -> None:
@@ -301,8 +256,6 @@ class LingClient:
         return self.config().provider
 
     def current_key(self) -> str | None:
-        """The key for the service in use. A custom service on this computer or the local network
-        may need none: ""."""
         c = self.config()
         k = self.key.read()
         if k is None and c.provider.id == "custom" and c.base and is_nearby(c.base):
@@ -314,8 +267,6 @@ class LingClient:
         return self.current_key() is not None
 
     def notes_key(self) -> str | None:
-        """The key notes are sent with: with 另一个服务, their own key file if there is one, else the
-        translation key."""
         if self.config().notes_own_service:
             own = self.notes_key_file.read()
             if own is not None:
@@ -324,7 +275,6 @@ class LingClient:
 
     @property
     def notes_has_own_key(self) -> bool:
-        """Notes have a key file of their own (另一个服务 only)."""
         return self.config().notes_own_service and self.notes_key_file.read() is not None
 
     @property
@@ -333,13 +283,10 @@ class LingClient:
 
     @property
     def speaks(self) -> bool:
-        """Voices in the room from this service. Linux has no system voice to fall back on."""
         return self.usable and self.config().has_voices
 
     @property
     def hears(self) -> bool | None:
-        """Whether the hear model takes audio: False when found deaf, True once proved (always on
-        Ling, whose Ming hears by design), None until something asked."""
         st = self.check_result["hear"]
         if st.kind == aicheck.FAIL and st.reason == aicheck.DEAF:
             return False
@@ -349,19 +296,15 @@ class LingClient:
 
     @property
     def can_hear(self) -> bool:
-        """Listening and 同声传译 can work: the hear model wasn't found to refuse audio."""
         return self.usable and self.hears is not False and bool(self.config().hear_model)
 
     @property
     def service_name(self) -> str:
-        """The service's name for messages ("这个服务" for a custom address, localized)."""
         p = self.provider
         return p.name if p.id != "custom" else strings.L("这个服务")
 
     @property
     def service_label(self) -> str:
-        """Who a status line names: a custom service by its address, which says more than 这个服务
-        and reads right in "The … key doesn't work"."""
         host = self.service_host
         return host if self.provider.id == "custom" and host else self.service_name
 
@@ -372,31 +315,26 @@ class LingClient:
 
     @property
     def hear_host(self) -> str:
-        """Where the hear model is asked (a custom service's own hear address, else the service's)."""
         c = self.config()
         return urllib.parse.urlsplit(c.hear_url or "").hostname or self.service_host
 
     def message(self) -> str | None:
-        """The failed step's sentence (or the busy note), in the UI language."""
         c = self.config()
         f = self.check_result.failure
         host = self.hear_host if f is not None and f[0] == "hear" else self.service_host
         return self.check_result.message(self.service_label, host, c.text_model, c.hear_model)
 
     def _classify(self, e: LingError, at: str, audio: bool = False):
-        """aicheck.classify, except that a hear model at an address of its own that can't be reached
-        stops at the hear step: the text model's address may be fine."""
         cl = aicheck.classify(e, at, audio)
         if audio and cl is not None and cl[1] == aicheck.UNREACHABLE and self.config().own_hear_address:
             return "hear", aicheck.UNREACHABLE, None
         return cl
 
     def key_changed(self) -> None:
-        """The key, the service or its models changed: forget what the last check found."""
         self.key.reload()
         self.notes_key_file.reload()
         with self._check_lock:
-            self._check_seq += 1  # a check still running for the old settings is dropped
+            self._check_seq += 1
             self.check_result = aicheck.AICheck()
         self.key_state = NONE if self.current_key() is None else UNCHECKED
         self.last_voice = None
@@ -406,11 +344,6 @@ class LingClient:
         self._changed()
 
     def check(self) -> str:
-        """The cheapest requests that prove each step: Ling's tiny model, else one token from the
-        text model, then half a second of silence to the hear model (a 400 or 404 says it can't
-        take audio). A custom service must also return JSON (the notes need it); OpenRouter's key
-        and credits give the balance. The model list then tells whether the chosen models still
-        exist. Returns the short form (`key_state`)."""
         with self._check_lock:
             self._check_seq += 1
             seq = self._check_seq
@@ -451,8 +384,6 @@ class LingClient:
             if c.is_ling:
                 self.chat("Reply with OK.", "Reply.", SPEAK, max_tokens=5, timeout=10.0, model="Ling-3.0-tiny")
             elif c.provider.id == "custom":
-                # A real sentence, the way a meeting translates: one token says nothing about a model
-                # that thinks for six seconds before every answer.
                 roots: list = []
                 asked = time.monotonic()
                 self.chat(CHECK_SENTENCE, "Translate.", SPEAK, max_tokens=120, timeout=30.0, reply=roots)
@@ -462,7 +393,6 @@ class LingClient:
             self.seconds = time.monotonic() - started
             r.pass_up_to("text", self.seconds)
             if c.notes_apart:
-                # Notes at their own model or server: their failure is theirs, translation goes on.
                 r.notes = aicheck.State(aicheck.RUNNING)
                 with self._check_lock:
                     if seq == self._check_seq:
@@ -476,8 +406,6 @@ class LingClient:
                 except LingError as e:
                     if e.kind != LingError.HTTP:
                         raise
-                    # JSON mode refused (some hosts of a model do): meetings then ask without it, so
-                    # what counts is whether the model still answers with a JSON object.
                     try:
                         said = self.chat(ask, "Reply.", SPEAK, max_tokens=20, timeout=30.0)
                     except LingError:
@@ -489,11 +417,11 @@ class LingClient:
         except Exception:  # noqa: BLE001
             r.fail("reach", aicheck.UNREACHABLE)
         if r.failure is not None or c.is_ling:
-            return r  # Ling's hearing is Ming: a meeting proves it, no probe
+            return r
         if not c.hear_model:
             r.fail("hear", aicheck.DEAF)
         elif c.hear_url is None:
-            r.fail("hear", aicheck.BAD_ADDRESS)  # its own address, typed but not valid
+            r.fail("hear", aicheck.BAD_ADDRESS)
         else:
             started = time.monotonic()
             try:
@@ -502,32 +430,26 @@ class LingClient:
                 r["hear"] = aicheck.State(aicheck.OK, time.monotonic() - started)
             except LingError as e:
                 if e.kind == LingError.HIJACKED:
-                    r["hear"] = aicheck.State(aicheck.OK, time.monotonic() - started)  # it answered: it took the audio
+                    r["hear"] = aicheck.State(aicheck.OK, time.monotonic() - started)
                 else:
                     self._failed(r, self._classify(e, "hear", audio=True), "hear")
             except Exception:  # noqa: BLE001
                 r.fail("hear" if c.own_hear_address else "reach", aicheck.UNREACHABLE)
         if c.provider.id == "openrouter" and r.failure is None:
             r.balance = aicheck.balance(self._get_json("key", k), self._get_json("credits", k))
-        if r.failure is None or r.failure[0] == "hear":  # the menus want the models even when the hear one is deaf
+        if r.failure is None or r.failure[0] == "hear":
             self.fetch_catalog()
             every, hear = self._listed
-            # A model the service no longer lists fails here, before a meeting finds out. One a real
-            # request just went through exists whatever the list says (an alias, a name typed by hand).
             if every is not None and c.text_model and r["text"].kind == aicheck.UNTESTED:
                 if c.text_model not in every:
                     r.fail("text", aicheck.NO_MODEL)
                 else:
                     r["text"] = aicheck.State(aicheck.OK)
-            # The list is the text address's: a hear model elsewhere isn't in it.
             if hear is not None and not c.own_hear_address and c.hear_model not in hear and r.failure is None:
                 r.fail("hear", aicheck.DEAF)
         return r
 
     def _check_notes(self, config: AIConfig):
-        """Notes' own model or server: one JSON request the way a meeting's notes ask, then (another
-        address) its model list for the menu. Straight to the server, not through `chat`: notes'
-        429 retries are a meeting's, not a check's."""
         if config.notes_bad_address:
             return aicheck.State(aicheck.FAIL, reason=aicheck.BAD_ADDRESS)
         c = config.for_notes
@@ -549,7 +471,6 @@ class LingClient:
             except LingError as e:
                 if not (e.kind == LingError.HTTP and e.status in (400, 422)):
                     raise
-                # JSON mode refused: meetings then ask without it, so what counts is a JSON answer.
                 del body["response_format"]
                 try:
                     root = self._post_chat(c.base, body, k, 60.0, notes=True)
@@ -570,9 +491,8 @@ class LingClient:
 
     @staticmethod
     def _failed(r, classified, step: str) -> None:
-        """A check's request failed: busy passes (the key works), anything else stops there."""
         if classified is None:
-            r.pass_up_to(step, None)  # a reply came (a search essay, odd JSON): the service answers
+            r.pass_up_to(step, None)
             return
         at, reason, code = classified
         if reason == aicheck.BUSY:
@@ -585,7 +505,7 @@ class LingClient:
         if r.reason == aicheck.UNREACHABLE and r.proxy is None:
             try:
                 r.proxy = self.proxy_hint()
-            except Exception:  # noqa: BLE001 - it only words a hint
+            except Exception:  # noqa: BLE001
                 r.proxy = None
         if self.simulate == "lowBalance":
             r.balance = 0.4
@@ -601,8 +521,6 @@ class LingClient:
         return self.key_state
 
     def _sync_key_state(self) -> None:
-        """The short form older callers read: invalid stops every request; a failure before the
-        hear step is "unreachable" with a reason; a deaf hear model leaves notes and translation ok."""
         if not self.has_key:
             self.key_state = NONE
             return
@@ -619,13 +537,9 @@ class LingClient:
                     self.seconds = r[s].seconds
 
     def observe(self, failure: LingError | None, seconds: float = 0.0, audio: bool = False, notes: bool = False) -> None:
-        """A real request (hearing, notes, translation) came back: keep the steps current without a
-        check. One server error in a meeting isn't worth repainting the settings for. `notes`: it
-        went to the notes' own model or server, whose result is theirs alone."""
         if self._checking or self.simulate or not self.has_key:
             return
         if notes:
-            # Sent before notes went back to translation's model and server: not theirs any more.
             if not self.config().notes_apart:
                 return
             if failure is not None:
@@ -661,7 +575,6 @@ class LingClient:
                 else:
                     r.fail(step, reason, code)
             elif audio:
-                # Heard: says nothing about the text model, which keeps what it had.
                 r.pass_up_to("key", None)
                 r["hear"] = aicheck.State(aicheck.OK, seconds)
             else:
@@ -671,7 +584,7 @@ class LingClient:
             if r.reason != aicheck.UNREACHABLE:
                 r.proxy = None
             if [r[s] for s in aicheck.STEPS] == [old[s] for s in aicheck.STEPS] and old.passive and old.at is not None:
-                old.at = r.at  # only the time: nothing worth repainting for
+                old.at = r.at
                 return
             newly_unreachable = r.reason == aicheck.UNREACHABLE and old.reason != aicheck.UNREACHABLE
             self.check_result = r
@@ -692,8 +605,6 @@ class LingClient:
         self._changed()
 
     def network_changed(self) -> bool:
-        """The network came back (or changed) while the service was unreachable: look again.
-        True when a check started."""
         r = self.check_result
         if not self.has_key or r.reason != aicheck.UNREACHABLE or r.running:
             return False
@@ -702,7 +613,6 @@ class LingClient:
         return True
 
     def _get_json(self, path: str, k: str):
-        """A GET under the service's address, as JSON; None when it fails (it only adds detail)."""
         c = self.config()
         try:
             res = self.transport.send(c.base + path, "GET", None, self._headers(k), 15.0)
@@ -711,8 +621,6 @@ class LingClient:
         return jsonfmt.parse_object(res.body) if res.status == 200 else None
 
     def fetch_catalog(self) -> None:
-        """The service's models, for the model menus: those that chat, and those that hear. Quietly
-        just the recommended ones when the service has no `/models`."""
         c = self.config()
         k = self.current_key()
         if c.is_ling or k is None or c.base is None:
@@ -730,7 +638,6 @@ class LingClient:
         self._changed()
 
     def fetch_notes_catalog(self) -> None:
-        """Notes' own address's text models, for its menu. Quietly empty when it has no `/models`."""
         c = self.config()
         n = c.for_notes
         k = self.notes_key()
@@ -749,15 +656,6 @@ class LingClient:
     def chat(self, content: str, instruction: str, priority: int, json: bool = False, max_tokens: int = 1024,
              timeout: float = 30.0, model: str | None = None, audio: bytes | None = None, patient: bool = False,
              reply: list | None = None, json_fallback: bool = True) -> str:
-        """One chat completion. `content` goes in the system message, `instruction` is the fixed user
-        message, `audio` (a WAV) goes before it for the hear model. Notes and heard audio retry 429s
-        with backoff (retry_waits); the rest fail fast so the caller can fall back. `patient` (the
-        final notes) keeps retrying for about a minute. A 429 holds every request start for a while
-        (_rate_limited), and a retry keeps its place in the queue, so lines stay in order. Audio goes
-        to the hear model's address (`hear_url`). `reply`, when given, gets the whole JSON reply. A JSON
-        request refused with 400 is asked again without JSON mode unless `json_fallback` is off (the
-        check asks again itself). Notes (实时纪要, 说话人) go to their own model, server and key when
-        the custom service sets them (`AIConfig.for_notes`)."""
         c = self.config()
         notes_side = priority == NOTES and audio is None and c.notes_apart
         if notes_side:
@@ -765,7 +663,6 @@ class LingClient:
         k = self.notes_key() if notes_side else self.current_key()
         if k is None:
             raise LingError(LingError.NO_KEY)
-        # A refused notes key stops only notes; translation's stops everything but those.
         if (self.check_result.notes is not None and self.check_result.notes.reason == aicheck.INVALID_KEY) if notes_side \
                 else self.key_state == INVALID:
             raise LingError(LingError.INVALID_KEY)
@@ -785,7 +682,6 @@ class LingClient:
         name = PRIORITY_NAMES[priority]
         ticket = None
         while True:
-            # One that wouldn't retry fails at once while the service is cooling down: its caller falls back.
             ticket = self._acquire(priority, c.provider.spacing, ticket, fail_if_paused=not waits, base=c.base)
             started = time.monotonic()
             try:
@@ -794,8 +690,6 @@ class LingClient:
                 except LingError as e:
                     if not (json_fallback and e.kind == LingError.HTTP and e.status == 400 and "response_format" in body):
                         raise
-                    # Some hosts of a model refuse JSON mode (on OpenRouter, Novita for Ling 3.1 Flash)
-                    # while the model answers JSON anyway: the prompt asks for it, the parsers find it.
                     Log.d("ling: %s JSON mode refused (400), asking again without it" % name)
                     del body["response_format"]
                     root = self._post_chat(base, body, k, timeout, notes=notes_side)
@@ -806,7 +700,6 @@ class LingClient:
                     raise LingError(LingError.PARSE)
                 finish = string(choice.get("finish_reason"))
                 trimmed = text.strip()
-                # Ling's search essays come without a finish reason; other services may simply omit it.
                 if (finish is None and c.is_ling) or trimmed.startswith(HIJACK_PREFIXES):
                     Log.d("ling: %s search-style reply dropped" % name)
                     raise LingError(LingError.HIJACKED)
@@ -834,8 +727,6 @@ class LingClient:
 
     def speech(self, text: str, voice: str | None = "UK_Charlotte", language: str | None = None, timeout: float = 20.0,
                reference: tuple | None = None):
-        """_speech, remembering how it went (现在能用的 › 同传声音 says so). Cut short on purpose (stop,
-        a new press) is neither."""
         try:
             yield from self._speech(text, voice, language, timeout, reference)
         except GeneratorExit:
@@ -846,12 +737,6 @@ class LingClient:
         self.last_voice = (True, time.time())
 
     def _speech(self, text: str, voice: str | None, language: str | None, timeout: float, reference: tuple | None = None):
-        """The service's voice for `text`, as raw 24 kHz mono 16-bit PCM chunks while they arrive (a
-        generator). On Ling, `voice` is Ming's, or a voice cloned from `reference` (a WAV data URI and
-        what it says, voice_reference.reference), and `language` its language_id, needed for Japanese,
-        Korean, German, French and Spanish (Ling.swift › speech); elsewhere the configured speech
-        model and `voice`. Replies come three ways and all are read: server-sent base64 chunks (Ling,
-        ZenMux), raw PCM (OpenRouter), or one JSON `{"audio": <WAV>}`."""
         k = self.current_key()
         if k is None:
             raise LingError(LingError.NO_KEY)
@@ -862,7 +747,6 @@ class LingClient:
         if c.is_ling:
             body.update({"sample_rate": TTS_RATE, "stream": True, "stream_format": "sse"})
             if reference:
-                # The clip goes with every sentence: Ming takes longer to start (Ling.swift waits 30 s).
                 body["references"] = [{"audio": reference[0], "text": reference[1]}]
                 timeout = max(timeout, 30.0)
             else:
@@ -870,7 +754,6 @@ class LingClient:
             if language:
                 body["language_id"] = language
         else:
-            # OpenRouter documents no `stream` (it streams the bytes anyway); ZenMux needs it.
             if c.provider.id != "openrouter":
                 body["stream"] = True
             ids = [v.id for v in c.voices]
@@ -921,10 +804,6 @@ class LingClient:
         return h
 
     def _post_chat(self, base: str, body: dict, k: str, timeout: float, notes: bool = False) -> dict:
-        """A chat completion. A custom server that refuses `chat_template_kwargs` (400 or 422) is
-        asked again without it, and once that works it isn't sent there again until settings change
-        (Ling.swift › postChat). A 400 the plain request gets too is the model's or the audio's, not
-        the field's: that one is raised and nothing is remembered."""
         try:
             return self._post(base + "chat/completions", jsonfmt.write(body, pretty=False), k, timeout, notes)
         except LingError as e:
@@ -937,8 +816,6 @@ class LingClient:
             return root
 
     def _post(self, url: str, payload: str, k: str, timeout: float, notes: bool = False) -> dict:
-        """`notes`: it went with the notes' own key or to their server, so a refused key is theirs,
-        not translation's."""
         try:
             res = self.transport.send(url, "POST", payload, self._headers(k), timeout)
         except TimeoutError:
@@ -961,11 +838,7 @@ class LingClient:
             raise LingError(LingError.PARSE)
         return root
 
-    # Start gate: request starts ≥ `spacing` apart, the most urgent waiting one first, none while
-    # the server is cooling down after a 429. One per server (by host).
-
     def _server(self, base: str | None = None) -> _Gate:
-        """The gate of the server at `base` (None: the service's own). Called with `_gate` held."""
         if base is None:
             c = self.config()
             base = c.base or c.provider.base
@@ -977,9 +850,6 @@ class LingClient:
 
     def _acquire(self, priority: int, spacing: float = 0.6, ticket: int | None = None,
                  fail_if_paused: bool = False, base: str | None = None) -> int:
-        """Waits for this request's turn to start at the server at `base` (None: the service's).
-        `ticket` is a retry's first one, which keeps its place ahead of requests queued after it.
-        Returns the ticket."""
         spacing = LingClient.spacing if LingClient.spacing is not None else spacing
         with self._gate:
             g = self._server(base)
@@ -1008,10 +878,6 @@ class LingClient:
                 raise
 
     def _rate_limited(self, backoff: float, retry_after: float | None, base: str | None = None) -> float | None:
-        """After a 429: no request starts for `backoff` seconds, or as long as the service asked
-        (Retry-After; Ling sends none), plus a little jitter. The queue waits at the gate instead of
-        each request spending its retries on the same limit. None when the service asks for longer
-        than MAX_PAUSE: that is an outage, not a busy moment (the gate still holds for MAX_PAUSE)."""
         wait = max(backoff, retry_after or 0.0) + random.random() * 0.5
         with self._gate:
             g = self._server(base)
@@ -1024,7 +890,6 @@ MAX_PAUSE = 30.0
 
 
 def answers_json(text: str | None) -> bool:
-    """A chat reply's text holds a JSON object (a fence or a sentence around it is fine)."""
     if not text:
         return False
     a, z = text.find("{"), text.rfind("}")
@@ -1032,13 +897,6 @@ def answers_json(text: str | None) -> bool:
 
 
 def retry_waits(priority: int, audio: bool = False, patient: bool = False) -> list:
-    """Seconds before each retry of a 429 (Ling.swift › retryWaits). Notes retry a few times; the
-    rest fail fast so the caller can fall back, except heard audio. A meeting's: there a lost reply
-    loses the words, and Ling's 429s came in runs of up to ~10 s (two in a row lost a line with one
-    retry, about 2 a minute in 2026-11 testing), so it keeps at it for about 15 s. What the user says
-    (SPEAK) retries once: late into the room is worse than a short "try again". `patient` (the final notes)
-    keeps at it for about a minute: a model limited upstream (OpenRouter's Ling 3.1 by DeepInfra,
-    2026-11) came back after ~15 s, and a meeting left without its notes is worse than notes a little late."""
     if priority == NOTES:
         return [1, 2, 4, 8, 16, 30] if patient else [1, 2, 4]
     if audio:
@@ -1052,7 +910,6 @@ def _b64(s: str) -> bytes:
 
 
 def pcm_from_wav(wav: bytes) -> bytes:
-    """The samples of a WAV (its `data` chunk); the bytes themselves when there's no header."""
     if wav[:4] != b"RIFF":
         return wav
     at = 12

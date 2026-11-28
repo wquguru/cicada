@@ -1,4 +1,3 @@
-"""MeetingEndWatch, the Mac's MeetingEndTests case for case, and reading meeting apps off `pactl`."""
 from __future__ import annotations
 
 import os
@@ -79,7 +78,7 @@ class MeetingEndTests(unittest.TestCase):
         w = watch()
         self.assertIsNone(w.tick(at(5_000), ZOOM, True))
         self.assertIsNone(w.pending)
-        plain = watch(follow_apps=False)  # without following apps, a call says nothing
+        plain = watch(follow_apps=False)
         self.assertIsNone(plain.tick(at(600), ZOOM, True))
         self.assertEqual("silence", plain.pending.reason.kind)
 
@@ -97,7 +96,7 @@ class MeetingEndTests(unittest.TestCase):
         w.tick(at(10), ZOOM, False)
         self.assertIsNone(w.tick(at(500), {}, False))
         self.assertIsNone(w.pending)
-        w.heard(at(5_001))  # a call that ended before anyone spoke is forgotten once someone does
+        w.heard(at(5_001))
         self.assertIsNone(w.tick(at(5_002), {}, True))
         self.assertIsNone(w.pending)
 
@@ -146,9 +145,6 @@ class MicStreamTests(unittest.TestCase):
 
 
 class HeardWordsTests(unittest.TestCase):
-    """What counts as someone speaking: recognised words landing (a line, mine too, or a half
-    sentence that grew), as the Mac counts recognised text. A retranslation isn't speech."""
-
     def test_words_fire_on_new_and_grown_lines_only(self):
         import tempfile
         from cicada.core.models import TranscriptLine

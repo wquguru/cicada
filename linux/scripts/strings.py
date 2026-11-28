@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""Lists Linux UI text with no translation: every L("…") / LF("…") key in linux/cicada that is in
-neither the Mac's Resources/<lang>.lproj/Localizable.strings nor linux/strings/<lang>.lproj/Linux.strings.
---write appends the missing keys to Linux.strings as TODO lines (value = the Chinese). Keys in
-Linux.strings that nothing uses are listed too."""
 import pathlib
 import re
 import sys
@@ -40,7 +36,6 @@ for lang in ["en", "ja", "ko"]:
                     f.write("/* Linux-only UI text; the Mac's Localizable.strings covers the rest. Check: linux/scripts/strings.py */\n")
                 for k in missing:
                     f.write(f'"{k}" = "{k}"; /* TODO */\n')
-    # Linux-only text nothing uses any more: a stale copy drifts from the Mac's wording unnoticed.
     unused = [k for k in table(mine) if k not in keys]
     if unused:
         missing_any = True

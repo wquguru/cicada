@@ -1,9 +1,3 @@
-"""New versions (the Mac's UpdateChecker and Updater): GitHub Releases is read at launch and when a
-check is due, the newest release that ships the Linux tarball is offered, and installing it
-downloads the tarball, checks it against the release's checksums.txt, unpacks it and hands it to a
-small script that runs its install.sh once the app has quit, then opens Cicada again.
-
-UI-free and stdlib only: the app shows the state, this module finds, fetches and checks."""
 from __future__ import annotations
 
 import hashlib
@@ -24,16 +18,10 @@ import urllib.request
 from . import jsonfmt, proxy
 from .support import Log, Paths
 
-# The list, not releases/latest: every platform shares one version, and a release that only ships
-# the Mac or Windows has no Linux tarball, so the newest Linux release may be further down.
 FEED = "https://api.github.com/repos/wquguru/cicada/releases?per_page=20"
-# How often a running app checks, and how old a check must be before a manual-ish one (the tray
-# menu, waking) checks again. GitHub allows 60 anonymous API calls an hour.
 EVERY = 4 * 60 * 60
 STALE = 60 * 60
 USER_AGENT = "Cicada-Linux"
-# Downloading: seconds without a byte before it counts as stalled (each read, not the whole file),
-# and how many times a cut-off download is picked up again.
 STALL = 30
 ATTEMPTS = 3
 
@@ -50,21 +38,16 @@ class Update:
 
 
 class Failure(Exception):
-    """Why installing in place didn't work, said to the user beside the release page: a
-    Mac string key and its values, translated by the app."""
-
     def __init__(self, key: str, *args):
         super().__init__(key)
         self.key, self.args = key, args
 
 
 def feed() -> str:
-    """CICADA_UPDATE_FEED points at another release JSON (a list or one release); file:// works."""
     return os.environ.get("CICADA_UPDATE_FEED") or FEED
 
 
 def is_newer(a: str, than: str) -> bool:
-    """Dotted numeric versions: "2.10.0" is newer than "2.9.1"."""
     def parts(v):
         out = []
         for p in v.strip().lstrip("v").split("."):
@@ -84,7 +67,6 @@ def is_newer(a: str, than: str) -> bool:
 def due(last: float | None, now: float, after: float) -> bool:
     if last is None:
         return True
-    # A clock set back leaves `last` in the future: check rather than wait for it.
     return now - last >= after or last > now
 
 
@@ -99,8 +81,6 @@ def decode(data: bytes) -> list | None:
 
 
 def newest_linux(releases: list) -> Update | None:
-    """The newest published release with the Linux tarball. One without it carries only other
-    platforms (Linux had no change), so it is skipped, not offered."""
     best = None
     for r in releases:
         if not isinstance(r, dict) or r.get("draft") or r.get("prerelease"):
@@ -119,15 +99,12 @@ def newest_linux(releases: list) -> Update | None:
 
 
 def checksum_for(text: str, name: str) -> str | None:
-    """The SHA-256 of `name` in a sha256sum listing ("<hex>  <name>", or "<hex> *<name>")."""
     for line in text.splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) == 2 and parts[1].lstrip("*") == name:
             return parts[0].lower()
     return None
 
-
-# Where the last successful check is remembered (the Mac keeps it in UserDefaults).
 
 def _state_file() -> str:
     return os.path.join(Paths.data(), "updates.json")
@@ -163,7 +140,6 @@ def _remember(when: float) -> None:
 
 
 def notified() -> str | None:
-    """The version the update notification was last shown for: one per version."""
     v = _state().get("notified")
     return v if isinstance(v, str) else None
 
@@ -173,19 +149,16 @@ def remember_notified(version: str) -> None:
 
 
 def should_notify(version: str, told: str | None, busy: bool) -> bool:
-    """A notification per version, none while listening or speaking (the meeting's end tells)."""
     return not busy and version != told
 
 
 def _get(url: str, timeout: float = 20, headers=None):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json",
                                                **(headers or {})})
-    return proxy.urlopen(req, timeout=timeout)  # our feed, or file:// in tests
+    return proxy.urlopen(req, timeout=timeout)
 
 
 def why(e: BaseException) -> str:
-    """A failure for the log: its kind and reason, with any URL in it left out (a URL may carry a
-    token one day; the host is logged on its own)."""
     if isinstance(e, urllib.error.HTTPError):
         return "HTTP %d" % e.code
     if isinstance(e, urllib.error.URLError) and isinstance(e.reason, BaseException):
@@ -199,14 +172,12 @@ def _host(url: str) -> str:
 
 
 def check(current: str) -> tuple:
-    """(ok, update): ok is False when the feed couldn't be reached or answered oddly; update is a
-    release newer than `current`, or None. Blocking: run it off the main thread."""
     try:
         with _get(feed()) as r:
             if getattr(r, "status", 200) not in (200, None):
                 return False, None
             releases = decode(r.read())
-    except Exception as e:  # noqa: BLE001 - offline, rate-limited, private repo (404): all silent
+    except Exception as e:  # noqa: BLE001
         Log.d("update: check failed (%s)" % type(e).__name__)
         return False, None
     if releases is None:
@@ -217,26 +188,20 @@ def check(current: str) -> tuple:
     return True, (u if u and is_newer(u.version, current) else None)
 
 
-# Installing
-
 def install_root() -> str | None:
-    """The install this app runs from, when it's one install.sh made (~/.local/lib/cicada): only
-    that can be replaced in place. A checkout or a build tree gets the release page instead."""
     here = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     lib = os.path.realpath(os.path.expanduser("~/.local/lib/cicada"))
     return here if os.path.realpath(here) == lib and os.path.isfile(os.path.join(here, "VERSION")) else None
 
 
 def _download(url: str, to: str, progress, expected: int = 0, attempts: int = ATTEMPTS) -> None:
-    """A slow link is fine (a 13 MB release took 100 s in a VM behind a proxy): only `STALL` seconds
-    without a byte counts as failing, and a cut-off download picks up where it stopped (Range)."""
     got, total = 0, 0
     with open(to, "wb") as f:
         for attempt in range(1, attempts + 1):
             try:
                 with _get(url, timeout=STALL, headers={"Range": "bytes=%d-" % got} if got else None) as r:
                     if got and getattr(r, "status", None) != 206:
-                        f.seek(0)  # the server sent the whole file again
+                        f.seek(0)
                         f.truncate()
                         got = 0
                     if not got:
@@ -253,7 +218,7 @@ def _download(url: str, to: str, progress, expected: int = 0, attempts: int = AT
                     raise http.client.IncompleteRead(b"", total - got)
                 return
             except urllib.error.HTTPError:
-                raise  # the server said no: asking again won't change it
+                raise
             except (OSError, http.client.HTTPException) as e:
                 Log.d("update: download from %s stopped at %d of %d bytes, try %d of %d (%s)"
                       % (_host(url), got, total, attempt, attempts, why(e)))
@@ -262,20 +227,16 @@ def _download(url: str, to: str, progress, expected: int = 0, attempts: int = AT
 
 
 def _safe_extract(tar_path: str, into: str) -> None:
-    """Unpacks only regular files and folders that stay inside `into`: a tarball that names
-    absolute paths, "..", links or devices is refused rather than trusted."""
     root = os.path.realpath(into)
     with tarfile.open(tar_path, "r:gz") as t:
         for m in t.getmembers():
             target = os.path.realpath(os.path.join(root, m.name))
             if not (m.isfile() or m.isdir()) or os.path.isabs(m.name) or not target.startswith(root + os.sep):
                 raise Failure("更新包无效")
-        t.extractall(root)  # noqa: S202 - every member checked above
+        t.extractall(root)  # noqa: S202
 
 
 def prepare(u: Update, progress=None) -> str:
-    """Downloads and checks the release; returns the unpacked tree (…/cicada-linux) ready for its
-    install.sh. Raises Failure with a reason to show. Blocking: run it off the main thread."""
     if not u.tarball or not u.checksums:
         raise Failure("这个版本没有可安装的文件")
     work = tempfile.mkdtemp(prefix="cicada-update-")
@@ -306,10 +267,8 @@ def prepare(u: Update, progress=None) -> str:
             raise Failure("更新包无效") from None
         if got != u.version:
             raise Failure("下载的不是预期的版本")
-        # The new version's own dependency check, before anything is replaced or the app quits.
         r = subprocess.run(["sh", os.path.join(tree, "install.sh"), "--check"], capture_output=True, text=True)
         if r.returncode != 0:
-            # install.sh says which packages are missing (and the apt line); shown as it is.
             raise Failure("%@", (r.stdout or r.stderr).strip() or "The update package is invalid")
         return tree
     except BaseException:
@@ -318,12 +277,10 @@ def prepare(u: Update, progress=None) -> str:
 
 
 def marker_file() -> str:
-    """Left by the swap script for the reopened app: "ok <version>" or "failed <version>"."""
     return os.path.join(Paths.data(), "update-result")
 
 
 def take_result() -> tuple | None:
-    """("ok"|"failed", version) once after an update reopened the app, then forgotten."""
     p = marker_file()
     try:
         with open(p, encoding="utf-8") as f:
@@ -335,9 +292,6 @@ def take_result() -> tuple | None:
 
 
 def hand_over(tree: str, version: str, argv: list) -> None:
-    """Starts the script that waits for this process to quit, runs the new install.sh and opens
-    Cicada again with the same arguments; the caller quits next. If install.sh fails the old
-    install is untouched (it only replaces after its checks), so that one reopens."""
     pid = os.getpid()
     os.makedirs(Paths.data(), exist_ok=True)
     marker = marker_file()

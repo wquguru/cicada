@@ -1,5 +1,3 @@
-"""听哪里 on Linux: 会议室 (a microphone in the room) and 电脑和会议室 (both at once), the Mac's
-HybridTests / HybridRecordTests case for case where the logic is shared."""
 from __future__ import annotations
 
 import threading
@@ -74,7 +72,6 @@ class Microphones(Base):
         self.assertEqual("Jabra SPEAK 510 Mono", usb.description)
 
     def test_picks_like_the_mac(self):
-        # RoomMicPlan: the default unless virtual or a Bluetooth headset's, then the built-in one.
         inputs = parse_sources(PACTL)
         usb = "alsa_input.usb-Jabra_Speak_510-00.mono-fallback"
         built_in = "alsa_input.pci-0000_00_05.0.analog-stereo"
@@ -82,10 +79,8 @@ class Microphones(Base):
         self.assertEqual(built_in, pick("bluez_input.AA_BB_CC_DD_EE_FF.0", inputs))
         self.assertEqual(built_in, pick("cicada_mic", inputs))
         self.assertEqual(built_in, pick(None, inputs))
-        # Chosen in 设置 › 会议室, while it is plugged in.
         self.assertEqual(usb, pick(built_in, inputs, chosen=usb))
         self.assertEqual(built_in, pick(built_in, inputs, chosen="gone"))
-        # Only a headset: better than nothing.
         bt = [Input("bt", bluetooth=True), Input("cicada_mic", virtual=True)]
         self.assertEqual("bt", pick("cicada_mic", bt))
         self.assertIsNone(pick(None, [Input("m", virtual=True)]))
@@ -95,13 +90,11 @@ class Microphones(Base):
         self.assertFalse(fixed.voiced(0.006))
         g = VoiceGate(adaptive=True)
         self.assertEqual(0.004, g.threshold)
-        # Ten seconds of a quiet room (0.001) with talk at 0.006.
         for i in range(100):
             g.voiced(0.001 if i % 10 == 0 else 0.006, 0.1)
         self.assertLess(g.threshold, 0.003)
         self.assertGreaterEqual(g.threshold, VoiceGate.lowest)
         self.assertTrue(g.voiced(0.006))
-        # A loud room: the line never goes over the fixed gate.
         for _ in range(400):
             g.voiced(0.05, 0.1)
         self.assertEqual(VoiceGate.fixed, g.threshold)
@@ -125,7 +118,7 @@ def run(e, pcm, mic):
 
 
 class Room(Base):
-    QUIET = concat(silence(3.5), tone(1.0, amp=0.01), silence(1.0))  # a voice across the table, under -40 dBFS
+    QUIET = concat(silence(3.5), tone(1.0, amp=0.01), silence(1.0))
 
     def test_a_quiet_voice_in_the_room_is_heard(self):
         store = SessionStore()
@@ -167,7 +160,6 @@ class Room(Base):
         src = PcmAudioSource(lambda: self.QUIET, speed=0)
         ended = threading.Event()
         src.on_ended = lambda why: ended.set()
-        # Muted before any audio arrives: the worker replaces it with silence.
         e.start(PcmAudioSource(lambda: silence(0.1), speed=0), "room", mic=True)
         e.set_muted(True)
         e.attach(src, mic=True)
@@ -183,11 +175,8 @@ def h(text, start, end):
 
 
 class EchoMatchTests(Base):
-    """The Mac's EchoMatchTests, case for case."""
-
     def test_the_rooms_copy_of_a_remote_sentence_is_an_echo(self):
         online = [h("Revenue grew by 12%, mostly from the new region.", 10, 14)]
-        # Heard worse from the speakers, and a word lost.
         self.assertTrue(EchoMatch.is_echo(h("revenue grew by 12% mostly from new region", 10.3, 14.2), online))
 
     def test_cut_differently_still_matches(self):
@@ -221,12 +210,9 @@ def line(i, speaker="them", via=None):
 
 
 class Places(Base):
-    """The Mac's HybridRecordTests."""
-
     def test_only_a_meeting_that_heard_both_shows_places(self):
         self.assertFalse(heard_both([line("a"), line("b")]))
         self.assertFalse(heard_both([line("a", via="room"), line("b", via="room")]))
-        # My own lines (同声传译) don't make it a meeting that heard the computer.
         self.assertFalse(heard_both([line("a", via="room"), line("b", "me")]))
         self.assertTrue(heard_both([line("a", via="room"), line("b")]))
 
@@ -240,7 +226,7 @@ class Places(Base):
         while t < EchoGate.music - 1:
             g.hold(t)
             t += 0.1
-        self.assertTrue(g.closed(t))  # no words yet: still taken for speech
+        self.assertTrue(g.closed(t))
         while t < EchoGate.music + 1:
             g.hold(t)
             t += 0.1
@@ -248,7 +234,7 @@ class Places(Base):
         t += EchoGate.hang + 0.01
         g.hold(t)
         self.assertFalse(g.closed(t + 0.01))
-        g.heard_words(t + 0.1)  # someone talks over it: words close it again
+        g.heard_words(t + 0.1)
         g.hold(t + 0.2)
         self.assertTrue(g.closed(t + 0.3))
 
@@ -265,12 +251,12 @@ class Places(Base):
 
     def test_headphones_keep_the_room_open(self):
         g = EchoGate()
-        self.assertTrue(g.echo)  # until measured
+        self.assertTrue(g.echo)
         t = self._play(g, 0, 0.001)
         self.assertFalse(g.echo)
         g.hold(t + 1)
         self.assertFalse(g.closed(t + 1.1))
-        self._play(g, t + 100, 0.03)  # the speakers reach the mic again
+        self._play(g, t + 100, 0.03)
         self.assertTrue(g.echo)
         self.assertIsNone(EchoGate.ratio([(0.001, 1)], [(0.001, 10)]))
 
@@ -279,7 +265,6 @@ ONLINE = "Revenue grew by 12%, mostly from the new region."
 
 
 def both_engine(store, room_text):
-    """The computer plays a 1 s sentence; the room mic hears 1.6 s at the same time."""
     def respond(body):
         if "Ming-3.0-audio-flash" not in body:
             return reply("{}")
@@ -325,7 +310,6 @@ class Both(Base):
         self.assertEqual([(None, ONLINE)], [(l.via, l.src) for l in s.lines])
 
     def test_a_room_side_started_mid_meeting_keeps_the_meetings_clock(self):
-        # 听哪里 changed to 电脑和会议室 two seconds in: the room's line is timed after them, not at 00:00.
         store = SessionStore()
         e = both_engine(store, "I think we should check the numbers for Europe first.")
         main = PcmAudioSource(lambda: concat(tone(1.0), silence(1.0)), speed=0)

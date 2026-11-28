@@ -1,39 +1,3 @@
-"""The dev build's control socket ($XDG_RUNTIME_DIR/cicada-dev.sock, this user only), the Linux
-counterpart of tools/lsctl and the Windows named pipe; scripts/cicadactl talks to it. One command
-per connection, one JSON line back. Never in release builds.
-
-  state | start | stop | feed <wav> | sample | view notes|subtitles | show records|notes|settings|onboarding
-  target <code> | key-reload | windows | select <record id> | append <record id> <n> (a growing meeting)
-  provider ling|openrouter|zenmux|custom | ai-model hear|text|voice|notes <id> (设置 › AI 服务; "" back to the recommended) |
-  ai-base text|voice|hear|notes <url> (其他（兼容 OpenAI）'s addresses; "" for voice/hear/notes: the text one)
-  ai-notes same|own (纪要: 同一个服务 / 另一个服务, the Mac's aiCustomNotesOwn)
-  ai-custom-only on|off (语音和文字只发给你的服务, the Mac's aiCustomOnly)
-  speak-enable on|off | speak on|off (同声传译) | quit
-  calls <program=name,…>|none|real (meeting apps in a call) | endtimes <silence> <countdown> <grace>|off | endkeep
-  notes-tab notes|transcript | notes-search <text> | notes-wide on|off | onboarding-step <n> | settings-scroll <0-1>
-  records-search <text> (typed into the records window's Ctrl+F search) | records-search-step 1|-1 (Enter / the arrows):
-           how many meetings it finds, the shown one, its matches and the line being looked at
-  settings-models on|off (unfold 自己选模型)
-  ai-check-sim <reason|lowBalance|off> (every check ends this way: screenshots of each state) | ai-check (check now)
-  ask settings|fix|close (answer the 开始听 dialog a failed check put up) | settings-ai (设置 at AI 服务) | tray-menu
-  pill (the records window capsule's widget sizes)
-  listen-source system|room|both (听哪里) | room-mic [<source>|auto] | lines [<record id>] (each line's via)
-  online both|no (answer 线上也有人？) | room-mic-force <source>|"" (a null sink's monitor as the room mic)
-  hide notes | problem-wait <seconds>|off (how long unreachable lasts before its notification; off: 2 min)
-  codecs (AAC encoder / decoders here) | play [<seconds>] | pause | rate (next speed) | playstate (the shown record's
-  recording: state, time, length, rate, the highlighted line, following, the 回到正在播放 capsule, the scroll) |
-  follow (press 回到正在播放) | play-line <index> (click a line) | line-rect <index>|pill (on the screen) |
-  settings-general (设置 at 通用)
-  share <record id>[,full][,pw] | unshare <record id> | share-last (how the last ended) | shareSheet <record id>|""
-  share-ui scope notes|full | days 7|30|365 | names|pw|summary on|off | options (更改) | go | strip | back | confirm
-           | copy all|link|password | revoke | close | state
-  export-folder <path>|off|on (存到文件夹: choose a folder as 存到这里 does, and its check) |
-  export-state (folder, problem, index, the records not written yet) | export-all (也存一份) | export-retry |
-  export-choose (open 存到哪里, as 更改… does; answer it with the dialog itself)
-  voice <lang> | voice <lang>=<id> (the voice a language uses: "voice en=clone", "voice zh=灵小锋")
-  voice-clone <wav>|off|state (我自己的声音 from a 16 kHz WAV: Ming hears it, the Mac's checks, then kept; state
-           says the last result and the files' modes) | voice-preview [<lang>] (试听 in that language: what played)
-  voice-dialog open|feed <wav>|finish|play original|clone|save|close|state (the record sheet, a WAV as the mic)"""
 from __future__ import annotations
 
 import os
@@ -80,7 +44,7 @@ def _serve(app, server) -> None:
                         break
                     data += chunk
                 reply = _on_main(app, data.decode().strip())
-            except Exception as e:  # noqa: BLE001 - report, don't kill the server
+            except Exception as e:  # noqa: BLE001
                 reply = {"ok": False, "error": "%s: %s" % (type(e).__name__, e)}
             conn.sendall((jsonfmt.write(reply, pretty=False) + "\n").encode())
 
@@ -139,8 +103,6 @@ def updates_notified():
 
 
 def _export(app, cmd: str, arg: str) -> dict:
-    """存到文件夹. Waits for the exporter's worker (it never waits for the main loop), so the reply
-    says what happened."""
     ex = app.folder_export
     if cmd == "export-folder":
         if arg == "off":
@@ -200,7 +162,6 @@ def command(app, line: str) -> dict:
                 "endTimes": list(app.end_times) if app.end_times else None,
                 "inCall": dict(app.end_watch.in_call) if app.end_watch else None}
     if cmd == "start":
-        # Later, not here: 开始听 may ask first (a deaf hear model), and its dialog runs its own loop.
         if not listen.listening:
             GLib.idle_add(lambda: app.toggle_listening() and False)
         return {"ok": True}
@@ -230,41 +191,40 @@ def command(app, line: str) -> dict:
         d.response({"settings": Gtk.ResponseType.CANCEL, "fix": Gtk.ResponseType.ACCEPT}.get(arg, Gtk.ResponseType.CLOSE))
         return {"ok": True}
     if cmd == "tray-menu":
-        # The top-bar menu's items (opening it takes a real click on the top bar).
         if app.tray is None:
             return {"ok": False, "error": "no tray"}
         return {"ok": True, "items": [i.get_label() for i in app.tray.menu.get_children() if hasattr(i, "get_label")]}
     if cmd == "settings-ai":
         app.show_settings(ai=True)
         return {"ok": True}
-    if cmd in ("mic", "listen-source"):  # 打开麦克风 (on|off); listen-source both|room|system, the old names
+    if cmd in ("mic", "listen-source"):
         app.set_mic(arg in ("on", "both", "room"))
         return {"ok": True, "mic": app.mic_on, "source": listen.source_kind}
-    if cmd == "room-echo-sim":  # pretend the speakers do (on) or don't (off) reach the room mic; real
+    if cmd == "room-echo-sim":
         listen.echo_gate.forced = None if arg in ("", "real") else arg != "off"
         return {"ok": True, "echo": listen.echo_gate.echo}
-    if cmd == "room-echo":  # the sound server's echo cancellation for the room mic (on|off), next start
+    if cmd == "room-echo":
         app.room_echo_cancel = arg == "on"
         return {"ok": True}
-    if cmd == "room-mic-force":  # any source as the room mic, e.g. a null sink's monitor ("" = off)
+    if cmd == "room-mic-force":
         app.forced_room_mic = arg or None
         return {"ok": True, "forced": app.forced_room_mic}
-    if cmd == "room-mic":  # which microphone 会议室 would use now; with an argument, choose it ("" = 自动)
+    if cmd == "room-mic":
         if arg:
             app.settings.roomMic = "" if arg == "auto" else arg
             app.settings.save()
         return {"ok": True, "roomMic": app.settings.roomMic, "picked": app.room_mic()}
-    if cmd == "lines":  # the live (or given) meeting's lines: where each was heard
+    if cmd == "lines":
         s = app.store.get(arg or listen.session_id or "")
         return {"ok": True, "room": s.room if s else None,
                 "lines": [[l.id, l.speaker, l.via, l.src[:50]] for l in s.lines] if s else []}
     if cmd == "stop":
         app.stop_listening()
         return {"ok": True}
-    if cmd == "updatecheck":  # the Mac's updateCheck: check the feed now (CICADA_UPDATE_FEED in a dev build)
+    if cmd == "updatecheck":
         app.updates.check_now()
         return {"ok": True}
-    if cmd == "updateinstall":  # the Mac's updateInstall: what 安装并重新打开 does
+    if cmd == "updateinstall":
         app.updates.install()
         return {"ok": True}
     if cmd == "updatestate":
@@ -283,13 +243,13 @@ def command(app, line: str) -> dict:
     if cmd == "view":
         app.set_view(arg)
         return {"ok": True, "view": app.settings.view}
-    if cmd == "dock":  # dock on|off: 在 Dock 中显示, as its switch sets it
+    if cmd == "dock":
         if arg in ("on", "off"):
             app.set_show_in_dock(arg == "on")
         w = app.records_window
         return {"ok": True, "on": app.settings.showInDock, "records": _window(w),
                 "parked": w.parked if w is not None else None}
-    if cmd == "close" and arg == "records":  # the ✕ of the records window
+    if cmd == "close" and arg == "records":
         if app.records_window is not None:
             app.records_window.close()
         return {"ok": True}
@@ -309,13 +269,12 @@ def command(app, line: str) -> dict:
     if cmd == "provider":
         app.set_ai_provider(arg)
         return {"ok": True, "ai": _ai(app)}
-    if cmd == "switch-to-ling":  # the 改用 Ling on a status line (says whether it was offered)
+    if cmd == "switch-to-ling":
         offered = app.can_switch_to_ling()
         Log.d("switchToLing offered=%s" % offered)
         app.switch_to_ling()
         return {"ok": True, "offered": offered, "ai": _ai(app)}
     if cmd == "ai-base":
-        # A custom service's addresses: text, voice or hear ("" for voice and hear: the text one).
         kind, _, url = arg.partition(" ")
         field = {"text": "aiCustomBase", "voice": "aiCustomVoiceBase", "hear": "aiCustomHearBase",
                  "notes": "aiCustomNotesBase"}.get(kind)
@@ -341,7 +300,6 @@ def command(app, line: str) -> dict:
         return {"ok": True, "notes": _window(app.notes_window), "records": _window(app.records_window),
                 "settings": _window(app.settings_window), "onboarding": _window(app.onboarding)}
     if cmd == "pill":
-        # The records window's capsule as a tree of allocations (checking it against the Mac's sizes).
         def tree(w, depth=0):
             a = w.get_allocation()
             ctx = w.get_style_context()
@@ -353,7 +311,6 @@ def command(app, line: str) -> dict:
             return out
         return {"ok": True, "tree": tree(app.records_window.listen_box)} if app.records_window else {"ok": False}
     if cmd == "speakers":
-        # speakers on|off; speakers <session id>: the voices of a record
         if arg in ("on", "off"):
             app.set_speaker_voices(arg == "on")
             return {"ok": True, "on": app.settings.speakerVoices}
@@ -364,14 +321,13 @@ def command(app, line: str) -> dict:
     if cmd == "speak":
         if (arg == "on") != app.speak.active:
             app.toggle_speaking()
-        # echoCancelled: this press reads the talk key's echo canceller (else the plain mic, echo drop on)
         return {"ok": True, "speaking": app.speak.active, "echoCancelled": app.speak.echo_cancelled}
     if cmd.startswith("voice"):
         return _voice(app, cmd, arg)
     if cmd == "codecs":
         from . import media
         return {"ok": True, **media.codecs(), "recordAudio": app.settings.recordAudio, "recording": listen.recording}
-    if cmd == "line-rect":  # where transcript row <n> (or the 回到正在播放 capsule: "pill") is on the screen, for real clicks
+    if cmd == "line-rect":
         w = app.records_window
         widget = w.back_pill if arg == "pill" else w._rows[int(arg)][1] if w is not None and int(arg) < len(w._rows) else None
         if widget is None or not widget.get_mapped():
@@ -419,7 +375,6 @@ def command(app, line: str) -> dict:
         app.records_window.fill()
         return {"ok": True}
     if cmd == "append":
-        # A meeting growing line by line, as while listening: `append <id> <n>`.
         from ..core.models import TranscriptLine
         sid, n = arg.split()
         s = app.store.get(sid)
@@ -468,7 +423,7 @@ def command(app, line: str) -> dict:
         w = app.records_window
         if cmd == "records-search":
             w.search.set_text(arg)
-            w._searched(w.search)  # now, not after SearchEntry's typing delay
+            w._searched(w.search)
         else:
             w.step(int(arg or "1"))
         found = len(w._visible_sessions()) if w.query.strip() else None
@@ -479,7 +434,6 @@ def command(app, line: str) -> dict:
               % (w.query, found, w.selected, len(w._matches), w._current or "-"))
         return r
     if cmd == "rename":
-        # `rename <id> <title>`; no title is 恢复自动标题.
         sid, _, title = arg.partition(" ")
         app.store.rename(sid, title)
         s = app.store.get(sid)
@@ -492,13 +446,11 @@ def command(app, line: str) -> dict:
             app.folder_export.deleted(arg)
         return {"ok": True, "exists": app.store.get(arg) is not None, "live": app.store.live}
     if cmd == "notes-end":
-        # The notes window's 结束: `ask`, then `keep` (继续记录) or `end` (结束会议).
         app.show_notes()
         w = app.notes_window
         {"ask": w._ask_end, "keep": lambda: w._end_answer(False), "end": lambda: w._end_answer(True)}[arg]()
         return {"ok": True, "asking": getattr(w, "confirm_end", False), "listening": listen.listening}
     if cmd == "notes-status":
-        # How the notes window shows a state the network won't give on demand: `failed`, `invalidKey`…
         app.notes.status = arg
         app.changed()
         return {"ok": True, "status": app.notes.status}
@@ -529,8 +481,6 @@ _share_last: dict = {}
 
 
 def _share(app, cmd: str, arg: str) -> dict:
-    """分享… (the Mac's share / unshare / shareSheet debug commands). The network runs on a thread:
-    `share` and `unshare` answer at once, `share-last` says how the last one ended."""
     from ..core import share
     from . import share_dialog
     if cmd == "share-last":
@@ -576,8 +526,6 @@ def _share(app, cmd: str, arg: str) -> dict:
         w.selected = arg
         w.fill()
         return {"ok": True, **share_dialog.open_for(app, s, w).state()}
-    # share-ui scope notes|full | days 7|30|365 | names|pw|summary on|off | options | go | strip | back | confirm
-    #          | copy all|link|password | revoke | close | state
     d = app.share_dialog
     if d is None:
         return {"ok": False, "error": "no share dialog"}
@@ -624,16 +572,6 @@ def _fix_state(app, sid: str) -> dict:
 
 
 def _fixes(app, cmd: str, arg: str) -> dict:
-    """改正听错的词 (the Mac's fixes / heard / fixState / fixAnswer / fixLater / fixUndo / fixEdit /
-    fixRevert / vocabAdd / vocabState / resettle):
-      fixes on|off | ask-names on|off | heard <text>[|<translation>] (a finished sentence as if Ming heard it, in the
-      meeting being listened to: the record, the fixing request, the notes window all follow) |
-      fix-state [<id>] | fix-answer yes|no [<id>] | fix-later [<id>] | fix-undo | fix-revert <line> [<id>] |
-      fix-edit <line>=<text>[|one][|keep0][|@<id>] | vocab-add Morpho=莫拉、莫法[|…] | vocab-remove <word> |
-      vocab-state | fix-editor <line>=<text> (改这句… open in the records window) |
-      word-list [import <text>|edit <word>|delete <word>] (设置 › 词表 on screen) |
-      resettle <line>=<text> (the line heard again as <text>, then translated and fixed
-      again with the lines after it in view)"""
     words = arg.split()
     fx = app.fixes
 
@@ -657,8 +595,6 @@ def _fixes(app, cmd: str, arg: str) -> dict:
         lang = listen._main.hint or "zh-CN"
         seg = SimpleNamespace(start=listen.heard_seconds, seconds=2.0, index=0, voiceprint=None,
                               asked=app.settings.resolved_target(lang))
-        # `heard <text>|<translation>`: a line Ming translated, the usual path (the fixing request
-        # replaces its translation); without one, the path of a line Ming left untranslated.
         text, _, dst = arg.partition("|")
         heard = Heard(lang, text, dst or None)
 
@@ -704,7 +640,6 @@ def _fixes(app, cmd: str, arg: str) -> dict:
         fx.undo()
         return {"ok": True}
     if cmd == "fix-editor":
-        # 改这句… open on a line of the record shown, with <text> typed in (the VM can't type Chinese).
         line_id, _, text = arg.partition("=")
         w = app.records_window
         if w is None or not w.get_visible():
@@ -712,8 +647,6 @@ def _fixes(app, cmd: str, arg: str) -> dict:
         w.edit_line(line_id, text or None)
         return {"ok": True}
     if cmd == "word-list":
-        # 设置 › 词表 on screen: `word-list` scrolls to it; `word-list import <text>` opens 粘贴导入 with
-        # <text> pasted ("|" for new lines); `word-list edit <word>` opens its spelling.
         app.show_settings()
         sw = app.settings_window
         wl = sw.word_list
@@ -723,7 +656,7 @@ def _fixes(app, cmd: str, arg: str) -> dict:
             wl.dialog_view.get_buffer().set_text(rest.replace("|", "\n"))
         elif kind == "edit":
             wl._edit(rest)
-        elif kind == "heard":  # word-list heard <word>=<form>: typed into its 加一个容易听错的词
+        elif kind == "heard":
             word, _, form = rest.partition("=")
             t = next((t for t in app.vocabulary.snapshot() if t.word == word), None)
             if t is not None:
@@ -767,7 +700,6 @@ def _fixes(app, cmd: str, arg: str) -> dict:
 
 
 def _voice(app, cmd: str, arg: str) -> dict:
-    """我自己的声音 without a microphone: the network runs on a thread and `state` reads the result."""
     from ..core import voice_reference as vref
     from ..core import voices as voicemod
     from ..core.audio import PcmAudioSource, RATE, Wav
@@ -854,7 +786,7 @@ def _voice(app, cmd: str, arg: str) -> dict:
         if d is None or d.window is None:
             return {"ok": False, "error": "no dialog"}
         r = d.recorder
-        if what == "feed":  # the WAV as the microphone, in real time; the recording stops when it ends
+        if what == "feed":
             d.consent = True
             r.start(PcmAudioSource(rest))
         elif what == "finish":
@@ -871,7 +803,6 @@ def _voice(app, cmd: str, arg: str) -> dict:
 
 
 def _ai(app) -> dict:
-    """The AI service in use and what its last check found (never the key itself)."""
     c, ling = app.ling.config(), app.ling
     return {"provider": c.provider.id, "base": c.base, "hearBase": c.hear_url, "text": c.text_model, "hear": c.hear_model, "voice": c.voice_model,
             "state": ling.key_state, "hears": ling.hears, "check": ling.check_result.summary(), "message": ling.message(),

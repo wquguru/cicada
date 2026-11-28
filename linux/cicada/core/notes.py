@@ -1,9 +1,3 @@
-"""Keeps the live meeting's notes up to date: every ~45 s with new speech, one Ling call sends the
-current notes plus the new lines and gets the notes back as JSON, rewriting only the last topics; a
-final pass rewrites them over the whole transcript when the meeting ends (a long meeting in parts,
-merged). A failed or odd reply never replaces good notes.
-The prompt and parsing are the Mac's (Notes.swift, via the Windows and Android ports), so every
-platform writes the same notes."""
 from __future__ import annotations
 
 import math
@@ -21,8 +15,6 @@ from .support import Log, clock, written_in
 
 INTERVAL = 45.0
 IDLE, UPDATING, NO_KEY, INVALID_KEY, RATE_LIMITED, FAILED = "idle", "updating", "noKey", "invalidKey", "rateLimited", "failed"
-# The notes' own request couldn't reach the service (network, proxy, timeout); another request
-# failing, such as naming speakers, never sets it.
 UNREACHABLE = "unreachable"
 
 
@@ -30,7 +22,7 @@ class NotesEngine:
     def __init__(self, ling, store):
         self.ling = ling
         self.store = store
-        self.voices = lambda: False  # 说话人识别 on: lines go as 说话人N or the name given (set by the app)
+        self.voices = lambda: False
         self._gate = threading.RLock()
         self._work = ThreadPoolExecutor(max_workers=1, thread_name_prefix="NotesWork")
         self._ticker = None
@@ -42,17 +34,13 @@ class NotesEngine:
         self._listeners = []
         self.notes = MeetingNotes()
         self.status = IDLE
-        self.shown_id = None  # the session the notes belong to (stays set after the meeting ends)
-        self.language = lambda sid: "Simplified Chinese"  # a meeting's notes language (English name), from 纪要语言
-        self.working_id = None  # the record being written now, for a "正在整理纪要…" next to it
-        # Final passes asked for and not over yet (queued in a pool, running or waiting their turn),
-        # and the call when one is over, notes written or not (存到文件夹 waits for it).
+        self.shown_id = None
+        self.language = lambda sid: "Simplified Chinese"
+        self.working_id = None
         self._finals: list = []
         self.final_done = None
 
     def settling(self, sid: str) -> bool:
-        """The meeting's final pass is still to come, running or waiting: also while the meeting is
-        still this engine's own, before listening's pool gets to finish()."""
         with self._gate:
             return sid == self._session_id or sid in self._finals
 
@@ -72,7 +60,6 @@ class NotesEngine:
             l()
 
     def glossary(self) -> list:
-        """Names for the translation glossary: "江充 (note; misheard as 江松, 江冲)"."""
         out = []
         for t in self.notes.terms[:30]:
             out.append("%s (%s)" % (t.name, t.note) if not t.heard else "%s (%s; misheard as %s)" % (t.name, t.note, ", ".join(t.heard)))
@@ -103,7 +90,6 @@ class NotesEngine:
             self._ticker = None
 
     def finish(self) -> None:
-        """The meeting ended: one last pass over the whole transcript. Blocks until it's written."""
         with self._gate:
             self._stop_ticker()
             sid = self._session_id
@@ -118,40 +104,32 @@ class NotesEngine:
             self.shown_id = sid
             s = self.store.get(sid)
             self.notes = (s.notes if s else None) or MeetingNotes()
-            # A round that failed belongs to the meeting it ran for, not to the record opened now.
             if self._session_id is None and self.status in (FAILED, UNREACHABLE, RATE_LIMITED):
                 self.status = IDLE
         self._changed()
 
     def rewrite(self) -> None:
-        """The live meeting's notes again from its first line (纪要语言 changed): the Mac's rewrite."""
         with self._gate:
             sid = self._session_id
         if sid is not None:
             self._work.submit(self._update, sid, False, True)
 
     def generate(self, sid: str) -> None:
-        """Notes for a finished meeting that has none (runs in the background)."""
         with self._gate:
             self._finals.append(sid)
         self._work.submit(self._update, sid, True)
 
     def _sync_key(self) -> None:
-        """The status follows the key, as on the Mac (`NotesEngine.tick`)."""
         ling = self.ling
-        # A key was added or replaced since the last failure.
         if self.status in (NO_KEY, INVALID_KEY) and ling.usable and ling.key_state != CHECKING:
             self.status = IDLE
         if self.status == IDLE and not ling.has_key:
             self.status = NO_KEY
-        # A key that was just checked and refused says so, rather than asking for a key again.
         if self.status in (NO_KEY, IDLE) and ling.has_key and ling.key_state == INVALID:
             self.status = INVALID_KEY
 
     def _tick(self) -> None:
         with self._gate:
-            # The service answers again (the check after a network change, or any other request): the
-            # banner goes now, not after the next round, which runs on its usual 45 s.
             recovered = self.status == UNREACHABLE and self.ling.check_result.reason != "unreachable"
             if recovered:
                 self.status = IDLE
@@ -166,22 +144,20 @@ class NotesEngine:
             if s is None or len(s.lines) <= self.notes.covered:
                 return
             since = time.time() - self._last_attempt
-            # First notes as soon as there is something to say, then every 45 s.
             due = (len(s.lines) >= 3 or since > 20) if self.notes.is_empty else since >= INTERVAL
             if not due:
                 return
         self._work.submit(self._update, sid, False)
 
     def _update(self, sid: str, final: bool, fresh: bool = False) -> None:
-        over = None  # a final pass that ends here without running
+        over = None
         start = False
         with self._gate:
             if self._in_flight:
                 if final:
-                    # One waiting slot: the pass it held won't run, so that one is over.
                     over, self._pending_final = self._pending_final, sid
                 elif fresh:
-                    self._pending_fresh = sid  # after the round in the old language
+                    self._pending_fresh = sid
             else:
                 session = self.store.get(sid)
                 if session is None or not session.lines:
@@ -209,9 +185,6 @@ class NotesEngine:
             voices = self.voices()
             shown = speakers.names(session) if voices else {}
             started_at = lines[0].t if lines else 0.0
-            # A live update returns only the last topics: when it rewrote them all, its reply grew with
-            # the meeting until, about an hour in, it was cut off at max_tokens or fell into a loop and
-            # the notes stopped updating. The final pass still rewrites everything once.
             frozen = 0 if final or fresh else max(0, len(base.topics) - EDITABLE_TOPICS)
             p = prompt(base, lines, frm, lang, final, shown, voices, frozen)
             nxt = self._long_final(lines, shown, voices, lang, started_at) if final else None
@@ -272,8 +245,6 @@ class NotesEngine:
                 self._update(again, final=False, fresh=True)
 
     def _long_final(self, lines: list, names: dict, voices: bool, lang: str, started_at: float) -> MeetingNotes | None:
-        """A long meeting's final pass: each part noted on its own, all at once, then merged into one.
-        None when a step fails: the caller then makes one pass over the whole transcript, as before."""
         ranges = parts(lines)
         if len(ranges) <= 1:
             return None
@@ -297,7 +268,6 @@ class NotesEngine:
             if root is None:
                 Log.d("notes: final part %d/%d failed, one pass instead" % (i + 1, len(ranges)))
                 return None
-            # Without its topics: given them, the merge wrote them all back out and was cut off.
             root.pop("topics", None)
             notes.append(jsonfmt.write(root, pretty=False))
             topics += thinned(parsed.topics, part_topics(len(ranges)), lines[ranges[i].stop - 1].t)
@@ -323,28 +293,18 @@ def _min(a, b):
     return b if a is None else a if b is None else min(a, b)
 
 
-# The most topics the final notes have (the prompt says so too; the model doesn't always listen).
 MAX_TOPICS = 8
-# Live notes once stopped at 8 topics and poured the rest of the meeting into the last one, whose
-# summary grew into a wall of "最新…又…补充…": past this, the two shortest neighbouring settled
-# topics are joined instead, so the newest can start.
 LIVE_MAX_TOPICS = 12
-# How many of the last topics a live update may rewrite; earlier ones stay as they are.
 EDITABLE_TOPICS = 2
-# A topic summary longer than this is a log the model kept appending to, not one sentence.
 TOPIC_SUMMARY_LIMIT = 160
 
 
 def heard_as_said(terms: list, lines: list) -> list:
-    """Terms keep only the heard forms the recognizer really wrote (`src`). The notes read lines with
-    fixes in, so a wrong fix came back as a heard form ("X平台 heard as platform"), went to the
-    translator and the next fix's request as a known mishearing, and was proposed again."""
     srcs = [l.src.casefold() for l in lines]
     return [replace(t, heard=[h for h in t.heard if any(h.casefold() in s for s in srcs)]) for t in terms]
 
 
 def shortened(summary: str) -> str:
-    """A runaway topic summary cut back to its first sentence (or to the limit, with "…")."""
     if len(summary) <= TOPIC_SUMMARY_LIMIT:
         return summary
     head = summary[:TOPIC_SUMMARY_LIMIT]
@@ -353,11 +313,6 @@ def shortened(summary: str) -> str:
 
 
 def merge(old: list, frozen: int, returned: list) -> list:
-    """A live reply's topics after the `frozen` ones it was told to leave alone: with some frozen, at
-    most the editable ones plus one new, from the end (the model sometimes echoes the whole list),
-    never a copy of a frozen one, each summary kept to one sentence; and no more than
-    LIVE_MAX_TOPICS in all (past that, settled neighbours are joined). A reply with no topics of its
-    own keeps the ones it had."""
     kept = list(old[:frozen])
     fixed = {t.title for t in kept}
     own = [t for t in returned if t.title not in fixed]
@@ -367,7 +322,6 @@ def merge(old: list, frozen: int, returned: list) -> list:
     tail = [replace(t, summary=shortened(t.summary)) for t in tail]
     tail = capped(tail, LIVE_MAX_TOPICS - min(len(kept), 1))
     while len(kept) + len(tail) > LIVE_MAX_TOPICS and len(kept) >= 2:
-        # The pair spanning the least time, its end being the next topic's start.
         ends = [t.start for t in kept[1:]] + [tail[0].start]
         i = min(range(len(kept) - 1), key=lambda j: ends[j + 1] - kept[j].start)
         kept[i] = joined(kept[i], kept[i + 1])
@@ -376,8 +330,6 @@ def merge(old: list, frozen: int, returned: list) -> list:
 
 
 def joined(a: NoteTopic, b: NoteTopic) -> NoteTopic:
-    """Two neighbouring topics as one: both titles and summaries, and up to the 4 points the prompt
-    allows, taken evenly from each."""
     from_a = min(len(a.points), max(2, 4 - len(b.points)))
     from_b = min(len(b.points), 4 - from_a)
     times = [a.point_time(i) for i in range(from_a)] + [b.point_time(i) for i in range(from_b)]
@@ -388,7 +340,6 @@ def joined(a: NoteTopic, b: NoteTopic) -> NoteTopic:
 
 
 def capped(topics: list, count: int) -> list:
-    """At most `count` topics (at least one): the points of any after that go into the last kept."""
     topics = list(topics)
     while len(topics) > max(1, count):
         extra = topics.pop()
@@ -400,8 +351,6 @@ def capped(topics: list, count: int) -> list:
 
 
 def carry_times(old: MeetingNotes, nxt: MeetingNotes) -> None:
-    """The model echoes points it already had without evidence: keep the times they had, and a point
-    keeps the time it was first heard."""
     known = {}
     for t in old.topics:
         for i, p in enumerate(t.points):
@@ -411,7 +360,6 @@ def carry_times(old: MeetingNotes, nxt: MeetingNotes) -> None:
     for t in nxt.topics:
         times = [_min(t.point_time(i), known.get(p)) for i, p in enumerate(t.points)]
         t.pointTimes = times if any(x is not None for x in times) else None
-        # A topic starts no later than its first point (the reply dates it from the lines it cites now).
         first = min((x for x in times if x is not None), default=None)
         if first is not None and first < t.start:
             t.start = first
@@ -427,18 +375,13 @@ def written(notes: MeetingNotes, language: str) -> bool:
     return written_in(notes.summary + "".join(t.title for t in notes.topics), language)
 
 
-# Prompt (Notes.swift › prompt, word for word)
-
 def prompt(notes: MeetingNotes, lines: list, frm: int, language: str, final: bool, names: dict | None = None,
            voices: bool = False, frozen: int = 0, part: tuple | None = None) -> str:
-    """`frozen`: the first topics, settled, sent as a list and not returned. `part`: in a long
-    meeting's final pass, which part `frm:len(lines)` is (1-based index, count)."""
     nums = speakers.numbers(lines) if voices else {}
     names = names or {}
 
     def line(i):
         l = lines[i]
-        # A named voice goes as its name: notes then say "George" rather than "说话人2".
         who = "你" if l.speaker == "me" else (
             (names.get(nums[l.id]) or "说话人%d" % nums[l.id]) if l.id in nums else ("对方" if not nums else "未识别"))
         return "[L%d %s %s] %s" % (i + 1, clock(l.t), who, l.shown)
@@ -460,8 +403,6 @@ def prompt(notes: MeetingNotes, lines: list, frm: int, language: str, final: boo
     p += ("%s (id, mm:ss, speaker 对方=the other side / 你=me / a name or 说话人N=one person on the other side, told apart by voice and possibly wrong / 未识别=someone on the other side not identified, text). Speech recognition makes mistakes, often in names: correct them from context, and write a public figure's name as the news spells it.\n"
           % ("Transcript" if final else "New lines"))
     p += "\n".join(line(i) for i in range(frm, len(lines)))
-    # The model splits too eagerly when only told how long a topic should be: say plainly whether
-    # this update may start one.
     if final and frm < len(lines):
         span = lines[-1].t - lines[frm].t
         most = max(1, min(part_topics(part[1]) if part else MAX_TOPICS, int(span / 180) + 1))
@@ -476,7 +417,6 @@ def prompt(notes: MeetingNotes, lines: list, frm: int, language: str, final: boo
 
 
 def _format(language: str, voices: bool, final: bool, frozen: int) -> str:
-    """The reply's JSON shape and the rules for its contents."""
     return ("Return the full notes as one JSON object with exactly these keys:\n"
             "{\"title\": \"the meeting's name: what it is about, a few words\",\n"
             " \"summary\": \"2-3 sentences on the whole meeting so far\",\n"
@@ -505,16 +445,11 @@ def _format(language: str, voices: bool, final: bool, frozen: int) -> str:
                "" if final else "; add at most one new topic per update", language))
 
 
-# Long meetings
-
-# How a long meeting's final pass is split: over SPLIT_MINUTES, into equal parts by time of at most
-# PART_MINUTES. One pass covered a 91-minute meeting but only the first hour of a 4-hour one.
 SPLIT_MINUTES = 100.0
 PART_MINUTES = 60.0
 
 
 def parts(lines: list) -> list:
-    """The final pass's parts as ranges of line indices."""
     if not lines:
         return []
     first, last = lines[0].t, lines[-1].t
@@ -534,21 +469,14 @@ def parts(lines: list) -> list:
 
 
 def part_topics(n: int) -> int:
-    """Each part's share of the topics: the merge keeps them as they are, so every part has some."""
     return max(2, MAX_TOPICS // max(1, n))
 
 
 def thinned(topics: list, count: int, end: float) -> list:
-    """At most `count` of a part's `topics`, neighbours joined: a part's reply often has more topics
-    than asked. Keeping the first ones lost the end of the part, and keeping some spread from first to
-    last kept a topic's "（续）" stub at the part's end and dropped the topic itself. The same subject
-    twice is joined first, under the first one's title; then the pair spanning the least time (to the
-    next topic's start, or `end` for the last), as live notes do."""
     topics = list(topics)
     while len(topics) > max(1, count):
         pairs = range(len(topics) - 1)
         same = next((i for i in pairs if subject(topics[i].title) == subject(topics[i + 1].title)), None)
-        # min() keeps the first of equal spans, as the Mac does.
         i = same if same is not None else min(
             pairs, key=lambda j: (topics[j + 2].start if j + 2 < len(topics) else end) - topics[j].start)
         one = joined(topics[i], topics[i + 1])
@@ -559,7 +487,6 @@ def thinned(topics: list, count: int, end: float) -> list:
 
 
 def subject(title: str) -> str:
-    """A topic title without a trailing bracket ("预算评审（续）", "Budget (cont.)"): what it is about."""
     t = title.strip()
     if not t or t[-1] not in "）)":
         return t
@@ -568,9 +495,6 @@ def subject(title: str) -> str:
 
 
 def merge_prompt(parts: list, lines: list, language: str, voices: bool) -> str:
-    """The whole meeting's title, summary, conclusions, to-dos and terms from its parts' notes (the
-    replies as they came, with their evidence line ids). Asked to merge topics too, the model kept the
-    first parts' and dropped the rest, so topics are joined in code."""
     p = ("You keep notes for a meeting that has just ended. It was long, so each part was noted on its own; below are those notes, in time order (JSON; evidence ids are transcript lines, L1 the first). Merge them into the notes for the whole meeting.\n"
          "Write the notes in %s. Return JSON only.\n\n" % language)
     for i, part in enumerate(parts):
@@ -582,9 +506,6 @@ def merge_prompt(parts: list, lines: list, language: str, voices: bool) -> str:
 
 
 def _compact_json(n: MeetingNotes, frm: int = 0) -> str:
-    """The current notes as sent back to the model (no bookkeeping fields), topics from `frm` (earlier
-    ones go as a list of titles). Insertion order, like the Kotlin LinkedHashMap; jsonfmt sorts keys,
-    which the model doesn't mind."""
     o = {}
     if n.title is not None:
         o["title"] = n.title
@@ -597,10 +518,7 @@ def _compact_json(n: MeetingNotes, frm: int = 0) -> str:
     return jsonfmt.write(o, pretty=False)
 
 
-# Parse
-
 def parse(raw: str, times: list, started_at: float) -> MeetingNotes | None:
-    """Lenient: missing keys become empty, evidence ids are checked against the transcript."""
     a = raw.find("{")
     b = raw.rfind("}")
     if a < 0 or b <= a:
@@ -639,7 +557,6 @@ def parse(raw: str, times: list, started_at: float) -> MeetingNotes | None:
         fish = None
         f = obj(t.get("fishbone"))
         if f is not None:
-            # A branch's time from its lines, as a point's: the model's own "t" came back past the end.
             branches = [FishboneBranch(label=s(br.get("label")), detail=s(br.get("detail")),
                                        t=time_of(br.get("evidence")) if line_numbers(br.get("evidence")) else num(br.get("t")),
                                        support=len(line_numbers(br.get("evidence")))) for br in objects(f.get("branches"))]
@@ -654,8 +571,6 @@ def parse(raw: str, times: list, started_at: float) -> MeetingNotes | None:
                 continue
             points.append(text)
             point_times.append(time_of(po.get("evidence")) if po is not None else None)
-        # When it was first said, from its lines: the model's own start drifts by tens of minutes in a
-        # long meeting (a topic said at 51-85 min came back as starting at 23).
         said = [x for x in [time_of(t.get("evidence"))] + point_times if x is not None]
         start = min(said) if said else num(t.get("start"))
         n.topics.append(NoteTopic(start=started_at if start is None else start, title=topic_title, summary=s(t.get("summary")),
@@ -673,6 +588,5 @@ def parse(raw: str, times: list, started_at: float) -> MeetingNotes | None:
         name = s(t.get("name"))
         if name:
             terms.append(NoteTerm(name=name, note=s(t.get("note")), heard=[s(h) for h in arr(t.get("heard")) if s(h) and s(h) != name]))
-    # The model keeps every term it ever had: bound the glossary, keeping the misheard ones.
     n.terms = NoteTerm.ordered(terms)[:20] if len(terms) > 20 else terms
     return None if n.is_empty else n

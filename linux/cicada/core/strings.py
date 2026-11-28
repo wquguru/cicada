@@ -1,8 +1,3 @@
-"""UI text. The Chinese text is the key, as on the Mac, and the translations are the Mac's own
-`Resources/{en,ja,ko}.lproj/Localizable.strings`, plus `Linux.strings` (linux/strings/<lang>.lproj)
-for text only the Linux app has, and the Mac's `Localizable.stringsdict` for plurals ("1 line",
-"2 lines"). Placeholders are the Mac's `%@`, filled in order (or `%1$@`). Never for prompts, logs or
-stored values."""
 from __future__ import annotations
 
 import os
@@ -14,8 +9,6 @@ language = "zh-Hans"
 
 
 def load(ui: str, folders: list) -> None:
-    """Loads the table for `ui` ("en", "ja", "ko"; anything else is Chinese) from each folder's
-    <lang>.lproj/{Localizable,Linux}.strings, later folders over earlier ones."""
     global _table, _plurals, language
     head = ui.replace("_", "-").split("-")[0]
     language = head if head in ("en", "ja", "ko") else "zh-Hans"
@@ -36,14 +29,11 @@ def load(ui: str, folders: list) -> None:
 
 
 def parse_plurals(data: bytes) -> dict:
-    """The Mac's Localizable.stringsdict: key → {"NSStringLocalizedFormatKey": format, variable →
-    {"one": …, "other": …}}."""
     d = plistlib.loads(data)
     return {k: v for k, v in d.items() if isinstance(v, dict) and isinstance(v.get("NSStringLocalizedFormatKey"), str)}
 
 
 def _category(n) -> str:
-    # Only English has more than one form among the app's languages: "one" for exactly 1.
     return "one" if language == "en" and isinstance(n, (int, float)) and n == 1 else "other"
 
 
@@ -53,8 +43,6 @@ def L(key: str) -> str:
 
 
 def LF(key: str, *args) -> str:
-    """L() with the Mac's `%@` placeholders, filled in order. A key in the stringsdict takes its
-    plural form for the number: `%#@n@` (or `%2$#@n@`) becomes variable n's "one" or "other" text."""
     plural = _plurals.get(key)
     text = plural["NSStringLocalizedFormatKey"] if plural else L(key)
     out = []
@@ -75,8 +63,7 @@ def LF(key: str, *args) -> str:
                 out.append(form.replace("%lld", str(n)).replace("%ld", str(n)).replace("%d", str(n)))
                 i = end + 1
                 continue
-        # %@, and the Mac's numbers (%lld, %d) the same way: the Mac keys 说话人 N as "说话人 %lld".
-        if text.startswith("%%", i):  # a literal %, as in the Mac's "%lld%%"
+        if text.startswith("%%", i):
             out.append("%")
             i += 2
             continue
@@ -99,7 +86,6 @@ def LF(key: str, *args) -> str:
 
 
 def parse(text: str) -> dict:
-    """`"key" = "value";` lines, with /* */ and // comments and \\" \\\\ \\n escapes."""
     result = {}
     i = 0
     n = len(text)

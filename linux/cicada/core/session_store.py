@@ -1,6 +1,3 @@
-"""The meeting records: one folder per meeting under Sessions/<yyyyMMdd-HHmmss>/ with session.json,
-as on the Mac. Saves are debounced by 1.5 s; a meeting with no lines is removed when it ends.
-Thread-safe; listeners fire on whichever thread made the change."""
 from __future__ import annotations
 
 import os
@@ -22,20 +19,16 @@ class SessionStore:
         self._listeners = []
         self._word_listeners = []
         self._save_listeners = []
-        self.live: str | None = None  # the meeting being listened to (the Mac's liveID)
+        self.live: str | None = None
         self._load()
 
     def on_change(self, listener) -> None:
         self._listeners.append(listener)
 
     def on_words(self, listener) -> None:
-        """`listener(sid)` the moment recognised words land in a record: a new line (theirs or mine)
-        or a half sentence that grew. What 结束会议 counts as someone speaking (MeetingEndWatch.heard)."""
         self._word_listeners.append(listener)
 
     def on_save(self, listener) -> None:
-        """`listener(sid)` after a record was written to disk (存到文件夹 follows its changes). Fires on
-        the thread that saved it."""
         self._save_listeners.append(listener)
 
     def _words(self, sid: str) -> None:
@@ -50,13 +43,9 @@ class SessionStore:
         return os.path.join(Paths.sessions(), sid)
 
     def audio_path(self, sid: str) -> str:
-        """What was heard, as on the Mac: system.m4a in the meeting's folder (system.aac while it is
-        being recorded, see aac.py)."""
         return os.path.join(self._folder(sid), "system.m4a")
 
     def unfinished_audio(self) -> list:
-        """Meetings whose recording is still the partial file (the app quit mid-meeting, or before
-        rewrapping it): their ids, to finish at launch as the Mac's load() does."""
         with self._gate:
             out = []
             for s in self._sessions.values():
@@ -88,7 +77,6 @@ class SessionStore:
                 Log.d("store: skipped %s: %s" % (name, type(e).__name__))
 
     def all(self) -> list:
-        """Newest first."""
         with self._gate:
             return sorted(self._sessions.values(), key=lambda s: s.startedAt, reverse=True)
 
@@ -97,13 +85,11 @@ class SessionStore:
             return self._sessions.get(sid)
 
     def snapshot(self, sid: str) -> Session | None:
-        """A copy of a record no other thread changes while it is read (a file being written from it)."""
         with self._gate:
             s = self._sessions.get(sid)
             return Session.read(s.write()) if s else None
 
     def lines(self, sid: str) -> list:
-        """A copy of a record's lines, safe to read while listening adds to them."""
         with self._gate:
             s = self._sessions.get(sid)
             return [l.copy() for l in s.lines] if s else []
@@ -128,23 +114,17 @@ class SessionStore:
         def change(s):
             for i, l in enumerate(s.lines):
                 if l.id == line.id:
-                    # Whose line it is stays as stored: a joined half sentence keeps the earlier
-                    # line's voice, and the user's 这句是谁说的 isn't undone by a retranslation.
                     line.voice = l.voice
-                    # Its fixes too (改正听错的词): the engine's copy of a line never carries them.
                     line.fixes = l.fixes
                     if len(line.src) > len(l.src):
-                        grew.append(True)  # a half sentence joined: new words, not a retranslation
+                        grew.append(True)
                     s.lines[i] = line
                     return
         self._mutate(sid, change)
         if grew:
             self._words(sid)
 
-    # 改正听错的词 (SessionStore.swift)
-
     def set_fixes(self, sid: str, line_id: str, fixes: list) -> None:
-        """A line's fixes: what the AI service proposed and the user decided. None when empty."""
         with self._gate:
             s = self._sessions.get(sid)
             l = next((x for x in s.lines if x.id == line_id), None) if s else None
@@ -153,15 +133,12 @@ class SessionStore:
         self._mutate(sid, lambda s: [setattr(x, "fixes", [f.copy() for f in fixes] or None) for x in s.lines if x.id == line_id])
 
     def line(self, sid: str, line_id: str):
-        """A copy of one line, or None."""
         with self._gate:
             s = self._sessions.get(sid)
             l = next((x for x in s.lines if x.id == line_id), None) if s else None
             return l.copy() if l else None
 
     def line_heard(self, text: str):
-        """The line a reply was for, by its text as heard: (meeting id, a copy of the line), the newest
-        such line in the live meeting. Older meetings never: "好的。" is in all of them."""
         with self._gate:
             s = self._sessions.get(self.live) if self.live else None
             if s is None:
@@ -169,10 +146,7 @@ class SessionStore:
             l = next((x for x in reversed(s.lines) if x.src == text), None)
             return (s.id, l.copy()) if l else None
 
-    # Voices (说话人识别, SessionStore.swift)
-
     def set_line_voices(self, sid: str, ids: set, voice: int) -> None:
-        """The user says a line (or a paragraph of them) was someone else's: those lines take that voice."""
         def change(s):
             for l in s.lines:
                 if l.id in ids and l.speaker == "them":
@@ -180,7 +154,6 @@ class SessionStore:
         self._mutate(sid, change)
 
     def voice_snapshot(self, sid: str):
-        """Who said what, taken before a speaker edit so 撤销 can put it back."""
         with self._gate:
             s = self._sessions.get(sid)
             if s is None:
@@ -193,13 +166,12 @@ class SessionStore:
 
         def change(s):
             for l in s.lines:
-                if l.id in voices:  # lines heard since keep the voice they were given
+                if l.id in voices:
                     l.voice = voices[l.id]
             s.voiceNames, s.voiceGuesses = vnames, guesses
         self._mutate(sid, change)
 
     def set_voice_name(self, sid: str, voice: int, name) -> None:
-        """The user names a voice. None drops their name (Ling's guess shows again); "" keeps 说话人 N."""
         def change(s):
             vn = dict(s.voiceNames or {})
             if name is None:
@@ -210,8 +182,6 @@ class SessionStore:
         self._mutate(sid, change)
 
     def set_voice_guesses(self, sid: str, guesses: dict, refuted: dict | None = None) -> None:
-        """Ling's latest guesses; earlier ones stay for voices it no longer mentions, unless it now named
-        them without evidence (refuted, voice → name): then that earlier name goes too."""
         refuted = refuted or {}
         if not guesses and not refuted:
             return
@@ -227,7 +197,6 @@ class SessionStore:
         self._mutate(sid, change)
 
     def merge_voice(self, sid: str, frm: int, into: int) -> None:
-        """The user said two voices are the same person: `frm`'s lines become `into`'s."""
         if frm == into:
             return
 
@@ -238,7 +207,6 @@ class SessionStore:
             if s.voiceNames is not None and str(frm) in s.voiceNames:
                 vn = dict(s.voiceNames)
                 moved = vn.pop(str(frm))
-                # A turned-down guess ("") stays with the voice it was about; a real name moves over.
                 if str(into) not in vn and moved:
                     vn[str(into)] = moved
                 s.voiceNames = vn or None
@@ -251,7 +219,6 @@ class SessionStore:
         self._mutate(sid, change)
 
     def mark_room(self, sid: str) -> None:
-        """The meeting is (now) heard in the room: its record says 会议室 (the Mac's markLiveInRoom)."""
         with self._gate:
             s = self._sessions.get(sid)
             if s is None or s.room:
@@ -262,8 +229,6 @@ class SessionStore:
         self._mutate(sid, lambda s: setattr(s, "notes", notes))
 
     def rename(self, sid: str, title: str) -> None:
-        """As on the Mac: the shown title unchanged is no rename (the notes may still name it later),
-        and an empty one goes back to the automatic title (恢复自动标题)."""
         t = title.strip()
         with self._gate:
             s = self._sessions.get(sid)
@@ -278,8 +243,6 @@ class SessionStore:
         self._mutate(sid, change)
 
     def end(self, sid: str, ended_at=None) -> None:
-        """The meeting ended (at `ended_at` when it ended by itself a while ago): kept if anything was
-        said, removed otherwise."""
         with self._gate:
             s = self._sessions.get(sid)
             if self.live == sid:
@@ -288,7 +251,6 @@ class SessionStore:
                 return
             s.endedAt = max(ended_at, s.startedAt) if ended_at is not None else now()
             empty = not s.lines
-            # The recording is rewrapped into system.m4a afterwards: either file means it has one.
             path = self.audio_path(sid)
             s.hasAudio = os.path.isfile(path) or (os.path.isfile(aac.partial(path)) and os.path.getsize(aac.partial(path)) > 0)
         if empty:
@@ -299,7 +261,6 @@ class SessionStore:
             self._fire(sid)
 
     def delete(self, sid: str) -> None:
-        """Never the live meeting (`live` is its id): listening would go on into a record that's gone."""
         with self._gate:
             if sid == self.live:
                 Log.d("store: not deleting the live meeting %s" % sid)
@@ -310,7 +271,6 @@ class SessionStore:
         self._fire(sid)
 
     def import_session(self, s: Session) -> None:
-        """A record from elsewhere (a Mac's session.json): added as it is, saved now."""
         with self._gate:
             self._sessions[s.id] = s
         self._mark_dirty(s.id)
@@ -336,7 +296,6 @@ class SessionStore:
             self._timer.start()
 
     def flush(self) -> None:
-        """Writes every changed record now."""
         with self._gate:
             writes = [(sid, self._sessions[sid].write()) for sid in self._dirty if sid in self._sessions]
             self._dirty.clear()
@@ -356,14 +315,11 @@ class SessionStore:
 
 
 def default_title(at: datetime) -> str:
-    """The stored default title is always Chinese ("会议 11月1日 14:30"), as on the Mac; the UI shows
-    display_title instead."""
     l = at.astimezone()
     return "会议 %d月%d日 %02d:%02d" % (l.month, l.day, l.hour, l.minute)
 
 
 def _local_date(at: datetime, pattern: str) -> str:
-    """The Mac's date patterns the strings tables carry ("M月d日 HH:mm", "MMM d", "yyyy年M月d日")."""
     l = at.astimezone()
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     out = []
@@ -396,14 +352,11 @@ def _local_date(at: datetime, pattern: str) -> str:
 
 
 def display_title(s: Session) -> str:
-    """The user's own title, else the date and the name the notes gave the meeting, else the default
-    title in the UI language (Session.displayTitle)."""
     renamed = s.renamed if s.renamed is not None else not s.title.startswith("会议 ")
     if renamed:
         return s.title
     name = s.notes.title if s.notes else None
     if not name:
-        # An imported file is known by its name until the notes give it one.
         if s.sourceFile:
             return os.path.splitext(s.sourceFile)[0]
         return strings.L("会议") + " " + _local_date(s.startedAt, strings.L("M月d日 HH:mm"))
@@ -411,19 +364,16 @@ def display_title(s: Session) -> str:
     return _local_date(s.startedAt, strings.L("M月d日" if this_year else "yyyy年M月d日")) + " " + name
 
 
-# The Mac's dateText(_, "yMMMdHHmm"), as its DateFormatter writes it in each UI language.
 _DATE_TIME = {"zh-Hans": "y年M月d日 HH:mm", "en": "MMM d, y 'at' HH:mm", "ja": "y年M月d日 H:mm", "ko": "y년 M월 d일 HH:mm"}
 
 
 def header(s: Session) -> str:
-    """"2026年11月4日 12:30 · 24 分钟" (TranscriptExport.header)."""
     mins = int(s.duration // 60)
     when = _local_date(s.startedAt, _DATE_TIME.get(strings.language, _DATE_TIME["zh-Hans"]))
     return when + " · " + (strings.L("不到 1 分钟") if mins < 1 else strings.LF("%lld 分钟", mins))
 
 
 def notes_markdown(n) -> str:
-    """The notes as Markdown, empty when there are none (TranscriptExport.notesMarkdown)."""
     L = strings.L
     if n is None or n.is_empty:
         return ""
@@ -449,12 +399,9 @@ def notes_markdown(n) -> str:
 
 
 def markdown(s: Session, voices: bool = False) -> str:
-    """The record as Markdown, the Mac's export line for line (TranscriptExport.markdown): title, date
-    · length, the notes, then each line as **[mm:ss] who** with the translation quoted under it."""
     nums = speakers.numbers(s.lines) if voices else {}
     shown = speakers.names(s) if nums else {}
     out = ["# %s\n\n%s\n\n" % (display_title(s), header(s))]
-    # Names given since Ling wrote "说话人 6" show in the notes too, as in the window.
     notes = notes_markdown(speakers.named(s.notes, shown))
     if notes:
         out.append(notes + "## %s\n\n" % strings.L("文字记录"))

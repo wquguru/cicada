@@ -1,6 +1,3 @@
-"""The AI service's check, step by step (AICheckView.swift): the settings and the onboarding show the
-same list. Every step that ran shows its result; the one that failed says why in one line and
-offers the one thing that fixes it. Also the words the tray, the checklist and 开始听 use."""
 from __future__ import annotations
 
 from gi.repository import Gtk
@@ -17,7 +14,6 @@ ICONS = {aicheck.OK: ("object-select-symbolic", "ok"), aicheck.FAIL: ("window-cl
 
 
 def recommended(app, kind: str) -> str | None:
-    """The service's first recommended text or hear model, when it isn't the one in use."""
     c = app.ling.config()
     models = c.provider.text_models if kind == "text" else c.provider.hear_models
     current = c.text_model if kind == "text" else c.hear_model
@@ -30,7 +26,6 @@ def top_up_url(provider) -> str:
 
 
 def actions(app, change_key, recheck_in_step: bool = True) -> list:
-    """(title, run) for the failed step: one primary fix, at most one other."""
     from .settings_window import open_uri
     ling = app.ling
     f = ling.check_result.failure
@@ -40,7 +35,6 @@ def actions(app, change_key, recheck_in_step: bool = True) -> list:
     reason = f[1]
     recheck = [(L("重新检查"), app.recheck)] if recheck_in_step else []
     if reason == aicheck.UNREACHABLE:
-        # A proxy has nothing to do with a server on this computer or the local network.
         if is_nearby(ling.service_host):
             return recheck
         return [(L("怎么设置代理"), lambda: open_uri(aicheck.help_url(strings.language)))] + recheck
@@ -63,8 +57,6 @@ def actions(app, change_key, recheck_in_step: bool = True) -> list:
 
 
 def steps_widget(app, change_key, recheck_in_step: bool = True, width_chars: int = 46) -> Gtk.Widget:
-    """The step list: a disc, the step's name and seconds; under the failed one, why, the proxy hint
-    and its buttons (the first dark)."""
     ling = app.ling
     r = ling.check_result
     c = ling.config()
@@ -117,13 +109,10 @@ def steps_widget(app, change_key, recheck_in_step: bool = True, width_chars: int
 
 
 def show_steps(r) -> bool:
-    """The list shows while something is wrong or being checked; all passed folds into one line."""
     return r.running or r.failure is not None or r.busy or (r.at is not None and not r.passed)
 
 
 def passed_line(app) -> str | None:
-    """All passed, in one line: "文字 1.8 秒 · 听 2.1 秒", or "12 分钟前开会时用过" when the newest
-    evidence came from a meeting."""
     r = app.ling.check_result
     if not r.passed or r.busy:
         return None
@@ -139,8 +128,6 @@ def passed_line(app) -> str | None:
 
 
 def strip_words(app):
-    """(title, detail) for the tray's first item and the checklist: only failures the user must fix
-    (AIServiceStrip.swift). On Linux the service hears too, so nothing goes on without it."""
     ling = app.ling
     r = ling.check_result
     if not ling.has_key or not r.needs_user:
@@ -157,8 +144,6 @@ def strip_words(app):
 
 
 def blocking(app) -> str | None:
-    """What stops Cicada until the user changes something (AIServiceStrip.blocking): the tray's dot
-    and the notification. Not the network, a busy service or one that errs."""
     from ..core import problem
     ling = app.ling
     if not ling.has_key:
@@ -168,15 +153,11 @@ def blocking(app) -> str | None:
 
 
 def blocking_detail(app) -> str:
-    """The line under blocking(): why, unless that only says the title again (余额不足, 听不了声音,
-    找不到模型), then where it's fixed."""
     why = app.ling.message() or ""
     return why if why and why != blocking(app) else L("在 设置 › AI 服务 里换一个")
 
 
 def key_hint(app, key: str):
-    """A pasted key that belongs elsewhere: (what it is, the service it fits or None), else None.
-    A management key can't call models; another service's key goes there with one click."""
     owner = aicheck.owner(key)
     if owner is None:
         return None

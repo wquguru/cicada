@@ -1,6 +1,3 @@
-"""AI 服务检查 (AICheckTests.swift, plus the ports' 听对方 step): which step a failure stops at and
-why, what passes, key prefixes, OpenRouter's balance, the models a service lists, the proxy hint,
-and whole checks against a fake service, including results from real requests."""
 from __future__ import annotations
 
 import os
@@ -40,7 +37,6 @@ class Rules(unittest.TestCase):
         self.assertEqual(("text", "noModel", 404), c(LingError(LingError.HTTP, 404), "text"))
         self.assertEqual(("key", "serverError", 400), c(LingError(LingError.HTTP, 400), "key"))
         self.assertEqual(("text", "serverError", 503), c(LingError(LingError.HTTP, 503), "text"))
-        # The hear model: what says "this model takes no audio".
         for code in (400, 404, 415, 422):
             self.assertEqual(("hear", "deaf", code), c(LingError(LingError.HTTP, code), "hear", True))
         self.assertEqual(("hear", "serverError", 500), c(LingError(LingError.HTTP, 500), "hear", True))
@@ -52,7 +48,6 @@ class Rules(unittest.TestCase):
         r.fail("key", "invalidKey")
         self.assertEqual(["ok", "fail", "skipped", "skipped"], kinds(r))
         self.assertEqual(("key", "invalidKey", None), r.failure)
-        # Nothing sent (a management key): the steps before it are not claimed.
         r = AICheck()
         r.fail("key", "mgmtKey", reached=False)
         self.assertEqual(["untested", "fail", "skipped", "skipped"], kinds(r))
@@ -80,7 +75,7 @@ class Rules(unittest.TestCase):
         self.assertFalse(r.needs_user)
         r.fail("hear", "deaf", 400)
         self.assertTrue(r.needs_user)
-        self.assertFalse(r.down)  # notes and translation still work
+        self.assertFalse(r.down)
 
     def test_not_passed_until_a_result(self):
         r = AICheck()
@@ -113,10 +108,8 @@ class Rules(unittest.TestCase):
         every, hear = aicheck.listed(jsonfmt.write(MODELS))
         self.assertIn("x/text-only", every)
         self.assertEqual({"qwen/qwen3.8-omni-flash"}, hear)
-        # OpenRouter keeps them under `architecture`.
         _, hear = aicheck.listed({"data": [{"id": "a", "architecture": {"input_modalities": ["audio", "text"]}}]})
         self.assertEqual({"a"}, hear)
-        # Nothing about modalities: can't tell who hears.
         every, hear = aicheck.listed({"data": [{"id": "a"}]})
         self.assertEqual({"a"}, every)
         self.assertIsNone(hear)
@@ -155,21 +148,16 @@ class Rules(unittest.TestCase):
 
 class ProxyHint(unittest.TestCase):
     def test_cases(self):
-        # More in test_proxy.py.
         nothing = lambda: ""  # noqa: E731
         up, down = (lambda h, p: True), (lambda h, p: False)  # noqa: E731
         gnome = ("org.gnome.system.proxy mode '%s'\norg.gnome.system.proxy.https host '10.0.2.2'\n"
                  "org.gnome.system.proxy.https port 7890\n")
         self.assertEqual(("system",), proxy.hint({"https_proxy": "http://10.0.2.2:7890"}, nothing, lambda p: False, up))
-        # GNOME's manual proxy: requests go through it now, so "a proxy is on" is true when it answers.
         self.assertEqual(("system",), proxy.hint({}, lambda: gnome % "manual", lambda p: False, up))
-        # One that doesn't answer isn't "a proxy is on, try another server".
         self.assertEqual(("dead", "10.0.2.2:7890"), proxy.hint({}, lambda: gnome % "manual", lambda p: True, down))
-        # Automatic (PAC) isn't used: requests go direct, so it isn't "a proxy is on" either.
         self.assertEqual(("pac",), proxy.hint({}, lambda: gnome % "auto", lambda p: False, up))
         self.assertEqual(("app", 7897), proxy.hint({}, lambda: gnome % "none", lambda p: p == 7897, up))
         self.assertEqual(("none",), proxy.hint({"https_proxy": " "}, nothing, lambda p: False, up))
-        # all_proxy, which urllib ignored, counts now that requests go through it.
         self.assertEqual(("dead", "127.0.0.1:1"), proxy.hint({"all_proxy": "socks5://127.0.0.1:1"}, nothing, lambda p: False, down))
 
     def test_words(self):
@@ -183,7 +171,7 @@ class ProxyHint(unittest.TestCase):
             r.proxy = hint
             self.assertEqual(words, r.proxy_line("ZenMux", "zenmux.ai"))
         r.fail("key", "invalidKey")
-        self.assertIsNone(r.proxy_line("ZenMux", "zenmux.ai"))  # only after "can't reach"
+        self.assertIsNone(r.proxy_line("ZenMux", "zenmux.ai"))
 
     def test_help_url(self):
         self.assertEqual("https://cicada.indaloop.app/start/#proxy", aicheck.help_url("zh-Hans"))
@@ -191,7 +179,6 @@ class ProxyHint(unittest.TestCase):
 
 
 def service(text=200, hear=200, models=MODELS, json_ok=True, key_info=None, credits=None):
-    """A fake service: the text model's status, the hear model's, its `/models`."""
     def respond(url, body):
         if url.endswith("/models"):
             return Response(200, jsonfmt.write(models)) if models is not None else Response(404, "")
@@ -235,23 +222,19 @@ class Checks(Base):
         self.assertEqual(("text", "noModel", 404), ling.check_result.failure)
         self.assertEqual(["ok", "ok", "fail", "skipped"], kinds(ling.check_result))
         self.assertTrue(ling.usable)
-        # One the service answers but doesn't list (an alias, a name typed by hand): a real request
-        # just went through, so it exists whatever the list says (Ling.swift › check, 2026-11).
         ling, _ = self.client(service(), aiModels={"zenmux": "old/model"})
         self.assertEqual(OK, ling.check())
         self.assertIsNone(ling.check_result.failure)
 
     def test_a_deaf_hear_model(self):
         ling, _ = self.client(service(hear=400), aiHearModels={"zenmux": "x/text-only"})
-        self.assertEqual(OK, ling.check())  # notes and translation still work
+        self.assertEqual(OK, ling.check())
         self.assertEqual(("hear", "deaf", 400), ling.check_result.failure)
         self.assertFalse(ling.hears)
         self.assertFalse(ling.can_hear)
-        # It takes the request, but the service doesn't list it as taking audio.
         ling, _ = self.client(service(), aiHearModels={"zenmux": "x/text-only"})
         ling.check()
         self.assertEqual(("hear", "deaf", None), ling.check_result.failure)
-        # A service that says nothing about modalities can't make it deaf.
         ling, _ = self.client(service(models={"data": [{"id": "inclusionai/ling-3.0-flash"}]}))
         ling.check()
         self.assertIsNone(ling.check_result.failure)
@@ -326,7 +309,6 @@ class Checks(Base):
             ling.chat("c", "i", TRANSLATE)
         self.assertEqual(("key", "invalidKey", None), ling.check_result.failure)
         self.assertTrue(ling.check_result.passive)
-        # A server error in a meeting changes nothing.
         status["text"] = 200
         ling.key_state = OK
         ling.chat("c", "i", TRANSLATE)
@@ -335,7 +317,6 @@ class Checks(Base):
         with self.assertRaises(LingError):
             ling.chat("c", "i", TRANSLATE)
         self.assertIsNone(ling.check_result.failure)
-        # The hear model refusing audio in a meeting: deaf, the text model keeps its ok.
         status["text"] = 415
         with self.assertRaises(LingError):
             ling.chat("c", "i", TRANSLATE, audio=silence_wav())
@@ -353,7 +334,7 @@ class Checks(Base):
         ling, s = self.client(service())
         seq = ling._check_seq
         r = aicheck.simulated("invalidKey")
-        ling.key_changed()  # the settings changed while that check ran
+        ling.key_changed()
         ling._finish_check(r, ling.config(), seq)
         self.assertIsNone(ling.check_result.failure)
 

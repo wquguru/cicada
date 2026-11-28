@@ -1,7 +1,3 @@
-"""其他（兼容 OpenAI）for self-hosted models (AIProviderTests.swift): plain http on the local network,
-thinking turned off through the chat template (and left out for a server that refuses it), the
-check's real sentence and what it says about a thinking model, and the hear model at an address of
-its own."""
 from __future__ import annotations
 
 import os
@@ -81,7 +77,6 @@ class Shape(unittest.TestCase):
             return root
         self.assertFalse(providers.thought(r({"content": "周五发布。"})))
         self.assertTrue(providers.thought(r({"content": "周五发布。", "reasoning_content": "The user wants…"})))
-        # A reasoning parser on the server: the answer itself sits in reasoning_content.
         self.assertTrue(providers.thought(r({"content": "", "reasoning_content": "周五发布。"})))
         self.assertTrue(providers.thought(r({"content": "周五发布。", "reasoning": "hmm"})))
         self.assertTrue(providers.thought(r({"content": "<think>hmm</think>周五发布。"})))
@@ -102,7 +97,6 @@ class Shape(unittest.TestCase):
         self.assertIn("4.2", r.slow_line())
         self.assertIn("思考", r.slow_line())
         self.assertIn("Google", r.slow_line())
-        # 语音和文字只发给你的服务: no Google to fall back on, the sentence is given up on.
         self.assertNotIn("Google", r.slow_line(google_off=True))
         self.assertIn("不等它了", r.slow_line(google_off=True))
         self.assertIn("思考", r.slow_line(google_off=True))
@@ -113,7 +107,6 @@ class Shape(unittest.TestCase):
         r.translate = aicheck.Speed(0.5, False)
         self.assertIsNone(r.slow_line())
         self.assertIn("translate=0.5s", r.summary())
-        # The hear model is a job of its own: not filled in yet, it doesn't hide a thinking text model.
         r = aicheck.AICheck()
         r.pass_up_to("text", 4.2)
         r.translate = aicheck.Speed(4.2, True)
@@ -143,15 +136,12 @@ class TemplateKwargs(Base):
         self.assertEqual(2, len(fake.sent))
         self.assertIn("chat_template_kwargs", fake.sent[0][1])
         self.assertNotIn("chat_template_kwargs", fake.sent[1][1])
-        # Not sent there again…
         ling.chat("x", "Translate.", TRANSLATE)
         self.assertEqual(3, len(fake.sent))
         self.assertNotIn("chat_template_kwargs", fake.sent[2][1])
-        # …until settings change.
         ling.key_changed()
         ling.chat("x", "Translate.", TRANSLATE)
         self.assertIn("chat_template_kwargs", fake.sent[3][1])
-        # A refused request never showed as a missing model.
         self.assertIsNone(ling.check_result.failure)
 
     def test_a_400_both_ways_is_not_the_field(self):
@@ -163,11 +153,9 @@ class TemplateKwargs(Base):
         self.assertEqual(2, len(fake.sent))
         fake.respond = lambda u, b: answer()
         ling.chat("x", "Translate.", TRANSLATE)
-        self.assertIn("chat_template_kwargs", fake.sent[-1][1])  # nothing remembered
+        self.assertIn("chat_template_kwargs", fake.sent[-1][1])
 
     def test_a_refusal_for_something_else_keeps_thinking_off(self):
-        # No JSON mode on this server (OpenRouter's Novita for Ling 3.1 Flash): 400 with or without
-        # the kwargs. Asked again without JSON mode.
         fake = Fake(lambda u, b: Response(400, "{}") if "response_format" in b else answer("好"))
         ling, _ = self.client(fake, "custom", key=None, **custom())
         self.assertEqual("好", ling.chat("x", "Notes.", TRANSLATE, json=True))
@@ -222,7 +210,6 @@ class Check(Base):
         ling, _ = self.client(Fake(respond), "custom", key=None, **custom())
         ling.check()
         self.assertIsNone(ling.check_result.failure)
-        # One that can't answer JSON at all still fails.
         fake = Fake(lambda u, b: Response(404, "") if u.endswith("/models") else Response(400, "{}") if "response_format" in b else answer())
         ling, _ = self.client(fake, "custom", key=None, **custom())
         ling.check()
@@ -252,7 +239,6 @@ class HearAddress(Base):
         self.assertEqual("http://192.168.1.30:8001/v1/", c.hear_url)
         self.assertEqual("http://192.168.1.20:8000/v1/", c.base)
         self.assertTrue(c.own_hear_address)
-        # Typed but not valid: nowhere to send audio (not the text address).
         c = AppSettings(aiProvider="custom", **custom(aiCustomHearBase="http://gpu.example.com/v1")).ai_config()
         self.assertIsNone(c.hear_url)
         z = AppSettings(aiProvider="zenmux", aiCustomHearBase="http://192.168.1.30/v1").ai_config()
@@ -296,8 +282,6 @@ class HearAddress(Base):
 
 
 class AuthFake(Fake):
-    """Fake, also keeping the key each request carried (`auth`, in order)."""
-
     def __init__(self, respond):
         super().__init__(respond)
         self.auth = []
@@ -311,8 +295,6 @@ MAIN, NOTES_AT = "https://main.example/v1/", "https://notes.example/v1/"
 
 
 class NotesApart(Base):
-    """Notes on their own model, or another server with its own key (LingTests.swift › Notes apart)."""
-
     def notes_client(self, fake, own: bool, **kw):
         kw.setdefault("aiCustomNotesBase", NOTES_AT if own else "")
         s = dict(aiCustomBase=MAIN, aiModels={"custom": "mt", "custom.notes": "big"}, aiHearModels={"custom": "omni"},
@@ -328,11 +310,9 @@ class NotesApart(Base):
         self.assertEqual(["big", "mt"], [jsonfmt.parse_object(b)["model"] for _u, b in fake.sent])
         self.assertEqual([NOTES_AT + "chat/completions", MAIN + "chat/completions"], [u for u, _b in fake.sent])
         self.assertEqual(["Bearer sk-notes-222222222", "Bearer sk-main-1111111111"], fake.auth)
-        # Its own key file, named as on the Mac, 0600.
         path = os.path.join(Paths.config(), "ai-key-custom-notes")
         self.assertEqual(path, ling.notes_key_file.path)
         self.assertEqual(0o600, os.stat(path).st_mode & 0o777)
-        # Hearing is never notes: it stays at the hear address with the translation key.
         ling.chat("z", "Hear.", NOTES, model="omni", audio=silence_wav())
         self.assertEqual(MAIN + "chat/completions", fake.sent[-1][0])
         self.assertEqual("Bearer sk-main-1111111111", fake.auth[-1])
@@ -344,7 +324,6 @@ class NotesApart(Base):
         ling.chat("x", "Notes.", NOTES)
         self.assertEqual("Bearer sk-main-1111111111", fake.auth[-1])
         self.assertTrue(fake.sent[-1][0].startswith(NOTES_AT))
-        # The same service, another model: same address and key, even with a notes key on file.
         same, _ = self.notes_client(fake, own=False)
         same.notes_key_file.save("sk-notes-222222222")
         self.assertFalse(same.notes_has_own_key)
@@ -361,7 +340,6 @@ class NotesApart(Base):
         self.assertEqual(LingError.INVALID_KEY, e.exception.kind)
         self.assertNotEqual(INVALID, ling.key_state)
         self.assertEqual("好", ling.chat("y", "Translate.", TRANSLATE))
-        # The real request told the notes, and only them: the next notes call doesn't go out.
         r = ling.check_result
         self.assertEqual(aicheck.INVALID_KEY, r.notes.reason)
         self.assertIsNone(r.failure)
@@ -369,7 +347,6 @@ class NotesApart(Base):
         with self.assertRaises(LingError):
             ling.chat("x", "Notes.", NOTES)
         self.assertEqual(sent, len(fake.sent))
-        # A refused translation key still stops translation.
         fake.respond = lambda u, b: Response(401, "{}")
         with self.assertRaises(LingError):
             ling.chat("y", "Translate.", TRANSLATE)
@@ -382,25 +359,21 @@ class NotesApart(Base):
         model = providers.AIConfig(providers.CUSTOM, MAIN, "mt", "h", notes_model="big")
         self.assertTrue(model.notes_apart)
         self.assertEqual(("big", MAIN), (model.for_notes.text_model, model.for_notes.base))
-        # Only the custom service splits.
         ling = providers.AIConfig(providers.LING, providers.LING.base, "x", "h", notes_model="big")
         self.assertFalse(ling.notes_apart)
         self.assertEqual("x", ling.for_notes.text_model)
-        # From the settings: the translation model or address chosen again is no split.
         c = AppSettings(aiProvider="custom", aiCustomBase=MAIN, aiModels={"custom": "mt", "custom.notes": " mt "}).ai_config()
         self.assertFalse(c.notes_apart)
         c = AppSettings(aiProvider="custom", aiCustomBase=MAIN, aiModels={"custom": "mt"}, aiCustomNotesOwn=True,
                         aiCustomNotesBase="main.example/v1").ai_config()
         self.assertIsNone(c.notes_base)
-        self.assertTrue(c.notes_apart)  # 另一个服务 alone: its own key may differ
-        # 同一个服务 keeps the address typed, unused.
+        self.assertTrue(c.notes_apart)
         s = AppSettings(aiProvider="custom", aiCustomBase=MAIN, aiModels={"custom": "mt"}, aiCustomNotesOwn=False,
                         aiCustomNotesBase=NOTES_AT)
         self.assertFalse(s.ai_config().notes_apart)
         self.assertEqual(NOTES_AT, s.aiCustomNotesBase)
         s.aiCustomNotesOwn = True
         self.assertEqual(NOTES_AT, s.ai_config().for_notes.base)
-        # http to the internet can't be used.
         s.aiCustomNotesBase = "http://notes.example/v1"
         c = s.ai_config()
         self.assertTrue(c.notes_bad_address)
@@ -418,9 +391,7 @@ class NotesApart(Base):
     def test_a_429_at_the_notes_server_does_not_hold_translation(self):
         ling, _ = self.notes_client(AuthFake(lambda u, b: answer()), own=True)
         ling._rate_limited(10.0, None, base=NOTES_AT)
-        # Translation (no retries: it fails at once while its server cools down) goes on…
         self.assertEqual("周五发布。", ling.chat("y", "Translate.", TRANSLATE))
-        # …while the notes' server waits.
         with self.assertRaises(LingError) as e:
             ling._acquire(TRANSLATE, fail_if_paused=True, base=NOTES_AT)
         self.assertEqual(LingError.RATE_LIMITED, e.exception.kind)
@@ -443,13 +414,11 @@ class NotesApart(Base):
         self.assertEqual(aicheck.FAIL, r.notes.kind)
         self.assertTrue(r.notes_failed)
         self.assertIn("notes=fail(invalidKey)", r.summary())
-        # Translation's JSON probe isn't asked: notes are tested where they go.
         main_json = [b for u, b in fake.sent if u.startswith(MAIN) and "json_object" in b]
         self.assertEqual([], main_json)
         self.assertIn("不认上面的 key", r.notes_line("notes.example", "big", shared_key=True))
         self.assertIn("key 无效", r.notes_line("notes.example", "big", shared_key=False))
         self.assertEqual(["big", "bigger"], ling.notes_catalog)
-        # Their own key, which works.
         fake.respond = lambda u, b: (Response(404, "") if u.endswith("/models") else
                                      answer('{"ok": true}' if "JSON object" in b else "周五发布。"))
         ling.notes_key_file.save("sk-notes-222222222")
@@ -470,13 +439,11 @@ class NotesApart(Base):
 
 
 class StubLing:
-    """The service, for the translator alone: answers each sentence, or fails."""
-
     def __init__(self, answer=None):
         self.usable = True
-        self.answer = answer  # None: the service can't be reached
+        self.answer = answer
         self.asked = []
-        self.check_result = aicheck.AICheck()  # not checked yet: every sentence is tried
+        self.check_result = aicheck.AICheck()
 
     def chat(self, prompt, user, priority, **kw):
         self.asked.append(prompt)
@@ -489,8 +456,6 @@ GOOGLE = Response(200, '[[["周五发布。","We ship on Friday",null,null,1]]]'
 
 
 class GoogleOff(unittest.TestCase):
-    """语音和文字只发给你的服务 (issue #15, TranslatorTests.swift › GoogleOffTests): Google is never asked."""
-
     def translator(self, ling, google=GOOGLE):
         from cicada.core.translator import Translator
         fake = Fake(lambda u, b: google)
@@ -504,7 +469,7 @@ class GoogleOff(unittest.TestCase):
         for _ in range(3):
             self.assertIsNone(t.translate("We ship on Friday", "en", "zh-CN", Translator.DRAFT))
         self.assertEqual([], fake.sent)
-        self.assertEqual([], ling.asked)  # partial text never goes to the AI service either
+        self.assertEqual([], ling.asked)
         self.assertFalse(t.sentences_untranslated)
 
     def test_finished_sentences_go_to_the_service_only(self):
@@ -544,7 +509,7 @@ class GoogleOff(unittest.TestCase):
         s = AppSettings(aiProvider="custom", aiCustomOnly=True, **custom())
         self.assertTrue(s.google_off)
         s.aiProvider = "ling"
-        self.assertFalse(s.google_off)  # kept, but inert
+        self.assertFalse(s.google_off)
         self.assertTrue(s.aiCustomOnly)
         self.assertFalse(AppSettings(aiProvider="custom", **custom()).google_off)
 

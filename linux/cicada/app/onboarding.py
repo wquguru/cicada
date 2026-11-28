@@ -1,8 +1,3 @@
-"""First run, the Mac's four steps (Onboarding.swift, canvas 知了 Linux · 补齐 Mac): the logo and a
-labelled progress bar, a large left-aligned title, white cards, the next action bottom right; then a
-closing page outside the count. One difference in order: Linux recognises speech with Ming, so nothing
-works without the Ling key, and 接 Ling comes first (the Mac puts it third). So: Ling key → system audio
-(no permission on Linux) → sample meeting → 同声传译, if wanted → where Cicada lives."""
 from __future__ import annotations
 
 import os
@@ -29,8 +24,6 @@ class Onboarding(Gtk.Window):
     def __init__(self, app, step: int | None = None):
         super().__init__(title=L("知了"))
         self.app = app
-        # Fixed at the Mac's 860 x 640. Not set_resizable(False): GTK then sizes the window to its
-        # content's natural width, so wrapped (English) text would widen it instead of wrapping.
         geometry = Gdk.Geometry()
         geometry.min_width = geometry.max_width = 860
         geometry.min_height = geometry.max_height = 640
@@ -43,8 +36,6 @@ class Onboarding(Gtk.Window):
         self.set_titlebar(bar)
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         ui.pad(outer, 6, 64, 36, 64)
-        # The page's real width as its minimum: GTK 3 sizes a window for its content at the content's
-        # minimum width, where every wrapped line wraps most, so the fixed 640 would be outgrown.
         outer.set_size_request(860 - 128, -1)
         self.head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
         outer.pack_start(self.head, False, False, 0)
@@ -58,13 +49,13 @@ class Onboarding(Gtk.Window):
         self.levels = deque([0.0] * 8, maxlen=8)
         self.peak = 0.0
         self.meter = None
-        self.speak_setup = None  # 同声传译: None until chosen here (then True / False)
+        self.speak_setup = None
         self.connect("destroy", lambda *_: self._stop_tap())
         self.connect("key-press-event", self._key)
         self.step = step if step is not None and (step == KEY or app.ling.has_key) else AUDIO if app.ling.has_key else KEY
-        self.testing = None   # 放一段测试声音: the player while it plays
-        self.tested = False   # a test sound played and nothing was heard
-        self.device = None    # the default output's name, once pactl has said it
+        self.testing = None
+        self.tested = False
+        self.device = None
         self.render()
 
     def _key(self, _w, event) -> bool:
@@ -90,17 +81,13 @@ class Onboarding(Gtk.Window):
         self._header()
         [self._key_step, self._audio_step, self._sample_step, self._speak_step, self._done_step][self.step]()
         self.show_all()
-        self.resize(860, 640)  # back to the fixed size if a step's content asked for more
+        self.resize(860, 640)
 
     def refresh(self) -> None:
-        """Engine changes (the sample being heard, 知了 麦克风 made, the key checked): only the step
-        that shows them."""
         if self.step == SAMPLE:
             GLib.idle_add(lambda: self._fill_sample() and False)
         elif self.step == KEY:
             GLib.idle_add(lambda: self._fill_key_steps() and False)
-
-    # Frame
 
     def _header(self) -> None:
         self.head.pack_start(self.app_logo(34), False, False, 0)
@@ -167,7 +154,7 @@ class Onboarding(Gtk.Window):
 
     def _primary(self, text: str, action, arrow: bool = True, enabled: bool = True) -> Gtk.Button:
         b = ui.button(text, action, "bigbtn" if enabled else "bigbtn waiting", "go-next-symbolic" if arrow else None)
-        if arrow:  # the arrow after the words, as on the Mac
+        if arrow:
             box = b.get_child()
             img = box.get_children()[0]
             box.reorder_child(img, 1)
@@ -181,8 +168,6 @@ class Onboarding(Gtk.Window):
     def _done_mark(self, text: str) -> Gtk.Widget:
         img = ui.icon("object-select-symbolic", 14)
         return ui.hbox(6, img, ui.text(text, 13, "ink", bold=True, wrap=False, ellipsize=False))
-
-    # 1. Ling key
 
     def _key_step(self) -> None:
         if self.app.settings.aiProvider != "ling":
@@ -239,7 +224,6 @@ class Onboarding(Gtk.Window):
         hint = ui.text(L("只存在这台电脑上（只有你的账户能读），只发给 Ling（ant-ling.com）"), 13, "secondary", wrap=False)
         self.footer.pack_start(hint, True, True, 0)
         self.footer.pack_end(self._primary(L("继续"), self._key_next), False, False, 0)
-        # A way out for people who can't use Ling: another service, saying what it lacks.
         self.footer.pack_end(ui.link(L("用不了 Ling？"), lambda: self._switch("openrouter")), False, False, 0)
         GLib.idle_add(lambda: entry.grab_focus() and False)
 
@@ -250,8 +234,6 @@ class Onboarding(Gtk.Window):
         self.render()
 
     def _other_step(self) -> None:
-        """用其他服务 (OnboardingKey.swift › otherEntry): OpenRouter or ZenMux, their key, and what
-        they lack. A custom address is set up in 设置 › AI 服务."""
         from ..core import providers
         p = providers.named(self.app.settings.aiProvider)
         self._title(L("用其他服务"), L("听、纪要和翻译都能用，模型已经选好。"))
@@ -288,17 +270,15 @@ class Onboarding(Gtk.Window):
         GLib.idle_add(lambda: entry.grab_focus() and False)
 
     def _key_extras(self, width: int) -> None:
-        """Under the key field: a pasted key that belongs elsewhere, and the check step by step."""
         self.key_hint = ui.hbox(8)
-        self.key_hint.set_no_show_all(True)  # no gap while empty
-        self.key_status.set_no_show_all(True)  # shown when it has something to say
+        self.key_hint.set_no_show_all(True)
+        self.key_status.set_no_show_all(True)
         self.key_status.set_visible(False)
         self.key_steps = ui.vbox(0)
         self.key_steps_width = width
         self._steps_shown = None
 
     def _fill_key_steps(self) -> None:
-        """Where it broke and the one thing that fixes it, as in the settings; 继续 stays open."""
         from . import aicheck_view
         ling = self.app.ling
         r = ling.check_result
@@ -380,7 +360,6 @@ class Onboarding(Gtk.Window):
         if not text.startswith("sk-"):
             self._key_problem(L("复制 sk- 开头的 key，回来粘贴"))
             return
-        # The prefix says whose key it is (AISettingsView.save does the same): never a silent switch.
         from . import aicheck_view
         hint = aicheck_view.key_hint(self.app, text)
         self._key_hint(hint, text)
@@ -408,8 +387,6 @@ class Onboarding(Gtk.Window):
             GLib.idle_add(done)
         threading.Thread(target=check, daemon=True).start()
 
-    # 2. System audio
-
     def _audio_step(self) -> None:
         self._title(L("让知了听到电脑里的声音"), L("会议里对方说的话从电脑放出来，字幕和纪要都从这里来。不用麦克风，也不用授权。"))
         if self.device is None:
@@ -436,7 +413,7 @@ class Onboarding(Gtk.Window):
         self.heard_row = ui.hbox(6)
         trailing = ui.hbox(12, meter, self.heard_row)
         source = self._row("audio-speakers-symbolic", L("电脑播放的声音"), self._device_line(), trailing)
-        self.device_label = source.get_children()[1].get_children()[1]  # the row's detail line
+        self.device_label = source.get_children()[1].get_children()[1]
         test = ui.button(L("正在播放…") if self.testing else L("放一段测试声音"), self._play_test, "accentbtn midbtn",
                          "media-playback-start-symbolic")
         test.set_sensitive(self.testing is None)
@@ -447,19 +424,17 @@ class Onboarding(Gtk.Window):
         test.set_valign(Gtk.Align.CENTER)
         test_row.pack_end(test, False, False, 0)
         self._card(source, ui.pad(test_row, 16, 22))
-        # The two sounds side by side: people try speaking first, but this step hears the computer.
         sources = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12, homogeneous=True)
         sources.pack_start(self._source(L("对方的声音"), L("这一步"), [L("会议软件"), L("扬声器"), L("知了：字幕和纪要")], True), True, True, 0)
         sources.pack_start(self._source(L("你的声音 · 麦克风"), L("第 4 步再用"), [L("麦克风"), L("同声传译"), L("线上的人听到译文")], False), True, True, 0)
         self.page.pack_start(ui.gap(sources, 12), False, False, 0)
         self.sources = sources
-        sources.set_no_show_all(True)  # _fill_silent decides, not the window's show_all
-        # Played and still nothing: most likely the sound goes to another output (an HDMI screen).
+        sources.set_no_show_all(True)
         self.silent = Gtk.Box()
         self.page.pack_start(ui.gap(self.silent, 12), False, False, 0)
         self._fill_silent()
         self._back()
-        self.audio_hint = Gtk.Box()  # 放一段测试声音 says what the old 音量条没动？ hint said
+        self.audio_hint = Gtk.Box()
         self.footer.pack_start(self.audio_hint, True, True, 0)
         self.audio_next = Gtk.Box()
         self.footer.pack_end(self.audio_next, False, False, 0)
@@ -470,28 +445,23 @@ class Onboarding(Gtk.Window):
         if self.step != AUDIO:
             self.meter = None
             return False
-        for bar, level in zip(self.bars, list(self.levels)):  # the capture thread appends meanwhile
+        for bar, level in zip(self.bars, list(self.levels)):
             v = ui.loudness(level)
             bar.set_size_request(3, max(3, int(v * 18)))
         self._update_heard()
         return True
 
     def _source(self, title: str, badge: str, flow: list, on: bool) -> Gtk.Widget:
-        """One of the two sounds and where it goes, outlined in ink when it is this step's."""
         head = ui.hbox(8, ui.text(title, 14, "ink", bold=True, wrap=False),
                        ui.panel(ui.text(badge, 11, "", bold=on, wrap=False, ellipsize=False), "badge" if on else "srcbadge"))
-        # One wrapping label, each step on a tinted ground (the last in ink when it is this step's):
-        # GTK 3 sizes a FlowBox for its narrowest layout, which would stretch the fixed-size window.
         words = []
         for i, word in enumerate(flow):
             last = on and i == len(flow) - 1
             words.append('<span background="%s" foreground="%s">\u00a0%s\u00a0</span>'
                          % ("#15171C" if last else "#F3F4F6", "#FFFFFF" if last else "#15171C",
-                            GLib.markup_escape_text(word).replace(" ", "\u00a0")))  # breaks only between steps
+                            GLib.markup_escape_text(word).replace(" ", "\u00a0")))
         path = ui.text("", 12, "", width_chars=36)
         path.set_markup('<span size="%d">%s</span>' % (round(12 * 768), '  <span foreground="#5A5F6B">→</span>  '.join(words)))
-        # Whole words only: WORD_CHAR's one-character minimum width makes GTK 3 ask for a window as
-        # tall as the text would be one letter wide.
         path.set_line_wrap_mode(Pango.WrapMode.WORD)
         return ui.panel(ui.pad(ui.vbox(8, head, path), 12, 16, 10, 16), "srccard", "on" if on else "")
 
@@ -499,14 +469,11 @@ class Onboarding(Gtk.Window):
         return LF("%@ · 只听声音，不录屏幕画面", self.device) if self.device else L("只听声音，不录屏幕画面")
 
     def _find_device(self) -> None:
-        """The default output's name ("内置音频 模拟立体声") through pactl, off the main loop; none
-        without pactl (the row then says only what it hears)."""
         name = None
         if shutil.which("pactl"):
             env = dict(os.environ, LC_ALL="C")
             try:
                 sink = subprocess.run(["pactl", "get-default-sink"], capture_output=True, text=True, timeout=3, env=env).stdout.strip()
-                # Descriptions in the desktop's language: pactl translates them under LANG.
                 sinks = subprocess.run(["pactl", "list", "sinks"], capture_output=True, text=True, timeout=3,
                                        env=dict(os.environ, LC_MESSAGES="C")).stdout
                 name = sink_description(sinks, sink)
@@ -521,8 +488,6 @@ class Onboarding(Gtk.Window):
         GLib.idle_add(show)
 
     def _play_test(self) -> None:
-        """放一段测试声音: the sample's first 3 s through the default output, the device Cicada hears:
-        the bars move only if the sound really reaches the monitor."""
         from .main import sample_path
         path = sample_path()
         player = next((p for p in ("pw-play", "paplay", "aplay") if shutil.which(p)), None)
@@ -545,7 +510,7 @@ class Onboarding(Gtk.Window):
         if self.step != AUDIO:
             return False
 
-        def settle():  # the last buffers arrive a moment after the player stops
+        def settle():
             if self.step != AUDIO:
                 return False
             self.tested = self.peak < 0.01
@@ -558,12 +523,11 @@ class Onboarding(Gtk.Window):
         return False
 
     def _fill_silent(self) -> None:
-        """The warning takes the two sounds' place, so the window keeps its fixed size."""
         ui.clear(self.silent)
         if self.tested:
             self.sources.hide()
         else:
-            for child in self.sources.get_children():  # show_all() skips a no_show_all widget
+            for child in self.sources.get_children():
                 child.show_all()
             self.sources.show()
         if not self.tested:
@@ -576,7 +540,6 @@ class Onboarding(Gtk.Window):
         row.pack_start(ui.vbox(2, ui.text(L("测试声音放了，但知了没听到"), 14, "ink", bold=True, wrap=False),
                                ui.text(L("看看声音是不是从别的设备出来（比如 HDMI 显示器），或被静音了。"), 13, "ink", width_chars=50)),
                        True, True, 0)
-        # GNOME's own sound page; other desktops differ, so only there.
         if "GNOME" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper() and shutil.which("gnome-control-center"):
             b = ui.button(L("打开声音设置"), lambda: subprocess.Popen(["gnome-control-center", "sound"]), "outline")
             b.set_valign(Gtk.Align.CENTER)
@@ -602,14 +565,11 @@ class Onboarding(Gtk.Window):
             self.heard_row.pack_start(self._done_mark(L("已收到声音")), False, False, 0)
         else:
             self.heard_row.pack_start(ui.text(L("等声音…"), 13, "secondary", wrap=False), False, False, 0)
-        # 继续 stays grey until sound arrives, as on the Mac, but still works (a quiet machine).
         self.audio_next.pack_start(self._primary(L("继续"), lambda: self.go(SAMPLE), enabled=True), False, False, 0)
         if not heard:
             ui.classes(self.audio_next.get_children()[0], "waiting")
         self.heard_row.show_all()
         self.audio_next.show_all()
-
-    # 3. Sample
 
     def _sample_step(self) -> None:
         self._title(L("放一段会议试试"), L("一段 9 秒的英文会议，字幕会跟着声音实时出来。"))
@@ -686,8 +646,6 @@ class Onboarding(Gtk.Window):
             self.app.setup_step_done("sampleSeen")
         self._fill_sample()
 
-    # 4. 同声传译
-
     def _speak_step(self) -> None:
         app = self.app
         on = self.speak_setup if self.speak_setup is not None else app.settings.speakEnabled
@@ -762,8 +720,6 @@ class Onboarding(Gtk.Window):
         set_gnome_shortcut("speak", self.app.launcher + (" --dev" if Paths.dev else "") + " --speak")
         self.render()
 
-    # Closing
-
     def _done_step(self) -> None:
         tray = self.app.tray is not None
         self._title(L("好了，知了在顶栏") if tray else L("好了，可以开始了"),
@@ -789,7 +745,6 @@ class Onboarding(Gtk.Window):
         self.footer.pack_end(self._primary(L("开始使用"), lambda: self.go(DONE + 1), arrow=False), False, False, 0)
 
     def _top_bar(self) -> Gtk.Widget:
-        """A slice of GNOME's top bar with Cicada's icon ringed: where to look once this window is gone."""
         bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=16)
         bar.set_size_request(-1, 32)
         act = ui.panel(ui.pad(ui.text(L("活动"), 12, "topbar-ink", wrap=False, ellipsize=False), 2, 10), "topbar-pill")
@@ -823,7 +778,7 @@ class Onboarding(Gtk.Window):
         if self.testing is not None:
             player, self.testing = self.testing, None
             player.terminate()
-            threading.Thread(target=player.wait, daemon=True).start()  # reaped, not left a zombie
+            threading.Thread(target=player.wait, daemon=True).start()
 
     def _stop_tap(self) -> None:
         self._stop_test()

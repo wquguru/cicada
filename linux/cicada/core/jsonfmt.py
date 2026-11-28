@@ -1,7 +1,3 @@
-"""JSON written the way the Mac's JSONEncoder writes [.prettyPrinted, .sortedKeys], byte for byte:
-`"key" : value`, two-space indent, `[\n\n  ]` for an empty array, `\\/` for a slash, shortest
-doubles with no ".0". The stdlib's json.dumps can't produce that spacing, so records are written
-here; reading uses json.loads (ints stay ints, so a whole number reads and writes back unchanged)."""
 from __future__ import annotations
 
 import json
@@ -21,7 +17,6 @@ def parse_object(text: str) -> dict | None:
 
 
 def number(d: float) -> str:
-    """Shortest round-trip digits, as Swift prints a Double: "2" not "2.0", no exponent."""
     if d != d or d in (float("inf"), float("-inf")):
         return "0"
     if d == int(d) and abs(d) < 1e15:
@@ -50,7 +45,6 @@ def _emit(out: list[str], v, pretty: bool, depth: int) -> None:
     elif isinstance(v, str):
         _quote(out, v)
     elif isinstance(v, dict):
-        # Sorted like Swift's .sortedKeys; nulls are left out, as Swift leaves out nil optionals.
         items = sorted(((k, x) for k, x in v.items() if x is not None), key=lambda kv: kv[0])
         if not items:
             out.append("{\n\n" + "  " * depth + "}" if pretty else "{}")
@@ -100,8 +94,6 @@ def _quote(out: list[str], s: str) -> None:
             out.append(c)
     out.append('"')
 
-
-# Lenient accessors for decoded JSON.
 
 def obj(v) -> dict | None:
     return v if isinstance(v, dict) else None

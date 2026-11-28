@@ -1,6 +1,3 @@
-"""Unit tests for the engines (no network: LingClient runs against a fake transport). The Windows and
-Android suites' cases, plus byte-for-byte checks of the Mac's JSON format.
-    python3 -m unittest discover -s linux/tests      (scripts/test.sh)"""
 from __future__ import annotations
 
 import math
@@ -105,27 +102,22 @@ MAC = """{
 
 
 def tone(seconds, amp=0.3, syllables=True, wobble=0.0):
-    """A 300 Hz tone that swells and fades four times a second like syllables; steady when not, or
-    rising and falling by `wobble` twice a second like a fan."""
     env = (lambda i: 0.55 + 0.45 * math.sin(2 * math.pi * 4 * i / 16000)) if syllables else \
         (lambda i: 1.0 + wobble * math.sin(2 * math.pi * 0.5 * i / 16000))
     return array("h", (int(math.sin(2 * math.pi * 300 * i / 16000) * env(i) * amp * 32767) for i in range(int(seconds * 16000))))
 
 
 def word(seconds, amp):
-    """One word on its own ("Thanks."): a 300 Hz tone that swells from nothing and fades back."""
     n = int(seconds * 16000)
     return array("h", (int(math.sin(2 * math.pi * 300 * i / 16000) * math.sin(math.pi * i / n) ** 2 * amp * 32767) for i in range(n)))
 
 
 def hz(freq, seconds, amp):
-    """A sine at `freq` that swells and fades four times a second like syllables."""
     return array("h", (int(math.sin(2 * math.pi * freq * i / 16000) * (0.55 + 0.45 * math.sin(2 * math.pi * 4 * i / 16000)) * amp * 32767)
                        for i in range(int(seconds * 16000))))
 
 
 def hiss(seconds, amp):
-    """A 7 kHz tone faded in and out over 0.3 s: crosses zero like a hiss, swells like a word."""
     n = int(seconds * 16000)
     return array("h", (int(math.sin(2 * math.pi * 7000 * i / 16000) * min(1, i / 4800, (n - i) / 4800) * amp * 32767) for i in range(n)))
 
@@ -135,7 +127,6 @@ def silence(seconds):
 
 
 def keys(seconds):
-    """Typing: a key click every 0.2 s, 6 ms of decaying crackle peaking near -12 dBFS (scripts/vad-clips.py)."""
     out = silence(seconds)
     for at in range(1600, len(out) - 96, 3200):
         for k in range(96):
@@ -164,7 +155,7 @@ def cut(*parts):
 class Fake:
     def __init__(self, respond, speech=None):
         self.respond = respond
-        self.speech = speech  # body -> list of SSE lines
+        self.speech = speech
         self.calls = []
         self.spoken = []
         self.lock = threading.Lock()
@@ -192,8 +183,6 @@ def client(fake, clock=None):
 
 
 class FakeClock:
-    """The start gate's time, moved on by each wait instead of waiting (one thread only)."""
-
     def __init__(self):
         self.start = self.t = 1000.0
         self.waits = []
@@ -249,13 +238,11 @@ class Records(Base):
         self.assertEqual(MAC, s.write())
 
     def test_keeps_the_macs_voiceprint_matches(self):
-        # The Mac's voiceprint library (1.10) adds voiceProfiles / voiceSuggestions: kept on save.
         ref = '{\n    "1" : {\n      "id" : "6F9619FF-8B86-D011-B42D-00C04FC964FF",\n      "name" : "Emma",\n      "similarity" : 0.75\n    }\n  }'
         text = MAC[:-2] + ',\n  "voiceProfiles" : ' + ref + ',\n  "voiceSuggestions" : ' + ref + '\n}'
         self.assertEqual(text, Session.read(text).write())
 
     def test_keeps_where_a_line_was_heard(self):
-        # 电脑和会议室 on the Mac: a room line says "via" : "room"; written back unchanged.
         text = MAC.replace('      "t" : 2.5,\n      "voice" : 1\n', '      "t" : 2.5,\n      "via" : "room",\n      "voice" : 1\n')
         self.assertNotEqual(MAC, text)
         s = Session.read(text)
@@ -295,7 +282,6 @@ class Records(Base):
         self.assertTrue(session_store.markdown(store.get(s.id)).startswith("# 我的会\n"))
 
     def test_keeps_room_and_keys_it_does_not_know(self):
-        # A Mac record heard in the room (会议室), plus a key from a newer Mac: written back unchanged.
         o = jsonfmt.parse(MAC)
         o["room"] = True
         o["zFuture"] = {"a": [1, "x"]}
@@ -310,12 +296,10 @@ class Records(Base):
         s = store.begin(datetime(2026, 1, 1, 2, tzinfo=timezone.utc))
         store.set_notes(s.id, MeetingNotes(title="路线评审", summary="x"))
         shown = session_store.display_title(store.get(s.id))
-        # Saving the title as shown is no rename: the notes may still name the meeting later.
         store.rename(s.id, "  " + shown + " ")
         self.assertIsNone(store.get(s.id).renamed)
         store.rename(s.id, "我的会")
         self.assertEqual(("我的会", True), (store.get(s.id).title, store.get(s.id).renamed))
-        # 恢复自动标题: back to the stored default and the notes' name.
         store.rename(s.id, "")
         self.assertEqual((session_store.default_title(s.startedAt), False), (store.get(s.id).title, store.get(s.id).renamed))
         self.assertEqual(shown, session_store.display_title(store.get(s.id)))
@@ -353,7 +337,6 @@ class Hearing(Base):
         self.assertEqual("ja", parse_heard("lang: ja-JP\noriginal: はい\ntranslation: 是", "zh-CN", None).lang)
 
     def test_drops_noise(self):
-        # Same cases as the Android and Windows ports' noise tests.
         for o in ("嗯。", "Mm.", "uh, um", "呃呃呃呃呃", "嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯。", "滴答" * 50,
                   "hmmmm", "うーん", "음…", "喂？", "No no no no no no",
                          "（无语音内容）", "[Music]", "♪♪", "这段音频是一段旋律，没有说话声。", "There is no speech in this audio."):
@@ -368,7 +351,6 @@ class Hearing(Base):
         self.assertEqual((800, 380, 800), (hear_tokens(0), hear_tokens(8.0), hear_tokens(30.0)))
 
     def test_follow_system_as_on_the_mac(self):
-        # FollowSystemTests, with Linux locale names.
         for prefs, mine in ((["zh_CN.UTF-8"], "zh-CN"), (["en_US.UTF-8"], "en"), (["en_CA", "zh_CN"], "zh-CN"),
                             (["ja_JP", "zh_TW"], "zh-TW"), (["ja_JP", "en_US"], "ja"), ([], "zh-CN")):
             self.assertEqual(mine, support.my_language(prefs), prefs)
@@ -419,15 +401,12 @@ class Hearing(Base):
         self.assertEqual("Hello", clean_translation("Here is the translation:\nHello", "en"))
         self.assertIsNone(clean_translation("请提供需要翻译的字幕内容", "en"))
         self.assertIsNone(clean_translation("Hello", "zh-CN"))
-        # Ling translated the fixed "Translate." instruction instead of the subtitle.
         self.assertIsNone(clean_translation("翻译。", "zh-CN"))
         self.assertIsNone(clean_translation("Translate.", "en"))
         self.assertEqual("好的，翻译。", clean_translation("好的，翻译。", "zh-CN"))
         self.assertEqual("Done.", clean_translation("<think>x</think>Done.", "en"))
 
     def test_an_unreachable_service_is_tried_once_in_15_seconds(self):
-        # Translator.swift › lingWorthTrying: while the check says the text model is out of reach,
-        # lines go straight to Google but for one in 15 s; a hear model at its own address doesn't count.
         from cicada.core import aicheck
         tried = []
 
@@ -500,34 +479,22 @@ class Segmenting(Base):
         self.assertAlmostEqual(got[1].start, got[0].start + got[0].seconds, delta=0.001)
 
     def test_key_clicks_are_not_speech(self):
-        # Clicks in a pause don't hold it open: the sentences either side stay apart.
         got = cut(tone(2.0), keys(1.5), tone(1.5), silence(1.0))
         self.assertEqual(2, len(got))
         self.assertAlmostEqual(3.35, got[1].start, delta=0.06)
-        # Nor does typing alone make a segment.
         self.assertEqual(0, len(cut(silence(0.5), keys(3.0), silence(1.0))))
 
     def test_ignores_clicks(self):
         self.assertEqual(0, len(cut(silence(1.0), tone(0.1), silence(1.0))))
         self.assertEqual(0, len(cut(tone(3.0, 0.002))))
-        # A steady hum over the gate isn't speech: Ming would make up a sentence for it.
         self.assertEqual(0, len(cut(tone(3.0, 0.02, syllables=False), silence(1.0))))
         self.assertEqual(1, len(cut(tone(3.0), silence(1.0))))
-        # Quiet speech, whose dips fall below the gate, is too.
         self.assertEqual(1, len(cut(tone(3.0, 0.03), silence(1.0))))
-        # A voice whose loudest frames barely clear the gate still dips far between syllables…
         self.assertEqual(1, len(cut(tone(3.0, 0.022), silence(1.0))))
-        # …a hum at the gate that slowly rises and falls doesn't.
         self.assertEqual(0, len(cut(tone(4.0, 0.016, syllables=False, wobble=0.3), silence(1.0))))
-        # A word on its own, out of quiet and back: quiet ("Thanks.", 0.2 s over the gate) or one
-        # smooth run of voice ("Good morning everyone,", no dips inside) is still a word…
         self.assertEqual(1, len(cut(silence(1.0), word(0.4, 0.028), silence(1.0))))
         self.assertEqual(1, len(cut(silence(1.0), word(1.2, 0.022), silence(1.0))))
-        # A quiet word's flat top whose fade (an "s", a breath) falls under gate / 4 still swells:
-        # Samantha's "Good morning everyone." opening a meeting at -34 dBFS was dropped.
         self.assertEqual(1, len(cut(silence(1.0), tone(0.5, 0.022, syllables=False), tone(0.15, 0.0025, syllables=False), silence(1.0))))
-        # Wherever the 30 ms frames fall (a few ms more lead-in), a quiet phrase with brief dips between
-        # its words stays a word, and a hum or a faded hiss in silence stays out.
         flat = lambda s, a: tone(s, a, syllables=False)
         phrase = flat(0.35, 0.022) + flat(0.04, 0.0055) + flat(0.4, 0.022) + flat(0.04, 0.0055) + flat(0.35, 0.022) + flat(0.06, 0.0025)
         for ms in range(0, 30, 2):
@@ -535,11 +502,8 @@ class Segmenting(Base):
             self.assertEqual(1, len(cut(lead, phrase, silence(1.0))), ms)
             self.assertEqual(0, len(cut(lead, flat(1.0, 0.03), silence(1.0))), ms)
             self.assertEqual(0, len(cut(lead, hiss(1.0, 0.03), silence(1.0))), ms)
-        # …a short hum in silence, which doesn't swell and fade, isn't; nor is a knock.
         self.assertEqual(0, len(cut(silence(1.0), tone(1.0, 0.03, syllables=False), silence(1.0))))
         self.assertEqual(0, len(cut(silence(1.0), word(0.15, 0.3), silence(1.0))))
-        # Rumble far under 100 Hz is no voice however it swells (Ming makes sentences of it); a
-        # voice as low as 100 Hz keeps half its energy over the high-pass and stays.
         self.assertEqual(0, len(cut(silence(1.0), hz(12, 3.0, 0.1), silence(1.0))))
         self.assertEqual(1, len(cut(silence(1.0), hz(100, 3.0, 0.3), silence(1.0))))
 
@@ -558,7 +522,6 @@ class Notes(Base):
         self.assertEqual([t.name for t in NoteTerm.keeping_order(terms("A,B,C"), terms("E,B,D"))], ["B", "E", "D"])
 
     def test_status_follows_the_key_as_on_the_mac(self):
-        # A key the check refused is "invalid", not "no key"; a fixed key goes back to idle.
         from cicada.core import ling as lingmod
         store = SessionStore()
         ling = client(Fake(lambda body: reply("{}")))
@@ -575,8 +538,6 @@ class Notes(Base):
         self.assertEqual(notesmod.IDLE, notes.status)
 
     def test_final_pass_settles(self):
-        """存到文件夹 waits while the final pass is to come or running, and hears when it is over, with
-        notes or without (no lines, a failed reply)."""
         store = SessionStore()
         ling = client(Fake(lambda body: reply("not json")))
         notes = NotesEngine(ling, store)
@@ -595,8 +556,6 @@ class Notes(Base):
         self.assertEqual([s.id, "nothing-here"], done)
 
     def test_unreachable_is_the_notes_own_and_clears_when_the_service_answers(self):
-        # NotesWindow.swift › banner: only the notes' own network failure says "can't reach", it ends
-        # when anything reaches the service again, and a record opened later doesn't inherit it.
         store = SessionStore()
         down = [True]
 
@@ -621,7 +580,6 @@ class Notes(Base):
         self.assertEqual(notesmod.IDLE, notes.status, "no meeting going on: a failed round isn't the record's")
 
     def test_notes_language_as_on_the_mac(self):
-        # "mine" or "source"; one meeting's choice over the setting; a change while live rewrites.
         store = SessionStore()
         settings = AppSettings(target="zh-CN", notesLanguage="source")
         ling = client(Fake(lambda body: reply("{}")))
@@ -680,8 +638,6 @@ class Notes(Base):
         self.assertIsNone(notesmod.parse("{}", [], 0.0))
 
     def test_terms_keep_only_forms_the_recognizer_wrote(self):
-        """A heard form only a fix wrote ("platform" for 平台) isn't one: it would teach the translator
-        and the next fix the same mistake."""
         l = TranscriptLine(id="a", t=0, speaker="them", src="我们 twoty 平台", dst=None, srcLang="zh-CN", dstLang="en")
         l.fixes = [LineFix("平台", "platform")]
         terms = [NoteTerm(name="X平台", note="n", heard=["Xplatform", "platform", "Twoty"])]
@@ -712,8 +668,6 @@ class Notes(Base):
         self.assertTrue(notesmod.written(MeetingNotes(summary="讨论发布 Stripe"), "Simplified Chinese"))
         self.assertFalse(notesmod.written(MeetingNotes(summary="We talked"), "Simplified Chinese"))
 
-    # Live notes rewrite only their last topics, so a long meeting's reply stays small (NotesTests.swift).
-
     @staticmethod
     def _topic(start, title, points=("p",), times=None):
         return NoteTopic(start=float(start), title=title, summary="s", points=list(points), pointTimes=times)
@@ -724,12 +678,10 @@ class Notes(Base):
 
     def test_keeps_frozen_topics_and_takes_the_replys_tail(self):
         old = [self._topic(i * 100, "t%d" % i) for i in range(5)]
-        # The model echoed everything, renamed the current topic and added one.
         reply = [self._topic(0, "t0"), self._topic(100, "t1 改"), self._topic(300, "t3"), self._topic(400, "t4 改"), self._topic(500, "t5")]
         self.assertEqual(["t0", "t1", "t2", "t3", "t4 改", "t5"], [t.title for t in notesmod.merge(old, 3, reply)])
 
     def test_nothing_frozen_keeps_every_topic(self):
-        # The first update over many lines: nothing to echo, so every topic is the model's own.
         reply = [self._topic(i * 100, "t%d" % i) for i in range(5)]
         self.assertEqual(reply, notesmod.merge([], 0, reply))
         self.assertEqual(reply, notesmod.merge([self._topic(0, "t0")], 0, reply))
@@ -740,8 +692,6 @@ class Notes(Base):
         self.assertEqual(old, notesmod.merge(old, 1, [self._topic(0, "a")]))
 
     def test_full_live_notes_join_the_shortest_settled_pair(self):
-        # Twelve topics, t3 and t4 the shortest neighbours (t3 to t5 is 100 s): a new topic still
-        # starts, and those two become one.
         starts = [0, 100, 200, 300, 330, 400, 600, 700, 800, 900, 1000, 1100]
         old = [self._topic(x, "t%d" % i, ["a%d" % i, "b%d" % i, "c%d" % i]) for i, x in enumerate(starts)]
         reply = [self._topic(1000, "t10"), self._topic(1100, "t11"), self._topic(1200, "t12")]
@@ -770,7 +720,6 @@ class Notes(Base):
         self.assertTrue("第二个话题" in json and "当前话题" in json)
         self.assertIn("returning only the topics in the current notes and at most one new one after them", p)
         self.assertNotIn("in total. A topic", p)
-        # A full rewrite has nothing frozen.
         self.assertNotIn("Earlier topics", notesmod.prompt(notes, self._lines(24), 20, "Simplified Chinese", False))
 
     def test_live_prompt_asks_for_one_sentence_summaries(self):
@@ -780,7 +729,6 @@ class Notes(Base):
         self.assertIn("never append to it", p)
 
     def test_long_meetings_split_by_time(self):
-        # A line every 10 s: 90 min stays whole, 4 h becomes four parts of an hour.
         self.assertEqual([range(0, 540)], notesmod.parts(self._lines(540)))
         four = notesmod.parts(self._lines(1440))
         self.assertEqual(4, len(four))
@@ -799,7 +747,6 @@ class Notes(Base):
         self.assertIn('Part 2 of 2:\n{"summary":"b"}', merge)
         self.assertIn("Return the full notes as one JSON object", merge)
         self.assertIn('"topics": []', merge)
-        # Each of three parts gets two of the eight topics.
         self.assertIn("use at most 2 topics", p)
 
     def test_topic_starts_when_its_lines_were_said(self):
@@ -819,22 +766,18 @@ class Notes(Base):
         self.assertEqual(3, len(notesmod.thinned(ten[:3], 4, 3000)))
 
     def test_part_topics_keep_a_topic_over_its_continuation(self):
-        # A 2.5-hour meeting's last part, asked for 2 topics, came back with 3: the budget topic's
-        # end as its own. Kept first and last, the budget topic at 125 min was lost.
         part = [self._topic(6000, "营销发布安排", ["a"]), self._topic(7500, "预算评审", ["b"]),
                 self._topic(8982, "预算评审（续）", ["c"])]
         kept = notesmod.thinned(part, 2, 8990)
         self.assertEqual(["营销发布安排", "预算评审"], [t.title for t in kept])
         self.assertEqual([6000, 7500], [t.start for t in kept])
         self.assertEqual(["b", "c"], list(kept[1].points))
-        # Told apart by time alone, the stub still joins the topic it ends.
         other = [self._topic(6000, "营销发布安排"), self._topic(7500, "预算评审"), self._topic(8982, "收尾")]
         self.assertEqual([6000, 7500], [t.start for t in notesmod.thinned(other, 2, 8990)])
         self.assertEqual("Budget review", notesmod.subject("Budget review (cont.)"))
         self.assertEqual("(续)", notesmod.subject("(续)"))
 
     def test_long_final_in_parts_then_merged(self):
-        # Four hours: four part calls at once, then one merge; topics come from the parts.
         store = SessionStore()
         s = store.begin()
         for l in self._lines(1440):
@@ -859,13 +802,10 @@ class Notes(Base):
         self.assertIn("Part 4 of 4:", asked[-1])
         self.assertNotIn("话题1-0", asked[-1], "the parts go to the merge without their topics")
         self.assertEqual("全程讨论", n.summary)
-        # Three topics a part, two asked for: the pair spanning the least time is joined.
         self.assertEqual([t for k in range(1, 5) for t in ("话题%d-0 / 话题%d-1" % (k, k), "话题%d-2" % k)], [t.title for t in n.topics])
         self.assertTrue(n.final)
 
     def test_notes_prompt_matches_the_android_port(self):
-        """The same prompt text as android/core Notes.kt, checked against its source so a change
-        on one side shows up here."""
         src = os.path.join(REPO, "android/core/src/main/kotlin/cicada/Notes.kt")
         if not os.path.isfile(src):
             self.skipTest("no Android source")
@@ -873,7 +813,6 @@ class Notes(Base):
             kt = f.read()
         p = notesmod.prompt(MeetingNotes(), [TranscriptLine(t=1.0, src="x")], 0, "English", final=True)
         for rule in [l for l in p.split("\n") if l.startswith("- ")]:
-            # The topic limit is filled in (live and final differ): check the rule from after it.
             rule = rule.split("in total. ", 1)[-1] if rule.startswith("- Topics in time order") else rule
             probe = rule.replace('"', '\\"')[:60]
             self.assertIn(probe, kt, rule)
@@ -888,18 +827,17 @@ class Strings(Base):
             self.assertEqual("2 lines", strings.LF("%lld 句", 2))
             self.assertEqual("0 lines", strings.LF("%lld 句", 0))
             self.assertEqual("Heard 1 line", strings.LF("已听到 %lld 句", 1))
-            self.assertEqual("Standup · 1 line", strings.LF("%@ · %lld 句", "Standup", 1))  # positional %2$#@n@
+            self.assertEqual("Standup · 1 line", strings.LF("%@ · %lld 句", "Standup", 1))
             self.assertEqual("Recorded 03:15 · 7 lines. Ending stops listening and writes the full notes.",
                              strings.LF("已记录 %@ · %lld 句。结束后停止收听，并整理一份完整版纪要。", "03:15", 7))
             self.assertEqual("1 line", strings.LF("说了 %lld 句", 1))
             self.assertEqual("Live notes", strings.L("实时纪要"))
             strings.load("ja", res)
-            self.assertEqual("1文", strings.LF("%lld 句", 1))  # no stringsdict: the .strings value
+            self.assertEqual("1文", strings.LF("%lld 句", 1))
         finally:
             strings.load("zh-Hans", res)
 
     def test_todo_owner_in_the_ui_language(self):
-        # The notes store the transcript's Chinese label; it shows in the UI language (Notes.swift's withOwner).
         res = [os.path.join(REPO, "Resources"), os.path.join(REPO, "linux", "strings")]
         todo = lambda owner: NoteItem(text="Ship it", owner=owner)
         try:
@@ -961,8 +899,6 @@ class Ling(Base):
             self.assertEqual(LingError.HIJACKED, e.exception.kind)
 
     def test_heard_audio_rides_out_a_run_of_429s(self):
-        # Ling's 429s come in runs (two in a row lost a line with one retry): heard audio backs off
-        # 1, 2, 4 s and gets through; text translation fails at once so the caller can fall back.
         clock = FakeClock()
         replies = [Response(429, "")] * 3 + [reply("LANG: en\nORIGINAL: Hi.\nTRANSLATION: 嗨。")]
         fake = Fake(lambda b: replies.pop(0))
@@ -993,7 +929,6 @@ class Ling(Base):
         replies = [Response(429, "", retry_after="5"), reply("ok")]
         self.assertEqual("ok", client(Fake(lambda b: replies.pop(0)), clock).chat("c", "i", NOTES))
         self.assertTrue(5 <= clock.waits[0] <= 5.5, clock.waits)
-        # Asked to wait minutes: an outage, so the line goes now rather than after it.
         fake = Fake(lambda b: Response(429, "", retry_after="120"))
         with self.assertRaises(LingError):
             client(fake, FakeClock()).chat("c", "i", TRANSLATE, model=AUDIO_MODEL, audio=bytes([1]))
@@ -1011,12 +946,10 @@ class Ling(Base):
         ling = client(fake, clock)
         with self.assertRaises(LingError):
             ling.chat("first", "i", TRANSLATE)
-        # A translation that wouldn't retry fails at once, without spending a request on the limit...
         with self.assertRaises(LingError) as e:
             ling.chat("second", "i", TRANSLATE)
         self.assertEqual(LingError.RATE_LIMITED, e.exception.kind)
         self.assertEqual(1, len(fake.calls))
-        # ...and one that would waits at the gate until the pause is over, then goes.
         self.assertEqual("notes", ling.chat("notes", "i", NOTES))
         self.assertEqual(2, len(fake.calls))
         self.assertTrue(1 <= clock.waits[0] <= 1.5, clock.waits)
@@ -1041,7 +974,6 @@ class Ling(Base):
         for t in (a, b):
             t.join()
         self.assertEqual(["a", "a", "b"], [content(x[1], 0) for x in fake.calls])
-        # b, queued during the pause, didn't start until it was over.
         self.assertGreaterEqual(fake.calls[2][0] - fake.calls[0][0], 1.0)
 
     def test_marks_a_bad_key(self):
@@ -1059,7 +991,6 @@ class Ling(Base):
         a = threading.Thread(target=ling.chat, args=("first", "i", NOTES))
         a.start()
         time.sleep(0.02)
-        # Queued while the gate is closed: the translation goes before the earlier notes call.
         b = threading.Thread(target=ling.chat, args=("notes", "i", NOTES))
         b.start()
         time.sleep(0.02)
@@ -1074,8 +1005,6 @@ class Ling(Base):
 
 class Listening(Base):
     def test_end_to_end_with_a_fake_ming(self):
-        # Two stretches of "speech", told apart by length (1 s, then 1.6 s); the fake Ming answers
-        # the first one slower, and lines still come out in order.
         def respond(body):
             if "Ming-3.0-audio-flash" in body:
                 url = content(body, 1)[0]["audio_url"]["url"]
@@ -1104,8 +1033,6 @@ class Listening(Base):
         self.assertIsNotNone(s.endedAt)
 
     def test_server_errors_in_a_row_are_said_and_clear_on_the_next_line(self):
-        # A gateway answering 502 to every stretch: no subtitles, so from the third in a row the notes
-        # window says the service is erring (not the network); the next stretch heard clears it.
         heard = []
         seen = []
 
@@ -1121,7 +1048,6 @@ class Listening(Base):
         store = SessionStore()
         engine = ListenEngine(ling, Translator(ling), store, NotesEngine(ling, store), AppSettings(target="zh-CN"))
         engine.on_change(lambda: seen.append(engine.problem))
-        # Four times real time: each reply is back before the next stretch goes, as in a meeting.
         src = PcmAudioSource(lambda: concat(*[x for _ in range(4) for x in (tone(1.0), silence(3.0))]), speed=4)
         ended = threading.Event()
         src.on_ended = lambda why: ended.set()
@@ -1161,8 +1087,6 @@ class Listening(Base):
         self.assertEqual([], [p for p in seen if p], "two blips: nothing to say yet")
 
     def test_follow_system_translates_my_own_language_into_the_next(self):
-        # They speak Chinese, my language: the first stretch was asked for Chinese (nothing heard
-        # yet), so its translation is dropped for the text translation; the next is asked for English.
         asked = []
 
         def respond(body):
@@ -1176,7 +1100,6 @@ class Listening(Base):
         settings = AppSettings()
         settings.resolved_target = lambda src: "en" if src == "zh-CN" else "zh-CN"
         engine = ListenEngine(ling, Translator(ling), store, NotesEngine(ling, store), settings)
-        # Four times real time: the first reply is back before the second stretch is sent, as in a meeting.
         src = PcmAudioSource(lambda: concat(tone(1.0), silence(3.0), tone(1.6), silence(1.0)), speed=4)
         ended = threading.Event()
         src.on_ended = lambda why: ended.set()
@@ -1263,7 +1186,6 @@ class Speaking(Base):
         self.assertIsNotNone(eng.problem)
 
     def test_a_filler_alone_is_not_spoken(self):
-        # A hush or an echo's tail cut as a segment: Ming hears 嗯 and the room would hear "Hmm."
         eng, fake, player = self._engine("ORIGINAL: 嗯。\nTRANSLATION: Hmm.")
         self._say(eng, concat(tone(1.2), silence(1.0)))
         self.assertEqual(0, eng.spoken)
@@ -1280,7 +1202,7 @@ class Speaking(Base):
         def write(pcm, _w=player.write):
             if not fetched:
                 fetched.append(len(fake.spoken))
-                slow.wait(1.5)  # the first sentence still playing
+                slow.wait(1.5)
                 fetched.append(len(fake.spoken))
             _w(pcm)
         player.write = write
@@ -1302,7 +1224,6 @@ class Speaking(Base):
             todos=[NoteItem(text="发说明", owner="你")], terms=[NoteTerm(name="Ling", note="模型")])
         local = s.startedAt.astimezone()
         when = "%d年%d月%d日 %02d:%02d" % (local.year, local.month, local.day, local.hour, local.minute)
-        # TranscriptExport.markdown on the Mac, character for character.
         self.assertEqual(
             "# %s\n\n%s · 24 分钟\n\n" % (session_store.display_title(s), when) +
             "## 纪要\n\n定了周五。\n\n### 00:00 上线时间\n\n讨论日期\n\n- 周五\n\n**为什么推迟？**\n\n- 测试：还没跑完\n\n"
@@ -1332,8 +1253,6 @@ class Speaking(Base):
         self.assertIsNotNone(eng.problem, "and the user is told")
 
     def test_through_the_echo_canceller_talking_over_them_goes_out(self):
-        # The talk key read the microphone through module-echo-cancel: their voices are taken out,
-        # so what I say over them is mine and is sent (the Mac's rule since 96205f8).
         class Listening:
             listening = True
             spoken = "en"
@@ -1406,7 +1325,6 @@ def them(i, voice, text="we should ship this on Friday", t=None):
 
 class Speakers(Base):
     def test_the_voiceprint_is_the_macs(self):
-        # The C library against the Mac's Core ML model on the same audio (linux/tests/voiceprint-ref.json).
         import json
         import wave
         if speakers.library_path() is None or speakers.model_path() is None:
@@ -1455,7 +1373,7 @@ class Speakers(Base):
         self.assertEqual({2: "George"}, speakers.names(got))
         self.assertEqual("说话人 1", speakers.label(1, speakers.names(got)))
         store.set_voice_name(s.id, 0, "Emma")
-        store.set_voice_name(s.id, 1, "")  # 不是 TA: 说话人 2 again
+        store.set_voice_name(s.id, 1, "")
         self.assertEqual({1: "Emma"}, speakers.names(store.get(s.id)))
         store.merge_voice(s.id, 2, 0)
         self.assertEqual(6, sum(1 for l in store.get(s.id).lines if l.voice == 0))
@@ -1485,7 +1403,6 @@ class Speakers(Base):
         self.assertTrue(found[1].evidence.startswith("00:40 “Thanks"))
         self.assertEqual({0: "Christina"}, refuted)
         self.assertEqual(({}, {}), speakers.read("not json", s))
-        # Without JSON mode (a host that refuses it) the reply may come fenced.
         fenced, _ = speakers.read('```json\n{"speakers": [{"speaker": 2, "name": "George", "evidence": "L11"}]}\n```', s)
         self.assertEqual("George", fenced[1].name)
         self.assertIn("说话人1", speakers.content(s))
@@ -1499,9 +1416,7 @@ class Speakers(Base):
         self.assertIn("对方] ", notesmod.prompt(MeetingNotes(), lines, 0, "Chinese", False))
 
     def _halves(self, voices):
-        # Ming cuts "so we will ship" | "on Friday then." mid-sentence; `voices` says whose each half is.
         def respond(body):
-            # Both halves go to Ming at once: answer by the audio's length (1.0 s, then 1.4 s).
             if "Ming-3.0-audio-flash" not in body:
                 return reply("{}")
             first = len(content(body, 1)[0]["audio_url"]["url"]) < 60000
@@ -1550,7 +1465,7 @@ class Speakers(Base):
                 pass
 
             def embed(self, samples):
-                time.sleep(0.6)  # a CPU that can't keep up
+                time.sleep(0.6)
                 return [1.0]
 
             def label(self, vector, seconds):

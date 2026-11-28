@@ -1,6 +1,3 @@
-"""设置 › 词表 (the Mac's WordListSettings.swift): the switches for 改正听错的词, and the word list itself
-(core/vocabulary.py): each word, what it has been heard as, where it came from and how often it fixed
-a line. Everything is edited in place; changes count from the next sentence on."""
 from __future__ import annotations
 
 from gi.repository import Gdk, GLib, Gtk
@@ -13,13 +10,13 @@ from . import ui
 class WordList:
     def __init__(self, app, group):
         self.app = app
-        self.group = group  # SettingsWindow._group
+        self.group = group
         self.query = ""
-        self.deleted = None  # (term, index): shown in its place with 撤销 for a few seconds
+        self.deleted = None
         self._deleted_at = 0
-        self.editing = None  # the word whose spelling is being changed
-        self.conflict = None  # (word, heard, owner): a heard form typed that another word has
-        self.typing = {}  # word → text typed into its 加一个容易听错的词 (kept through a refresh)
+        self.editing = None
+        self.conflict = None
+        self.typing = {}
         self._key = None
         self.box = ui.vbox(14)
         self.refresh()
@@ -61,8 +58,6 @@ class WordList:
                             False, False, 0)
         self.box.show_all()
 
-    # The switches
-
     def _switches(self) -> Gtk.Widget:
         app, s = self.app, self.app.settings
         ling = app.ling
@@ -86,8 +81,6 @@ class WordList:
         self.app.settings.save()
         GLib.idle_add(lambda: self.refresh() and False)
 
-    # The list
-
     def _head(self, terms) -> Gtk.Widget:
         head = ui.hbox(10)
         head.pack_start(ui.text(L("词"), 13, "secondary", bold=True, wrap=False, ellipsize=False), False, False, 0)
@@ -108,7 +101,6 @@ class WordList:
         return ui.gap(head, 4)
 
     def _shown(self, terms) -> list:
-        """Most recently useful first, then the rest newest first."""
         from datetime import datetime, timezone
         oldest = datetime.min.replace(tzinfo=timezone.utc)
         ordered = sorted(reversed(terms), key=lambda t: t.used or oldest, reverse=True)
@@ -233,11 +225,7 @@ class WordList:
             self.app.vocabulary.insert(term, index)
             self.refresh()
 
-    # 粘贴导入
-
     def _import(self) -> None:
-        """Many words at once, one per line, heard forms after "=". The counts follow what is pasted,
-        and the button says how many go in."""
         voc = self.app.vocabulary
         top = self.box.get_toplevel()
         d = Gtk.Dialog(transient_for=top if isinstance(top, Gtk.Window) else None, modal=True)
