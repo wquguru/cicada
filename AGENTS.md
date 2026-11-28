@@ -29,7 +29,7 @@ Cicada (知了, formerly Live Subs) turns what a computer plays into live transl
 
 ## Layout
 
-- `Sources/Cicada`: the app, one concern per file. Engines are UI-free (`ListenEngine`, `SpeakEngine`, `Notes`, `Translator`, `Ling`, `VirtualMic`, `SessionStore`…); `AppModel` wires them and holds the debug commands. Settings keys: `AppSettings` in `Settings.swift`.
+- `Sources/Cicada`: the app, one concern per file. Engines are UI-free (`ListenEngine`, `SpeakEngine`, `Notes`, `Ling`…); `AppModel` wires them and holds the debug commands. Settings keys: `AppSettings` in `Settings.swift`.
 - `Sources/CicadaIcon`: renders the icon set. `site/`: the website, built by `scripts/site.py`. `server/`: the Worker on cicada.indaloop.app (site, shared meetings); `node --test server/test/*.mjs` against `wrangler dev`.
 - The site is Chinese at `/`, English / Japanese / Korean under `/en/` `/ja/` `/ko/`; every `{{t.key}}` comes from `site/i18n/<lang>.json`. `start.html` is the setup page; its `img/start/` shots come from the app per language. `tools/`: test helpers. `Tests/CicadaTests`: unit tests for the pure parts.
 
@@ -37,6 +37,7 @@ Cicada (知了, formerly Live Subs) turns what a computer plays into live transl
 
 ```bash
 scripts/test.sh                        # AGENTS.md check + unit tests
+python3 scripts/lint.py                # lint (on commit: git config core.hooksPath .githooks)
 scripts/build.sh && open build/Cicada.app   # dev build: own bundle id, settings, log
 RELEASE=1 scripts/build.sh             # release build
 scripts/package.sh                     # DMG + zip + checksums
@@ -46,15 +47,15 @@ scripts/deploy-site.sh                 # deploy the site and server/ (cicada.ind
 
 ## Verifying
 
-- Run the app and check the behaviour, not just the build; check the English UI too.
+- Run the app and check the behaviour, not just the build, in English too.
 - Drive the dev build with `tools/lsctl` (`tools/README.md`; source of truth: `AppModel.debugCommand`). Use `afplay Resources/sample/sample.m4a` or `say -o` clips as input and read `/tmp/livesubs-dev-debug.log`.
 - Real sound (room mic, 同声传译): `.claude/skills/audio-test`. A real voice, the BlackHole install, Input Monitoring and a Mac without permissions need a person.
 
 ## Conventions
 
-- Match the existing naming and comment density; comments say why.
-- Commits are English Conventional Commits (`feat:` `fix:` `docs:` `build:` `refactor:` `test:` `chore:`). `feat:` and `fix:` subjects are the release notes (`scripts/changelog.py`), one line each linked to the commit: say what the user gets in one plain sentence, one change per commit. The scope picks the platform: `(windows)` `(android)` `(linux)` `(site)`, anything else is Mac.
+- Match existing naming. No comments but TODO, FIXME, MARK, tool directives and licenses (`scripts/comments.py`).
+- Commits are English Conventional Commits (`feat:` `fix:` `docs:` `build:` `refactor:` `test:` `chore:`). `feat:` and `fix:` subjects are the release notes (`scripts/changelog.py`): say what the user gets in one plain sentence, one change per commit. The scope picks the platform: `(windows)` `(android)` `(linux)` `(site)`, anything else is Mac.
 - Release notes have no Chinese but the brand: name UI in English (Listen to › Room).
-- Every user-visible change also gets a Chinese item in `site/changelog.json`, the website's changelog; keep `README.md` (English) and `README.{zh-CN,ja,ko}.md` in step.
+- Every user-visible change also gets a Chinese item in `site/changelog.json`; keep `README.md` (English) and `README.{zh-CN,ja,ko}.md` in step.
 - One semver version for every platform, in `VERSION`; every build reads it. Patch for fixes only, minor for features, major only when users of any platform must grant permissions again. Every release ships all four platforms.
-- This file stays under 6 KB with these sections; `scripts/check-agents.py` enforces it. Implementation detail belongs in code comments, not here.
+- This file stays under 6 KB with these sections (`scripts/check-agents.py`); implementation detail belongs in code and tests.

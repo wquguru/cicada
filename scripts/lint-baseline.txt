@@ -1,0 +1,26 @@
+.claude/skills/audio-test/scripts/room-round.sh: error: ShellCheck only supports sh/bash/dash/ksh/'busybox sh' scripts. Sorry! [SC1071]
+.claude/skills/audio-test/scripts/speak-round.sh: error: ShellCheck only supports sh/bash/dash/ksh/'busybox sh' scripts. Sorry! [SC1071]
+Sources/Cicada/AppModel.swift: warning: unnecessary check for 'macOS'; enclosing scope ensures guard will always be true
+Sources/Cicada/Diagnostics.swift: warning: 'appendInterpolation' is deprecated: Localized string interpolation produces an unlocalized, debug description for this type of value. Use String(describing:) to make this explicit and silence this warning or provide a different value that has built-in support or conforms to CustomLocalizedStringResourceConvertible.
+Sources/Cicada/DiagnosticsView.swift: warning: cannot use enum 'Publishers' in a property declaration member of a type not marked '@_implementationOnly'; 'Combine' was not imported by this file
+Sources/Cicada/DiagnosticsView.swift: warning: cannot use generic class 'Autoconnect' in a property declaration member of a type not marked '@_implementationOnly'; 'Combine' was not imported by this file
+Sources/Cicada/ListenPill.swift: warning: cannot use enum 'Publishers' in a property declaration member of a type not marked '@_implementationOnly'; 'Combine' was not imported by this file
+Sources/Cicada/ListenPill.swift: warning: cannot use generic class 'Autoconnect' in a property declaration member of a type not marked '@_implementationOnly'; 'Combine' was not imported by this file
+Sources/Cicada/LocalNetwork.swift: warning: concurrently-executed local function 'finish' must be marked as '@Sendable'; this is an error in the Swift 6 language mode
+Sources/Cicada/NotesViews.swift: warning: cannot use enum 'Publishers' in a property declaration member of a type not marked '@_implementationOnly'; 'Combine' was not imported by this file
+Sources/Cicada/NotesViews.swift: warning: cannot use generic class 'Autoconnect' in a property declaration member of a type not marked '@_implementationOnly'; 'Combine' was not imported by this file
+Sources/Cicada/SpeakEngine.swift: warning: add '@preconcurrency' to suppress 'Sendable'-related warnings from module 'AVFAudio'
+Sources/Cicada/SpeakEngine.swift: warning: capture of 'buf' with non-Sendable type 'AVAudioPCMBuffer' in a '@Sendable' closure
+Sources/Cicada/SpeakEngine.swift: warning: capture of 'conv' with non-Sendable type 'PCMConverter' in a '@Sendable' closure
+Sources/Cicada/SpeakEngine.swift: warning: capture of 's' with non-Sendable type '[AVAudioPCMBuffer]' in a '@Sendable' closure
+Sources/Cicada/SpeakEngine.swift: warning: consider using asynchronous alternative function
+Sources/Cicada/Updates.swift: warning: 'weak' ownership of capture 'self' differs from implicitly-captured strong reference in outer scope
+Sources/Cicada/VirtualMic.swift: warning: 'weak' ownership of capture 'self' differs from implicitly-captured strong reference in outer scope
+ios/scripts/build.sh: warning: Quote this to prevent word splitting. [SC2046]
+ios/scripts/host-recognizer.sh: warning: Prefer mapfile or read -a to split command output (or quote to avoid splitting). [SC2207]
+ios/scripts/host-recognizer.sh: warning: Prefer mapfile or read -a to split command output (or quote to avoid splitting). [SC2207]
+tools/audio-probe/clips.sh: error: ShellCheck only supports sh/bash/dash/ksh/'busybox sh' scripts. Sorry! [SC1071]
+tools/macos-vm/vm.sh: warning: Tilde does not expand in quotes. Use $HOME. [SC2088]
+windows/scripts/build.sh: warning: Don't use ls | grep. Use a glob or a for loop with a condition to allow non-alphanumeric filenames. [SC2010]
+windows/vm/run.sh: warning: Use spaces, not commas, to separate array elements. [SC2054]
+windows/vm/run.sh: warning: Use spaces, not commas, to separate array elements. [SC2054]

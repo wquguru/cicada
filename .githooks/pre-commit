@@ -1,5 +1,2 @@
 #!/bin/bash
-# Enabled with `git config core.hooksPath .githooks`.
-if git diff --cached --name-only | grep -qx 'AGENTS.md'; then
-  exec python3 "$(git rev-parse --show-toplevel)/scripts/check-agents.py"
-fi
+exec python3 "$(git rev-parse --show-toplevel)/scripts/lint.py" --staged
