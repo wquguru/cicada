@@ -106,16 +106,10 @@
   </section>
 
   <script>
-  // The meeting above with its sound: only on a click. While the clip plays the speaker and the
-  // subtitle follow its turns (who spoke when, measured in scripts/make-sample.sh): the original
-  // comes in word by word as it is said and the translation trails it, as in the app. When the clip
-  // ends the silent loop takes over again.
   (function () {
     var w = document.querySelector('.window[data-sample]'), s = JSON.parse(w.dataset.sample);
     var btn = w.querySelector('.listen'), label = btn.querySelector('span').textContent, bar = w.querySelector('.progress');
     var tiles = w.querySelectorAll('.tile'), caps = w.querySelectorAll('.cap'), audio = null, raf = 0;
-    // The translation starts this many seconds after the voice and catches up as the sentence ends,
-    // before the next speaker (turns are at least 0.2 s apart).
     var LAG = 0.8;
     var lines = [].map.call(caps, function (c) {
       var src = c.querySelector('.en').lastChild, dst = c.querySelector('.zh').firstChild;
@@ -123,7 +117,6 @@
     });
     btn.hidden = false;
     function mark(list, i) { list.forEach(function (el, j) { el.classList.toggle('on', j === i); }); }
-    // The first share p of a line: by words in English, by characters in Chinese, Japanese and Korean.
     function part(text, p) {
       var units = /^[\x00-\x7F’]*$/.test(text) ? text.split(/(?=\s)/) : Array.from(text);
       return units.slice(0, Math.ceil(units.length * Math.max(0, Math.min(1, p)))).join('');
@@ -151,7 +144,6 @@
     btn.addEventListener('click', function () {
       if (audio) { stop(); return; }
       var a = audio = new Audio(s.src);
-      // The last translation stays up a moment after the voice ends.
       a.addEventListener('ended', function () { setTimeout(function () { if (audio === a) stop(); }, 1200); });
       audio.play().then(function () {
         w.classList.add('playing'); frame();
@@ -214,7 +206,6 @@
     </div>
   </section>
   <script>
-  // 听一段: start the scene over and let the room's voice come in when it reaches 说进会议.
   (function () {
     var sp = document.querySelector('.sp[data-speak]'), s = JSON.parse(sp.dataset.speak), btn = sp.querySelector('.listen'), t = 0;
     btn.hidden = false;
@@ -263,8 +254,6 @@
     </div>
   </section>
   <script>
-  // Each conclusion or branch lights up with the line it came from: in turn on its own, or the one
-  // under the pointer; side by side, a line joins the two.
   (function () {
     var paper = document.querySelector('.paper'), svg = paper.querySelector('.link'), path = svg.querySelector('path');
     var items = paper.querySelectorAll('[data-k]'), k = 1, timer = 0, still = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -273,7 +262,7 @@
       items.forEach(function (el) { el.classList.toggle('lit', el.dataset.k == n); });
       var a = paper.querySelector('.notes-col [data-k="' + n + '"]'), b = paper.querySelector('.quotes [data-k="' + n + '"]');
       var p = paper.getBoundingClientRect(), ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
-      if (rb.left < ra.right) { path.removeAttribute('d'); return; } // stacked on a phone
+      if (rb.left < ra.right) { path.removeAttribute('d'); return; }
       var x1 = ra.right - p.left, y1 = ra.top + ra.height / 2 - p.top, x2 = rb.left - p.left - 4, y2 = rb.top + rb.height / 2 - p.top, m = (x1 + x2) / 2;
       path.setAttribute('d', 'M' + x1 + ' ' + y1 + 'C' + m + ' ' + y1 + ' ' + m + ' ' + y2 + ' ' + x2 + ' ' + y2);
     }
@@ -320,7 +309,6 @@
     <div class="faq-list">{{FAQ}}</div>
   </section>
   <script>
-  // A link to #faq-… (the setup page's "will it run on my Mac?") opens that answer.
   function openFaq() { var d = location.hash && document.getElementById(location.hash.slice(1)); if (d && d.tagName === 'DETAILS') d.open = true; }
   openFaq(); addEventListener('hashchange', openFaq);
   </script>

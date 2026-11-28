@@ -55,8 +55,6 @@
   <div class="wordmark" aria-hidden="true">Cicada</div>
 </footer>
 <script>
-// Which system this is: the download buttons (data-dl) and the platform cards and tabs follow it.
-// Without JS, or on a system with nothing released yet, the page stays as built: the Mac download.
 (function () {
   var ua = navigator.userAgent, os = /Android/i.test(ua) ? 'android'
     : /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'ios'
@@ -70,7 +68,6 @@
   document.querySelectorAll('[data-platform="' + os + '"] .yours').forEach(function (el) { el.hidden = false; });
   window.CICADA_OS = os;
 })();
-// Phones get no download: share the page (AirDrop / messages to yourself) or copy the link.
 var SEND = {{SEND_JSON}};
 document.querySelectorAll('[data-send]').forEach(function (b) {
   var label = b.textContent;

@@ -28,7 +28,6 @@
   </div>
 </header>
 <script>
-// Offer the visitor's own language when the page isn't in it. No redirect: links and search results stay as they are.
 (function () {
   var alts = {{ALTS_JSON}}, here = document.documentElement.lang.slice(0, 2), key = 'cicada-lang-dismissed';
   var text = {
@@ -54,7 +53,6 @@
   });
   bar.hidden = false;
 })();
-// Close the language menu on Escape or a click elsewhere.
 document.addEventListener('click', function (e) {
   document.querySelectorAll('details.lang[open]').forEach(function (d) { if (!d.contains(e.target)) d.open = false; });
 });

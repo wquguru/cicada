@@ -82,7 +82,6 @@
         <div class="num-row"><span class="num accent" aria-hidden="true">2</span><span class="badge">{{t.s2_badge}}</span></div>
         <h2>{{t.m2_h}}</h2>
         <p>{{t.m2_p}}</p>
-        <!-- Both services, side by side; the page's language picks which comes first (svc_first), never the reader's region. -->
         <div class="svc" data-first="{{t.svc_first}}">
           <div class="svc-card svc-ling">
             <h3>Ling <span class="tag">{{t.svc_ling_tag}}</span></h3>
@@ -321,7 +320,6 @@
     </div>
   </section>
   </div>
-  <!-- The app's "怎么设置代理" links here (#proxy): the three cases it names when translation, OpenRouter or ZenMux can't be reached. -->
   <section class="wrap later aguide" id="proxy" aria-labelledby="proxy-t">
     <h2 id="proxy-t">{{t.proxy_h}}</h2>
     <p class="more">{{t.proxy_p}}</p>
@@ -335,8 +333,6 @@
 </main>
 {{FOOTER}}
 <script>
-// One platform's steps at a time: the visitor's own (footer.html), or the one in the link (#windows).
-// Without JS every platform's steps show, one after another.
 (function () {
   var tabs = document.querySelectorAll('.ptabs [role=tab]'), blocks = document.querySelectorAll('.pblock');
   function pick(p, focus) {

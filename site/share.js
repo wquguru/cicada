@@ -1,9 +1,3 @@
-// The share page (/s/<id>, site/share.html): fetches the shared meeting and draws it as one page
-// that discloses step by step. The notes come first; each chapter's dialogue appears when its row is
-// opened; the speakers, the original text and search wait until asked for.
-// Everything from the document goes in with textContent, never as HTML, and styles only through
-// classes or the CSSOM (the page's CSP allows no inline script or style attribute).
-// A password share is opened with PBKDF2 of the password; only that, not the password, is sent.
 (function () {
   "use strict";
   var T = JSON.parse(document.getElementById("share-text").textContent);
@@ -11,9 +5,9 @@
   var $ = function (s) { return document.getElementById(s); };
   var lang = document.documentElement.lang;
   var doc = null;
-  var chapters = [];  // {el, row, open, lines: [{el, who, text}]}
-  var speakers = [];  // {who, cls, share}
-  var who = "";       // the speaker the dialogue is narrowed to
+  var chapters = [];
+  var speakers = [];
+  var who = "";
 
   function show(which) {
     ["sh-loading", "sh-password", "sh-gone", "sh-doc"].forEach(function (k) { $(k).hidden = k !== which; });
@@ -52,7 +46,6 @@
     try { return new Intl.DisplayNames([lang], { type: "language" }).of(c) || c; } catch (e) { return c; }
   }
 
-  // "说话人 2" → "2", "对方" → "对": what the avatar shows.
   function initial(name) {
     var digits = /(\d+)\s*$/.exec(name);
     return digits ? digits[1].slice(-2) : (Array.from(name.trim())[0] || "?").toUpperCase();
@@ -109,7 +102,6 @@
     box.hidden = false;
   }
 
-  // Who spoke and how much: each line counts until the next one starts, at most 30 s (a pause is no one's).
   function drawPeople(d) {
     var time = {};
     d.lines.forEach(function (l, i) {
@@ -149,8 +141,6 @@
     $("sh-people-btn").hidden = false;
   }
 
-  // The chapters, each holding the lines said in it. Lines before the first chapter belong to it;
-  // a meeting without chapters has one, all of its dialogue.
   function drawChapters(d) {
     var topics = (d.notes && d.notes.topics) || [], hasLines = d.lines.length > 0;
     var groups = topics.length ? topics.map(function (t) { return { start: t.start, title: t.title, summary: t.summary, points: t.points, lines: [] }; })
@@ -209,7 +199,7 @@
     });
     if (groups.length === 1) toggle(chapters[0], true);
     var openable = chapters.filter(function (c) { return c.row.tagName === "BUTTON"; });
-    $("sh-all").hidden = !hasLines || openable.length < 2;  // its words are about dialogue
+    $("sh-all").hidden = !hasLines || openable.length < 2;
     $("sh-chapters").hidden = false;
     syncAll();
   }
@@ -252,7 +242,6 @@
     $("sh-all").textContent = all ? T.collapse_all : T.expand_all;
   }
 
-  // The chapters that can open and are not narrowed away.
   function shown() {
     return chapters.filter(function (c) { return c.row.tagName === "BUTTON" && !c.el.classList.contains("miss"); });
   }
@@ -263,7 +252,6 @@
     syncAll();
   });
 
-  // Narrowing (to one speaker, or to what matches the search) opens the chapters that still have lines.
   function apply() {
     var q = $("sh-search").value.trim().toLowerCase(), found = 0, narrowed = !!who || q !== "";
     chapters.forEach(function (c) {
@@ -311,7 +299,6 @@
     if (open) $("sh-search").focus();
     else if ($("sh-search").value) { $("sh-search").value = ""; apply(); }
   });
-  // The first letter typed brings the dialogue up; later ones only narrow it.
   var searching = false;
   $("sh-search").addEventListener("input", function () {
     apply();
@@ -321,7 +308,6 @@
   });
   $("sh-search").addEventListener("keydown", function (e) { if (e.key === "Escape") $("sh-search-btn").click(); });
 
-  // The share menu: copy the link, copy the notes, or the system's share sheet where there is one.
   function menu(open) {
     $("sh-menu").hidden = !open;
     $("sh-share-btn").setAttribute("aria-expanded", open ? "true" : "false");
@@ -345,7 +331,6 @@
     return out.join("\n");
   }
 
-  // The item says it worked for a moment, then the menu closes.
   function copy(text, b, done) {
     var was = b.textContent;
     (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () {
@@ -380,8 +365,6 @@
     }, failed);
   }
 
-  // The password page: a wrong password shakes the field and says so in red; typing again puts the
-  // reassurance back. The arrow turns into a spinner while the browser works the password out.
   var lock = null, note = $("sh-pw-text").textContent;
   function say(text, err) {
     $("sh-pw-text").textContent = text;
@@ -390,12 +373,10 @@
   function refuse(text) {
     var form = $("sh-pw-form");
     form.classList.remove("bad");
-    void form.offsetWidth;  // restart the shake
+    void form.offsetWidth;
     form.classList.add("bad");
     say(text, true);
   }
-  // The arrow only looks faint while the field is empty (CSS); it is never disabled for that, so a
-  // password manager's fill, which may send no input event, can still be submitted.
   $("sh-pw").addEventListener("input", function () {
     if ($("sh-pw-form").classList.contains("bad")) { $("sh-pw-form").classList.remove("bad"); say(note, false); }
   });
