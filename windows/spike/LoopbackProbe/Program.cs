@@ -1,12 +1,3 @@
-// M0 spike: can Windows give us "everything the PC plays, except Cicada itself", the way the
-// Core Audio process tap does on the Mac? Captures with WASAPI process loopback while this process
-// plays a 1 kHz tone of its own, then checks the tone is absent from the capture (and, with
-// --include-self, present: proof the check works). Writes 16 kHz mono Int16 WAV, the format the
-// Windows AudioRouter will hand to Ming.
-//
-//   LoopbackProbe.exe [seconds] [--include-self] [--no-tone] [--out capture.wav]
-//
-// Needs Windows 10 2004 (build 19041) or later.
 using System.Runtime.InteropServices;
 
 static class Program
@@ -52,8 +43,6 @@ static class Program
     }
 }
 
-/// WASAPI process loopback: ActivateAudioInterfaceAsync on the virtual loopback device, with
-/// this process's tree excluded (or, for the control run, the only one included).
 static class Loopback
 {
     const string LoopbackDevice = "VAD\\Process_Loopback";
@@ -65,8 +54,6 @@ static class Loopback
     public static short[] Capture(int seconds, bool includeSelf)
     {
         var client = Activate((uint)Environment.ProcessId, includeSelf ? 0 : 1);
-        // Process loopback has no mix format (GetMixFormat is E_NOTIMPL): ask for what Ming wants
-        // and let Windows convert; fall back to 48 kHz stereo and convert ourselves.
         (int rate, int channels)[] tries = [(16000, 1), (48000, 2), (44100, 2)];
         int rate = 0, channels = 0, hr = -1;
         foreach (var (r, c) in tries)
@@ -79,7 +66,7 @@ static class Loopback
             Marshal.FreeHGlobal(p);
             Console.WriteLine($"  Initialize {r} Hz x{c}: 0x{hr:X8}");
             if (hr == 0) { rate = r; channels = c; break; }
-            client = Activate((uint)Environment.ProcessId, includeSelf ? 0 : 1); // a failed Initialize spoils the client
+            client = Activate((uint)Environment.ProcessId, includeSelf ? 0 : 1);
         }
         Marshal.ThrowExceptionForHR(hr);
 
@@ -95,7 +82,7 @@ static class Loopback
         long frames = 0;
         while (DateTime.UtcNow < end)
         {
-            ready.WaitOne(100); // no events while nothing plays; keep the clock running
+            ready.WaitOne(100);
             while (capture.GetNextPacketSize(out var packet) == 0 && packet > 0)
             {
                 Marshal.ThrowExceptionForHR(capture.GetBuffer(out var data, out var n, out var flags, out _, out _));
@@ -108,8 +95,6 @@ static class Loopback
         }
         client.Stop();
         Console.WriteLine($"  captured {frames} frames at {rate} Hz x{channels}");
-        // Loopback only delivers packets while something plays, so pad to wall-clock length is
-        // not attempted: the WAV holds what was heard, back to back.
         return Resample.ToMono16k(raw.ToArray(), rate, channels);
     }
 
@@ -119,7 +104,7 @@ static class Loopback
         int size = Marshal.SizeOf<ActivationParams>();
         var blob = Marshal.AllocHGlobal(size);
         Marshal.StructureToPtr(p, blob, false);
-        var variant = new PropVariantBlob { vt = 65 /* VT_BLOB */, cbSize = (uint)size, pBlobData = blob };
+        var variant = new PropVariantBlob { vt = 65, cbSize = (uint)size, pBlobData = blob };
         var handler = new Completion();
         var iid = typeof(IAudioClient).GUID;
         try
@@ -137,7 +122,6 @@ static class Loopback
     static extern int ActivateAudioInterfaceAsync(string path, ref Guid riid, ref PropVariantBlob activationParams,
         IActivateAudioInterfaceCompletionHandler handler, out IActivateAudioInterfaceAsyncOperation op);
 
-    // The handler must be agile or activation fails with E_ILLEGAL_METHOD_CALL.
     [ComVisible(true)]
     sealed class Completion : IActivateAudioInterfaceCompletionHandler, IAgileObject
     {
@@ -209,7 +193,6 @@ interface IActivateAudioInterfaceCompletionHandler
 [ComImport, Guid("94ea2b94-e9cc-49e0-c0ff-ee64ca8f5b90"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 interface IAgileObject { }
 
-/// A looping tone played by this process through winmm, so the excluded tree makes a sound.
 static class Tone
 {
     const uint SndAsync = 0x1, SndMemory = 0x4, SndLoop = 0x8;
@@ -217,10 +200,10 @@ static class Tone
     public static GCHandle Start()
     {
         const int rate = 16000;
-        var samples = new short[rate]; // 1 s, a whole number of cycles so the loop has no click
+        var samples = new short[rate];
         for (int i = 0; i < samples.Length; i++)
             samples[i] = (short)(Math.Sin(2 * Math.PI * 1000 * i / rate) * 0.3 * short.MaxValue);
-        var handle = GCHandle.Alloc(Wav.Bytes(samples, rate), GCHandleType.Pinned); // must outlive async playback
+        var handle = GCHandle.Alloc(Wav.Bytes(samples, rate), GCHandleType.Pinned);
         PlaySound(handle.AddrOfPinnedObject(), IntPtr.Zero, SndAsync | SndMemory | SndLoop);
         Thread.Sleep(300);
         return handle;
@@ -244,7 +227,6 @@ static class Resample
             mono[f] = sum / channels;
         }
         if (rate == 16000) return mono.Select(x => (short)x).ToArray();
-        // Spike-grade resampling: box-average then linear interpolation; the app will use Media Foundation.
         int window = Math.Max(1, rate / 16000);
         int outCount = (int)((long)frames * 16000 / rate);
         var output = new short[outCount];
@@ -261,8 +243,6 @@ static class Resample
 
 static class Analysis
 {
-    /// Overall RMS (0–1) and the 1 kHz tone's amplitude relative to what was played, from
-    /// Goertzel over 100 ms blocks, taking the loudest-tone block's median to ignore gaps.
     public static (double rms, double toneLevel) Run(short[] pcm, int rate, double hz, double playedAmp)
     {
         if (pcm.Length == 0) return (0, 0);

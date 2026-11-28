@@ -2,11 +2,6 @@ using System.Runtime.InteropServices;
 
 namespace Cicada.App;
 
-/// 会议室: a microphone as a listening source, 16 kHz mono (Windows converts), handed on as it comes
-/// in (DeviceRecorder keeps it all instead). A device pulled out or switched off ends its stream:
-/// the room mic is picked again and capture goes on, so the room doesn't go quiet for the rest of
-/// the meeting. Ends with "denied" when Windows' microphone privacy switch is off for desktop apps,
-/// "none" when no microphone is left.
 sealed class MicSource : IAudioSource
 {
     readonly Func<Endpoints.Device?> pick;
@@ -14,7 +9,6 @@ sealed class MicSource : IAudioSource
     volatile bool running;
     public event Action<short[]>? Samples;
     public event Action<string?>? Ended;
-    /// The microphone in use.
     public string? DeviceName { get; private set; }
 
     public MicSource(Func<Endpoints.Device?> pick) { this.pick = pick; }
@@ -50,7 +44,6 @@ sealed class MicSource : IAudioSource
             }
             catch (Exception e)
             {
-                // 0x88890004 AUDCLNT_E_DEVICE_INVALIDATED: unplugged, disabled, or its format changed.
                 Log.Debug($"mic: {device.Name} stopped 0x{e.HResult:X8}, picking the room mic again");
                 failures = DateTime.UtcNow - started > TimeSpan.FromSeconds(10) ? 1 : failures + 1;
                 if (failures > 5) { Ended?.Invoke(e.Message); return; }
@@ -66,7 +59,6 @@ sealed class MicSource : IAudioSource
         {
             client = Endpoints.Activate(id);
             var fmt = Endpoints.Pcm16(16000);
-            // A 1 s buffer, as the system tap's: a capture thread held up a moment loses nothing.
             int hr = client.Initialize(0, Endpoints.AutoConvert, 10_000_000, 0, fmt, IntPtr.Zero);
             Marshal.FreeHGlobal(fmt);
             Marshal.ThrowExceptionForHR(hr);

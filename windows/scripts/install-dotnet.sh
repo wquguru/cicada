@@ -1,5 +1,4 @@
 #!/bin/bash
-# Installs the .NET 10 SDK into ~/.dotnet with Microsoft's script (no sudo, nothing system-wide).
 set -euo pipefail
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$T/dotnet-install.sh"

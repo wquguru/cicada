@@ -1,4 +1,3 @@
-# First logon: OpenSSH server (PowerShell shell, key auth for the host), no sleep or lock, then a marker.
 $ErrorActionPreference = 'Continue'
 Start-Transcript C:\firstlogon.log
 $src = Split-Path $MyInvocation.MyCommand.Path
@@ -6,7 +5,6 @@ powercfg /change monitor-timeout-ac 0; powercfg /change standby-timeout-ac 0
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v NoLockScreen /t REG_DWORD /d 1 /f
 reg add "HKCU\Control Panel\Desktop" /v ScreenSaveActive /t REG_SZ /d 0 /f
 Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue
-# OpenSSH: the built-in capability first, else the zip on this disc.
 if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) { Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 }
 if (-not (Get-Service sshd -ErrorAction SilentlyContinue) -and (Test-Path "$src\OpenSSH-ARM64.zip")) {
   Expand-Archive "$src\OpenSSH-ARM64.zip" 'C:\Program Files' -Force

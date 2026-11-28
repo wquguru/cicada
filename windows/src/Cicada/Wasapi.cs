@@ -2,22 +2,18 @@ using System.Runtime.InteropServices;
 
 namespace Cicada.App;
 
-/// Audio devices by name, and plain WASAPI capture and playback on them: the microphone (what I
-/// say), the virtual cable's "CABLE Input" (what the meeting hears), the speakers (previews).
-/// SystemAudioTap is the other half, the process loopback.
 static class Endpoints
 {
     public enum Flow { Render = 0, Capture = 1 }
     public sealed record Device(string Id, string Name, string Description);
 
-    /// Active devices: Name is "扬声器 (Realtek…)", Description the short "CABLE Input".
     public static List<Device> All(Flow flow)
     {
         var list = new List<Device>();
         try
         {
             var e = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-            Marshal.ThrowExceptionForHR(e.EnumAudioEndpoints((int)flow, 1 /* ACTIVE */, out var all));
+            Marshal.ThrowExceptionForHR(e.EnumAudioEndpoints((int)flow, 1, out var all));
             all.GetCount(out var n);
             for (uint i = 0; i < n; i++)
             {
@@ -35,25 +31,20 @@ static class Endpoints
         try
         {
             var e = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-            if (e.GetDefaultAudioEndpoint((int)flow, 1 /* eMultimedia */, out var d) != 0) return null;
+            if (e.GetDefaultAudioEndpoint((int)flow, 1, out var d) != 0) return null;
             d.GetId(out var id);
             return new Device(id, Prop(d, 14) ?? id, Prop(d, 2) ?? "");
         }
         catch { return null; }
     }
 
-    /// The virtual cable's playback side, which meeting apps hear as the "CABLE Output" mic.
     public static Device? Cable() => All(Flow.Render).FirstOrDefault(d => d.Description == VirtualCable.InputName || d.Name.StartsWith(VirtualCable.InputName));
     public static Device? CableOutput() => All(Flow.Capture).FirstOrDefault(d => d.Description == VirtualCable.OutputName || d.Name.StartsWith(VirtualCable.OutputName));
 
-    /// Any end of VB-Cable, "CABLE In 16ch" too (the pack installs it beside CABLE Input, and
-    /// Windows can make it the default speaker as well).
     public static bool IsCable(Device d) =>
         d.Description is VirtualCable.InputName or VirtualCable.OutputName || d.Name.StartsWith(VirtualCable.InputName) || d.Name.StartsWith(VirtualCable.OutputName)
         || d.Name.Contains("VB-Audio Virtual Cable", StringComparison.OrdinalIgnoreCase);
 
-    /// Every default (CableDefaults' "<flow>/<role>" keys): the playback and recording device for
-    /// games and system sounds, for media and for calls.
     public static Dictionary<string, string> Defaults()
     {
         var map = new Dictionary<string, string>();
@@ -68,14 +59,10 @@ static class Endpoints
         return map;
     }
 
-    /// Ids of the cable's two ends, for CableDefaults.
     public static HashSet<string> CableIds() => [.. All(Flow.Render).Concat(All(Flow.Capture)).Where(IsCable).Select(d => d.Id)];
 
-    /// What the user hears through is the cable: they hear nothing.
     public static bool SpeakerIsCable() => Default(Flow.Render) is { } d && IsCable(d);
 
-    /// Makes `id` the default for one role, as the Sound control panel does. IPolicyConfig isn't
-    /// documented, but it is what Windows' own panel calls and has stayed put since Windows 7.
     public static bool SetDefault(string id, int role)
     {
         try
@@ -88,8 +75,6 @@ static class Endpoints
         catch (Exception ex) { Log.Debug($"endpoints: set default failed {ex.GetType().Name}"); return false; }
     }
 
-    /// Back to a real speaker for every role (CableDefaults.Speaker): when nothing from before the
-    /// install was remembered.
     public static bool RestoreSpeaker()
     {
         if (CableDefaults.Speaker(All(Flow.Render).Select(d => (d.Id, IsCable(d)))) is not { } id) { Log.Debug("cable: no other speaker"); return false; }
@@ -98,7 +83,6 @@ static class Endpoints
         return ok && !SpeakerIsCable();
     }
 
-    /// A microphone, never the cable's own output (that would be the room hearing itself).
     public static Device? Microphone()
     {
         var d = Default(Flow.Capture);
@@ -106,22 +90,19 @@ static class Endpoints
         return All(Flow.Capture).FirstOrDefault(x => x.Description != VirtualCable.OutputName && !x.Name.StartsWith(VirtualCable.OutputName));
     }
 
-    /// 会议室: the microphone that hears the table (RoomMicPlan): the default, unless that is the
-    /// virtual cable or a Bluetooth headset.
     public static Device? RoomMic()
     {
         var inputs = new List<(Device d, RoomMicPlan.Input plan)>();
         try
         {
             var e = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-            Marshal.ThrowExceptionForHR(e.EnumAudioEndpoints((int)Flow.Capture, 1 /* ACTIVE */, out var all));
+            Marshal.ThrowExceptionForHR(e.EnumAudioEndpoints((int)Flow.Capture, 1, out var all));
             all.GetCount(out var n);
             for (uint i = 0; i < n; i++)
             {
                 all.Item(i, out var d);
                 d.GetId(out var id);
                 var device = new Device(id, Prop(d, 14) ?? id, Prop(d, 2) ?? "");
-                // PKEY_Device_EnumeratorName: BTHENUM, BTHHFENUM, BTHLEDEVICE for Bluetooth.
                 var bus = Prop(d, 24) ?? "";
                 var virtualCable = device.Description == VirtualCable.OutputName || device.Name.StartsWith(VirtualCable.OutputName);
                 inputs.Add((device, new RoomMicPlan.Input(id, bus.StartsWith("BTH", StringComparison.OrdinalIgnoreCase), virtualCable)));
@@ -147,7 +128,7 @@ static class Endpoints
         var e = (IMMDeviceEnumerator)new MMDeviceEnumerator();
         Marshal.ThrowExceptionForHR(e.GetDevice(id, out var d));
         var iid = typeof(IAudioClient).GUID;
-        Marshal.ThrowExceptionForHR(d.Activate(ref iid, 23 /* CLSCTX_ALL */, IntPtr.Zero, out var o));
+        Marshal.ThrowExceptionForHR(d.Activate(ref iid, 23, IntPtr.Zero, out var o));
         return (IAudioClient)o;
     }
 
@@ -162,7 +143,7 @@ static class Endpoints
         return p;
     }
 
-    internal const uint AutoConvert = 0x80000000 | 0x08000000; // AUTOCONVERTPCM | SRC_DEFAULT_QUALITY
+    internal const uint AutoConvert = 0x80000000 | 0x08000000;
 
     // MARK: COM
 
@@ -202,7 +183,6 @@ static class Endpoints
 
     [ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")] class PolicyConfigClient { }
 
-    /// Only SetDefaultEndpoint is called; the slots before it keep the vtable in order.
     [ComImport, Guid("F8679F50-850A-41CF-9C72-430F290290C8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     interface IPolicyConfig
     {
@@ -257,8 +237,6 @@ interface IAudioRenderClient
     [PreserveSig] int ReleaseBuffer(uint frames, uint flags);
 }
 
-/// Records one device at 16 kHz mono (Windows converts) until Stop: the mic while the key is held,
-/// or CABLE Output in tests (what the meeting would hear).
 sealed class DeviceRecorder
 {
     readonly string id;
@@ -266,7 +244,6 @@ sealed class DeviceRecorder
     Thread? thread;
     volatile bool running;
     public string? Error { get; private set; }
-    /// The last packet's peak, 0–1 (scaled as the Mac's recorder meter): for a level bar.
     public volatile float Level;
 
     public DeviceRecorder(string id) { this.id = id; }
@@ -322,7 +299,6 @@ sealed class DeviceRecorder
         }
         catch (Exception e)
         {
-            // 0x80070005: Windows' microphone privacy switch is off for desktop apps.
             Error = e.HResult == unchecked((int)0x80070005) ? "denied" : e.GetType().Name;
             Log.Debug($"recorder: failed 0x{e.HResult:X8}");
             ready.Set();
@@ -331,9 +307,6 @@ sealed class DeviceRecorder
     }
 }
 
-/// Plays a sentence on one device: the virtual cable for the room, the speakers for a preview.
-/// Chunks are queued as they stream in and played as soon as the first arrives; End waits for the
-/// last sample to be heard.
 sealed class DeviceSpeaker : ISpeechSink
 {
     readonly Func<Endpoints.Device?> device;
@@ -343,7 +316,6 @@ sealed class DeviceSpeaker : ISpeechSink
     TaskCompletionSource? done;
     int rate;
     public string? DeviceName { get; private set; }
-    /// The device was there but wouldn't play (or vanished): nothing, or not all, was heard.
     public bool Failed { get; private set; }
     public bool Stopped => stopped;
 
@@ -351,7 +323,6 @@ sealed class DeviceSpeaker : ISpeechSink
 
     public bool Ready => device() is not null;
 
-    /// 试听's 停止: what is queued is dropped and End returns; later chunks are ignored.
     public void Stop()
     {
         stopped = true; ending = true;
@@ -402,8 +373,6 @@ sealed class DeviceSpeaker : ISpeechSink
                 {
                     lock (queue) { if (queue.Count > 0) { pending = queue.Dequeue(); offset = 0; } }
                 }
-                // Half a sample left over can't be played: without this the loop spun on it forever,
-                // End never returned and the talk key stayed on 正在说给对方听….
                 if (pending.Length - offset == 1) offset = pending.Length;
                 if (offset < pending.Length && room > 0)
                 {

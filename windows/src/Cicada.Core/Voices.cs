@@ -1,19 +1,11 @@
 namespace Cicada;
 
-/// 说话人识别: telling the other side's voices apart, as the Mac does (SpeakerID.swift). A line's
 /// audio becomes a voiceprint (WeSpeaker ResNet34-LM, VoxCeleb, CC BY 4.0, compressed to int8 by
-/// scripts/compress-voiceprint.py), voiceprints are grouped as lines arrive, and a voice gets a
-/// number once it has said enough. Everything runs on this PC; only the numbers are stored.
 public interface IVoiceprint
 {
-    /// A unit-length voiceprint of 16 kHz mono audio, or null (too short, or no model).
     float[]? Embed(short[] samples);
 }
 
-/// Kaldi log-mel filterbank, as `torchaudio.compliance.kaldi.fbank` computes it with the defaults the
-/// model was trained on: 16 kHz, 25 ms Povey windows every 10 ms, DC removed, pre-emphasis 0.97,
-/// 512-point power spectrum, 80 mel bins from 20 Hz to 8 kHz, natural log. Then, as in training,
-/// each bin's mean over the clip is taken away.
 public static class Fbank
 {
     public const int Bins = 80, FrameLength = 400, Shift = 160, FftSize = 512;
@@ -21,7 +13,6 @@ public static class Fbank
 
     static readonly double[] window = Enumerable.Range(0, FrameLength).Select(i => Math.Pow(0.5 - 0.5 * Math.Cos(2 * Math.PI * i / (FrameLength - 1)), 0.85)).ToArray();
 
-    // `Bins` rows of FftSize/2+1 weights (the Nyquist column is always zero, as in Kaldi).
     static readonly double[,] banks = MakeBanks();
 
     static double[,] MakeBanks()
@@ -43,7 +34,6 @@ public static class Fbank
         return w;
     }
 
-    /// Frames × Bins, row-major, mean-normalised; null when too short for a voiceprint (0.5 s).
     public static float[]? Features(short[] samples)
     {
         if (samples.Length < MinSeconds * 16000) return null;
@@ -72,7 +62,7 @@ public static class Fbank
             {
                 double e = 0;
                 for (int k = 0; k < cols; k++) e += banks[b, k] * power[k];
-                outp[f * Bins + b] = (float)Math.Log(Math.Max(e, 1.1920929e-07 /* Float.ulpOfOne, as the Mac */));
+                outp[f * Bins + b] = (float)Math.Log(Math.Max(e, 1.1920929e-07));
             }
         }
         for (int b = 0; b < Bins; b++)
@@ -85,7 +75,6 @@ public static class Fbank
         return outp;
     }
 
-    /// In-place radix-2 FFT.
     static void Fft(double[] re, double[] im)
     {
         int n = re.Length;
@@ -115,9 +104,6 @@ public static class Fbank
     }
 }
 
-/// Groups voiceprints as lines arrive, never revising a line already labelled. A line joins the
-/// closest voice when similar enough; a long line unlike every voice starts a new one; anything
-/// else stays unlabelled (对方). Tuned on AMI dev meetings (the Mac's VoiceClusterer).
 public sealed class VoiceClusterer
 {
     public const double NewSeconds = 2.0;
@@ -148,19 +134,12 @@ public sealed class VoiceClusterer
     }
 }
 
-/// What the transcript shows for the other side's lines (the Mac's SpeakerLabels). A voice gets a
-/// number only once it has `ShownAfter` lines, and only when at least two voices have, so a
-/// one-to-one call stays 对方. Numbers follow the order voices got there, so a number never moves.
 public static class SpeakerLabels
 {
     public const int ShownAfter = 5;
 
-    /// 说话人识别 is on (AppSettings.SpeakerVoices; TranscriptExport.voices on the Mac): when off,
-    /// notes and exports name no speakers. Kept in step by the app.
     public static bool Voices { get; set; } = true;
 
-    /// Speaker number → the name the user gave it, else Ling's guess (SpeakerLabels.names); an
-    /// empty name the user set clears the guess.
     public static Dictionary<int, string> Names(Session s)
     {
         var outp = new Dictionary<int, string>();
@@ -174,7 +153,6 @@ public static class SpeakerLabels
         return outp;
     }
 
-    /// Long enough to say whose voice it is: three words, or four characters of CJK.
     public static bool Substantive(string text)
     {
         var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Count(w => w.Any(char.IsLetter));
@@ -182,7 +160,6 @@ public static class SpeakerLabels
         return text.Count(c => c is >= '一' and <= '鿿' or >= '㐀' and <= '䶿' or >= '぀' and <= 'ヿ' or >= '가' and <= '힣') >= 4;
     }
 
-    /// Voice id → 1-based speaker number, for the voices on show.
     public static Dictionary<int, int> VoiceNumbers(IReadOnlyList<TranscriptLine> lines)
     {
         var count = new Dictionary<int, int>();
@@ -198,7 +175,6 @@ public static class SpeakerLabels
         return reached.OrderBy(kv => kv.Value).Select((kv, n) => (kv.Key, n + 1)).ToDictionary(x => x.Key, x => x.Item2);
     }
 
-    /// Line id → 1-based speaker number; lines without one show as 对方.
     public static Dictionary<string, int> Numbers(IReadOnlyList<TranscriptLine> lines)
     {
         var number = VoiceNumbers(lines);

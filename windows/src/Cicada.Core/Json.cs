@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Cicada;
 
-/// How records are written: what Swift's JSONEncoder (pretty, sorted keys, ISO-8601) produces, as
-/// far as the Mac app's decoder cares. Whitespace differs ("key": vs "key" :); the values and keys
-/// don't, and Chinese stays readable rather than \u-escaped.
 public static class Json
 {
     public static readonly JsonSerializerOptions Options = Make(indented: true);
@@ -30,7 +27,6 @@ public static class Json
     public static string Write<T>(T value) => JsonSerializer.Serialize(value, Options);
     public static T? Read<T>(string text) => JsonSerializer.Deserialize<T>(text, Options);
 
-    /// Whole seconds, UTC, "Z": what `.iso8601` writes (and expects back).
     sealed class Iso8601 : JsonConverter<DateTimeOffset>
     {
         public override DateTimeOffset Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) =>

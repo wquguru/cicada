@@ -1,20 +1,16 @@
 namespace Cicada;
 
-/// Where listening gets its sound: 16 kHz mono Int16, pushed from any thread. On Windows the
-/// process loopback tap (everything the PC plays except Cicada); in tests and the CLI, a file.
 public interface IAudioSource
 {
     event Action<short[]>? Samples;
-    /// Fires once when the source can't go on (device gone, file finished).
     event Action<string?>? Ended;
     void Start();
     void Stop();
 }
 
-/// Debug (`silentlisten`): a meeting with no audio at all, its lines given by `heard`.
 public sealed class SilentSource : IAudioSource
 {
-#pragma warning disable CS0067 // never raised: there is nothing to hear
+#pragma warning disable CS0067
     public event Action<short[]>? Samples;
     public event Action<string?>? Ended;
 #pragma warning restore CS0067
@@ -22,7 +18,6 @@ public sealed class SilentSource : IAudioSource
     public void Stop() { }
 }
 
-/// Plays a WAV into listening, in real time or as fast as it can (`speed` 0).
 public sealed class FileAudioSource(string path, double speed = 1) : IAudioSource
 {
     CancellationTokenSource? cts;
@@ -36,7 +31,7 @@ public sealed class FileAudioSource(string path, double speed = 1) : IAudioSourc
         var pcm = Wav.Read(path);
         Task.Run(async () =>
         {
-            const int chunk = Segmenter.Rate / 10; // 100 ms, like a capture callback
+            const int chunk = Segmenter.Rate / 10;
             var started = DateTime.UtcNow;
             for (int i = 0; i < pcm.Length && !token.IsCancellationRequested; i += chunk)
             {
@@ -48,7 +43,6 @@ public sealed class FileAudioSource(string path, double speed = 1) : IAudioSourc
                     if (wait > TimeSpan.Zero) await Task.Delay(wait, CancellationToken.None);
                 }
             }
-            // A second of silence so the last sentence's pause is heard.
             Samples?.Invoke(new short[Segmenter.Rate]);
             Ended?.Invoke(null);
         });
@@ -57,20 +51,10 @@ public sealed class FileAudioSource(string path, double speed = 1) : IAudioSourc
     public void Stop() => cts?.Cancel();
 }
 
-/// Loopback capture sends nothing while nothing plays, so SystemAudioTap feeds silence itself to end
-/// segments and keep the clock going. But a packet that is merely late (a busy PC, a VM) arrives
-/// after that silence: a gap that wasn't there goes into the middle of the sentence, and with the
-/// pause between two words it reaches the segmenter's 0.6 s and the line splits in two ("…keep
-/// the twenty." / "First is the release date…"). Waiting 300 ms, as the tap did, let any stall from
-/// 300 ms up do that; it now waits a whole second, so only a stall over a second can. Silence that
-/// is real costs nothing until the pause would end a segment anyway, then 0.4 s at most, once,
-/// when the playback stops altogether (a meeting app or player keeps sending silent packets).
 public static class LoopbackGap
 {
     public const double Late = 1.0;
 
-    /// Samples of silence to feed now: none until `sinceLastPacket` reaches Late, then all of
-    /// `sinceFed` (the time since audio, or silence, was last handed on).
     public static int Silence(double sinceLastPacket, double sinceFed) =>
         sinceLastPacket >= Late ? (int)(Math.Max(0, sinceFed) * Segmenter.Rate) : 0;
 }
@@ -89,7 +73,6 @@ public static class Wav
         return ms.ToArray();
     }
 
-    /// A PCM16 WAV of any rate and channel count, as 16 kHz mono.
     public static short[] Read(string path)
     {
         using var r = new BinaryReader(File.OpenRead(path));
@@ -125,7 +108,6 @@ public static class Wav
         throw new InvalidDataException("no data chunk");
     }
 
-    /// Linear interpolation after a box average: plenty for speech going to a recognizer.
     public static short[] Resample(double[] mono, int rate)
     {
         if (rate == Segmenter.Rate) return mono.Select(x => (short)Math.Clamp(x, short.MinValue, short.MaxValue)).ToArray();

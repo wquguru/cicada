@@ -3,14 +3,8 @@ using System.Text.Json.Nodes;
 
 namespace Cicada;
 
-/// Keeps the live meeting's notes up to date: every ~45 s with new speech, one Ling call sends the
-/// current notes plus the new lines and gets the whole notes back as JSON; a final pass rewrites
-/// them over the whole transcript when the meeting ends. A failed or odd reply never replaces good
-/// notes. The prompt and parsing are the Mac's (Notes.swift), so both write the same notes.
 public sealed class NotesEngine
 {
-    /// Unreachable: the notes' own request couldn't reach the service (network, proxy, timeout);
-    /// another request failing, such as naming speakers, never sets it.
     public enum State { Idle, Updating, NoKey, InvalidKey, RateLimited, Unreachable, Failed }
 
     public const double Interval = 45;
@@ -21,25 +15,19 @@ public sealed class NotesEngine
     bool inFlight;
     string? pendingFinal;
     DateTime lastAttempt = DateTime.MinValue;
-    /// The language the shown notes were last written in.
     string? writtenIn;
     Timer? timer;
 
     public MeetingNotes Notes { get; private set; } = new();
     public State Status { get; private set; } = State.Idle;
-    /// cicadactl notesproblem failed|ratelimited|idle: shows what a failed round looks like.
     public void SimulateStatus(string state) { Status = Enum.TryParse<State>(state, true, out var s) ? s : State.Idle; Changed?.Invoke(); }
-    /// While a meeting runs and has notes: when the next live update is due.
     public DateTime? NextUpdate { get { lock (gate) return sessionId is null || Notes.IsEmpty || inFlight ? null : lastAttempt.AddSeconds(Interval); } }
-    /// The session the notes belong to (stays set after the meeting ends).
     public string? ShownId { get; private set; }
-    /// The language notes are written in (English name), from 纪要语言.
     public Func<string> Language { get; set; } = () => "Simplified Chinese";
     public event Action? Changed;
 
     public NotesEngine(LingClient ling, SessionStore store) { this.ling = ling; this.store = store; }
 
-    /// Names for the translation glossary: "江充 (note; misheard as 江松, 江冲)".
     public IReadOnlyList<string> Glossary() => Notes.Terms.Take(30)
         .Select(t => t.Heard.Count == 0 ? $"{t.Name} ({t.Note})" : $"{t.Name} ({t.Note}; misheard as {string.Join(", ", t.Heard)})").ToList();
 
@@ -57,7 +45,6 @@ public sealed class NotesEngine
         Changed?.Invoke();
     }
 
-    /// The meeting ended: one last pass over the whole transcript. The task ends when it's written.
     public Task Finish()
     {
         timer?.Dispose(); timer = null;
@@ -71,24 +58,17 @@ public sealed class NotesEngine
         lock (gate)
         {
             ShownId = id; Notes = store.Get(id)?.Notes ?? new MeetingNotes();
-            // A round that failed belongs to the meeting it ran for, not to the record opened now.
             if (sessionId is null && Status is State.Failed or State.Unreachable or State.RateLimited) Status = State.Idle;
         }
         Changed?.Invoke();
     }
 
-    /// The finished meeting whose notes 生成纪要 is writing now (Notes.swift › generatingID): its
-    /// page says so and the button waits, as a long meeting's notes take half a minute and more.
     public string? GeneratingId { get; private set; }
 
-    /// The meeting whose final pass is running now (from 结束 or 生成纪要).
     string? finalId;
-    /// A final pass is over, whether it wrote notes or not (存到文件夹 waits for it).
     public event Action<string>? FinalDone;
-    /// The final pass for this meeting is running or waiting its turn.
     public bool Settling(string id) { lock (gate) return finalId == id || pendingFinal == id; }
 
-    /// Notes for a finished meeting that has none.
     public async Task Generate(string id)
     {
         lock (gate) { if (GeneratingId is not null) return; GeneratingId = id; }
@@ -107,15 +87,12 @@ public sealed class NotesEngine
         lock (gate)
         {
             if (Status == State.NoKey && ling.Usable) Status = State.Idle;
-            // The service answers again (the check after a network change, or any other request): the
-            // banner goes now, not after the next round, which runs on its usual 45 s.
             if (Status == State.Unreachable && ling.Health.Failure?.Why != AICheck.Reason.Unreachable) Status = State.Idle;
             id = sessionId;
             if (id is null || inFlight) return;
             var s = store.Get(id);
             if (s is null || s.Lines.Count <= Notes.Covered) return;
             var since = (DateTime.UtcNow - lastAttempt).TotalSeconds;
-            // First notes as soon as there is something to say, then every 45 s.
             bool due = Notes.IsEmpty ? s.Lines.Count >= 3 || since > 20 : since >= Interval;
             if (!due) return;
         }
@@ -145,16 +122,11 @@ public sealed class NotesEngine
         {
             var lines = session.Lines.ToList();
             var lang = Language();
-            // The language changed mid-meeting: write the notes again from the start in the new one.
-            // (The script check can't tell Chinese from Japanese, so extending them would keep the old.)
             bool fresh = !final && writtenIn is not null && writtenIn != lang;
             if (fresh) { baseNotes = new MeetingNotes(); Log.Debug($"notes: language now {lang}, rewriting"); }
             int from = final ? 0 : Math.Min(baseNotes.Covered, lines.Count);
             var names = SpeakerLabels.Voices ? SpeakerLabels.Names(session) : null;
             var startedAt = lines.FirstOrDefault()?.T ?? 0;
-            // A live update returns only the last topics: when it rewrote them all, its reply grew with
-            // the meeting until, about an hour in, it was cut off at max_tokens or fell into a loop and
-            // the notes stopped updating. The final pass still rewrites everything once.
             int frozen = final || fresh ? 0 : Math.Max(0, baseNotes.Topics.Count - EditableTopics);
             var prompt = Prompt(baseNotes, lines, from, lang, final, names, frozen);
             var next = final ? await LongFinal(lines, names, lang, startedAt) : null;
@@ -207,17 +179,12 @@ public sealed class NotesEngine
         }
     }
 
-    /// Terms keep only the heard forms the recognizer really wrote (`Src`). The notes read lines
-    /// with fixes in, so a wrong fix came back as a heard form ("X平台 heard as platform"), went to
-    /// the translator and the next fix's request as a known mishearing, and was proposed again.
     public static List<NoteTerm> HeardAsSaid(List<NoteTerm> terms, IReadOnlyList<TranscriptLine> lines)
     {
         foreach (var t in terms) t.Heard = t.Heard.Where(h => lines.Any(l => l.Src.Contains(h, StringComparison.OrdinalIgnoreCase))).ToList();
         return terms;
     }
 
-    /// The model echoes points it already had without evidence: keep the times they had, and a
-    /// point keeps the time it was first heard.
     public static void CarryTimes(MeetingNotes old, MeetingNotes next)
     {
         var known = new Dictionary<string, double>();
@@ -228,7 +195,6 @@ public sealed class NotesEngine
         {
             var times = t.Points.Select((p, i) => Min(t.PointTime(i), known.TryGetValue(p, out var k) ? k : null)).ToList();
             t.PointTimes = times.Any(x => x is not null) ? times : null;
-            // A topic starts no later than its first point (the reply dates it from the lines it cites now).
             if (times.Where(x => x is not null).Min() is { } first && first < t.Start) t.Start = first;
         }
         var items = new Dictionary<string, double>();
@@ -241,8 +207,6 @@ public sealed class NotesEngine
     public static bool Written(MeetingNotes notes, string language) =>
         Languages.WrittenIn(notes.Summary + string.Concat(notes.Topics.Select(t => t.Title)), language);
 
-    /// A long meeting's final pass: each part noted on its own, all at once, then merged into one.
-    /// null when a step fails: the caller then makes one pass over the whole transcript, as before.
     async Task<MeetingNotes?> LongFinal(List<TranscriptLine> lines, IReadOnlyDictionary<int, string>? names, string lang, double startedAt)
     {
         var parts = Parts(lines);
@@ -268,7 +232,6 @@ public sealed class NotesEngine
                 Log.Debug($"notes: final part {i + 1}/{parts.Count} failed, one pass instead");
                 return null;
             }
-            // Without its topics: given them, the merge wrote them all back out and was cut off.
             int a = raw.IndexOf('{'), b = raw.LastIndexOf('}');
             if (JsonNode.Parse(raw[a..(b + 1)]) is not JsonObject part) return null;
             part.Remove("topics");
@@ -296,22 +259,11 @@ public sealed class NotesEngine
 
     // MARK: Live topics (Notes.swift › merge)
 
-    /// The most topics the final notes have (the prompt says so too; the model doesn't always listen).
     public const int MaxTopics = 8;
-    /// The most topics live notes have. Live notes used to stop at `MaxTopics` and pour everything
-    /// after into the last topic, whose summary then grew into a wall of "最新…又…补充…"; past this,
-    /// the two shortest neighbouring settled topics are joined instead, so the newest can start.
     public const int LiveMaxTopics = 12;
-    /// A topic summary longer than this is a log the model kept appending to, not one sentence.
     public const int TopicSummaryLimit = 160;
-    /// How many of the last topics a live update may rewrite; earlier ones stay as they are.
     public const int EditableTopics = 2;
 
-    /// A live reply's topics after the `frozen` ones it was told to leave alone: with some frozen, at
-    /// most the editable ones plus one new, from the end (the model sometimes echoes the whole list),
-    /// never a copy of a frozen one, each summary kept to one sentence; and no more than
-    /// `LiveMaxTopics` in all (past that, settled neighbours are joined). A reply with no topics of
-    /// its own keeps the ones it had.
     public static List<NoteTopic> Merge(IReadOnlyList<NoteTopic> old, int frozen, IReadOnlyList<NoteTopic> returned)
     {
         var kept = old.Take(frozen).ToList();
@@ -323,7 +275,6 @@ public sealed class NotesEngine
         tail = Capped(tail, LiveMaxTopics - Math.Min(kept.Count, 1));
         while (kept.Count + tail.Count > LiveMaxTopics && kept.Count >= 2)
         {
-            // The pair spanning the least time, its end being the next topic's start.
             var ends = kept.Skip(1).Select(t => t.Start).Append(tail[0].Start).ToList();
             int i = 0;
             for (int j = 1; j < kept.Count - 1; j++)
@@ -334,8 +285,6 @@ public sealed class NotesEngine
         return Capped(kept.Concat(tail).ToList(), LiveMaxTopics);
     }
 
-    /// Two neighbouring topics as one: both titles and summaries, and up to the 4 points the prompt
-    /// allows, taken evenly from each.
     public static NoteTopic Joined(NoteTopic a, NoteTopic b)
     {
         int fromA = Math.Min(a.Points.Count, Math.Max(2, 4 - b.Points.Count));
@@ -350,7 +299,6 @@ public sealed class NotesEngine
         };
     }
 
-    /// A runaway topic summary cut back to its first sentence (or to the limit, with "…").
     public static string Shortened(string summary)
     {
         if (summary.Length <= TopicSummaryLimit) return summary;
@@ -359,8 +307,6 @@ public sealed class NotesEngine
         return end >= 0 ? head[..(end + 1)] : head.Trim() + "…";
     }
 
-    /// At most `count` topics (at least one): the points of any after that go into the last kept.
-    /// The last kept is a copy: it may be one of the shown notes' topics.
     public static List<NoteTopic> Capped(List<NoteTopic> topics, int count)
     {
         topics = topics.ToList();
@@ -381,7 +327,6 @@ public sealed class NotesEngine
 
     // MARK: Prompt (Notes.swift › prompt, word for word)
 
-    /// `part`: in a long meeting's final pass, which part `from..lines.Count` is (1-based, of `Of`).
     public static string Prompt(MeetingNotes notes, IReadOnlyList<TranscriptLine> lines, int from, string language, bool final,
                                 IReadOnlyDictionary<int, string>? names = null, int frozen = 0, (int Index, int Of)? part = null)
     {
@@ -389,8 +334,6 @@ public sealed class NotesEngine
         string Line(int i)
         {
             var l = lines[i];
-            // As Notes.swift: a named voice as its name, else 说话人N once voices are told apart,
-            // 未识别 for a voice not on show.
             var who = l.Speaker == "me" ? "你" : numbers.TryGetValue(l.Id, out var n) ? names?.GetValueOrDefault(n) ?? $"说话人{n}" : numbers.Count == 0 ? "对方" : "未识别";
             return $"[L{i + 1} {Languages.Clock(l.T)} {who}] {l.Shown}";
         }
@@ -410,8 +353,6 @@ public sealed class NotesEngine
         if (context < from) p += "Already covered (context only):\n" + string.Join("\n", Enumerable.Range(context, from - context).Select(Line)) + "\n\n";
         p += $"{(final ? "Transcript" : "New lines")} (id, mm:ss, speaker 对方=the other side / 你=me / a name or 说话人N=one person on the other side, told apart by voice and possibly wrong / 未识别=someone on the other side not identified, text). Speech recognition makes mistakes, often in names: correct them from context, and write a public figure's name as the news spells it.\n";
         p += string.Join("\n", Enumerable.Range(from, lines.Count - from).Select(Line));
-        // The model splits too eagerly when only told how long a topic should be: say plainly
-        // whether this update may start one.
         if (final && from < lines.Count)
         {
             var span = lines[^1].T - lines[from].T;
@@ -430,7 +371,6 @@ public sealed class NotesEngine
         return p + "\n\n" + Format(language, numbers.Count > 0, final, frozen);
     }
 
-    /// The reply's JSON shape and the rules for its contents.
     static string Format(string language, bool voices, bool final, int frozen) =>
         "Return the full notes as one JSON object with exactly these keys:\n"
            + "{\"title\": \"the meeting's name: what it is about, a few words\",\n"
@@ -454,8 +394,6 @@ public sealed class NotesEngine
            + "- Write about what was said, never about the transcript or recognition quality.\n"
            + "- Use empty arrays when there is nothing. No markdown, no text outside the JSON.";
 
-    /// The current notes as sent back to the model (no bookkeeping fields). `from`: the first topic
-    /// sent (earlier ones go as a list of titles).
     static string CompactJson(MeetingNotes n, int from = 0)
     {
         var o = new JsonObject();
@@ -475,8 +413,6 @@ public sealed class NotesEngine
 
     // MARK: Long meetings
 
-    /// How a long meeting's final pass is split: over `SplitMinutes`, into equal parts by time of at
-    /// most `PartMinutes`. One pass covered a 91-minute meeting but only the first hour of a 4-hour one.
     public const double SplitMinutes = 100, PartMinutes = 60;
     public static List<Range> Parts(IReadOnlyList<TranscriptLine> lines)
     {
@@ -498,14 +434,8 @@ public sealed class NotesEngine
         return bounds.Zip(bounds.Skip(1), (a, b) => a..b).ToList();
     }
 
-    /// Each part's share of the topics: the merge keeps them as they are, so every part has some.
     public static int PartTopics(int parts) => Math.Max(2, MaxTopics / Math.Max(1, parts));
 
-    /// At most `count` of a part's `topics`, neighbours joined: a part's reply often has more topics
-    /// than asked. Keeping the first ones lost the end of the part, and keeping some spread from first
-    /// to last kept a topic's "（续）" stub at the part's end and dropped the topic itself. The same
-    /// subject twice is joined first, under the first one's title; then the pair spanning the least
-    /// time (to the next topic's start, or `end` for the last), as live notes do.
     public static List<NoteTopic> Thinned(IReadOnlyList<NoteTopic> topics, int count, double end)
     {
         var list = topics.ToList();
@@ -516,7 +446,6 @@ public sealed class NotesEngine
             int at = same;
             if (at < 0)
             {
-                // The first of equal spans, as the Mac does.
                 at = 0;
                 for (int i = 1; i < list.Count - 1; i++) if (Span(i) < Span(at)) at = i;
             }
@@ -528,7 +457,6 @@ public sealed class NotesEngine
         return list;
     }
 
-    /// A topic title without a trailing bracket ("预算评审（续）", "Budget (cont.)"): what it is about.
     public static string Subject(string title)
     {
         var t = title.Trim();
@@ -537,9 +465,6 @@ public sealed class NotesEngine
         return open > 0 ? t[..open].Trim() : t;
     }
 
-    /// The whole meeting's title, summary, conclusions, to-dos and terms from its parts' notes (the
-    /// replies as they came, with their evidence line ids). Asked to merge topics too, the model
-    /// kept the first parts' and dropped the rest, so topics are joined in code.
     public static string MergePrompt(IReadOnlyList<string> parts, IReadOnlyList<TranscriptLine> lines, string language, bool voices)
     {
         var p = "You keep notes for a meeting that has just ended. It was long, so each part was noted on its own; below are those notes, in time order (JSON; evidence ids are transcript lines, L1 the first). Merge them into the notes for the whole meeting.\n"
@@ -552,7 +477,6 @@ public sealed class NotesEngine
 
     // MARK: Parse
 
-    /// Lenient: missing keys become empty, evidence ids are checked against the transcript.
     public static MeetingNotes? Parse(string raw, IReadOnlyList<double> times, double startedAt)
     {
         int a = raw.IndexOf('{'), b = raw.LastIndexOf('}');
@@ -609,9 +533,6 @@ public sealed class NotesEngine
                     pointTimes.Add(p is JsonObject po2 ? Time(po2["evidence"]) : null);
                 }
             }
-            // When it was first said, from its lines: the model's own "start" drifts by tens of
-            // minutes in a long meeting (a topic said at 51-85 min came back as starting at 23) and is
-            // sometimes misread (04:49 for 00:49). Never after the last line.
             var cited = new[] { Time(t["evidence"]) }.Concat(pointTimes).Where(x => x is not null).Select(x => x!.Value).ToList();
             var start = cited.Count > 0 ? cited.Min() : Num(t["start"]) ?? startedAt;
             if (times.Count > 0 && start > times[^1]) start = times[^1];
@@ -634,7 +555,6 @@ public sealed class NotesEngine
             var heard = t["heard"] is JsonArray h ? h.Select(Str).Where(x => x.Length > 0 && x != name).ToList() : [];
             return new NoteTerm { Name = name, Note = Str(t["note"]), Heard = heard };
         }).Where(t => t.Name.Length > 0).ToList();
-        // The model keeps every term it ever had: bound the glossary, keeping the misheard ones.
         if (n.Terms.Count > 20) n.Terms = NoteTerm.Ordered(n.Terms).Take(20).ToList();
         return n.IsEmpty ? null : n;
     }

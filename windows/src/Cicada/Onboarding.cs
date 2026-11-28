@@ -8,11 +8,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// First run, as the Mac's setup window without Windows' title bar: the logo and a bar per step
-/// along the top, a big heading with one grey line, the task in white cards, Back / Continue at the
-/// bottom. Windows needs no permission for system audio and listening needs an AI key (recognition
-/// is Ming's, or another service's hear model behind 用不了 Ling？), so: 接 Ling → 听声音 → 看效果 →
-/// 同声传译, then where the tray icon lives.
 sealed class Onboarding : Window
 {
     readonly Controller app;
@@ -24,19 +19,14 @@ sealed class Onboarding : Window
     readonly double[] levels = new double[9];
     double level, peak;
     bool autoStart = true, playing;
-    // 同声传译 is on while its step is showing (so 右 Ctrl can be tried); this is what it was before.
     bool? speakBefore;
-    // Step 1: the key field and what we know about it
     readonly PasswordBox keyBox = new() { FontSize = 14, MinHeight = 34, VerticalContentAlignment = VerticalAlignment.Center };
     readonly TextBox keyText = new() { FontSize = 14, MinHeight = 34, VerticalContentAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
     readonly ContentControl keyStatus = new();
     bool checking;
-    // A pasted key's prefix said something (a management key, another service's): that stays until the next paste.
     bool hinting;
 
-    /// Opened by the installer: step 1 says so, and 开机时启动知了 shows what the installer set.
     readonly bool installed;
-    /// The first page after installing carries 已装好: the installer's window becomes this one.
     readonly int badgeStep;
 
     public Onboarding(Controller app, bool installed = false)
@@ -51,7 +41,6 @@ sealed class Onboarding : Window
         var dock = new DockPanel();
         DockPanel.SetDock(stepper, Dock.Top);
         DockPanel.SetDock(footer, Dock.Bottom);
-        // The page scrolls if it must (a failed check's reason and proxy hint under the key).
         dock.Children.Add(stepper); dock.Children.Add(footer);
         dock.Children.Add(new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         Content = Ui.Frameless(this, dock, resizable: false, captionHeight: 24);
@@ -68,7 +57,6 @@ sealed class Onboarding : Window
         Render();
     }
 
-    /// Dev: open on a given step (cicadactl show onboarding <n>).
     public Onboarding At(int to) { Go(to); return this; }
 
     void Go(int to)
@@ -88,7 +76,6 @@ sealed class Onboarding : Window
         Render();
     }
 
-    /// Leaving 同声传译: keep it on (继续, with the virtual mic in), or put back what it was.
     void LeaveSpeak(bool keep)
     {
         if (speakBefore is not { } before) return;
@@ -97,7 +84,6 @@ sealed class Onboarding : Window
         speakBefore = null;
     }
 
-    // The service the key page was last shown for: another one's status and key don't carry over.
     string? shownProvider;
 
     void Render()
@@ -108,8 +94,6 @@ sealed class Onboarding : Window
         footer.Content = Footer();
     }
 
-    // The Mac's setup layout (Onboarding.swift): the logo and a bar per step along the top. The last
-    // page isn't a step: the logo alone.
     FrameworkElement Stepper()
     {
         var grid = new Grid { Margin = new Thickness(64, 36, 64, 0) };
@@ -151,14 +135,12 @@ sealed class Onboarding : Window
         return s;
     }
 
-    /// The Mac's white step card: 18-point corners, no line on the grey ground.
     static Border StepCard(UIElement child, Thickness? padding = null) => new()
     {
         Background = Brushes.White, CornerRadius = new CornerRadius(18),
         Padding = padding ?? new Thickness(22, 20, 22, 20), Child = child,
     };
 
-    /// Two cards side by side, the first wider.
     static Grid Columns(UIElement main, UIElement side, double sideWidth = 236)
     {
         var g = new Grid();
@@ -170,7 +152,6 @@ sealed class Onboarding : Window
         return g;
     }
 
-    /// The lead of a numbered row: a grey disc with the number, or a green-tinted tick once it's done.
     static FrameworkElement Disc(int n, bool done = false)
     {
         var disc = new Grid { Width = 26, Height = 26, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 0, 14, 0) };
@@ -180,7 +161,6 @@ sealed class Onboarding : Window
         return disc;
     }
 
-    /// A numbered row in a step card: the disc, a line in ink, a grey line, and maybe a control.
     static FrameworkElement Numbered(FrameworkElement lead, string title, string? detail, UIElement? right = null, UIElement? below = null)
     {
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -213,7 +193,6 @@ sealed class Onboarding : Window
         }
         else if (step == 0)
         {
-            // A grey link, as on the Mac: Ling stays first and recommended.
             var other = Ui.LinkText(L("用不了 Ling？"), () => Switch("openrouter"));
             other.Foreground = Palette.Secondary;
             left = Ui.Row(16, Ui.Row(8, Ui.Icon(Icons.Lock, 14, Palette.Secondary), Ui.Text(L("key 加密存在这台电脑上，只发给 Ling"), 13, Palette.Secondary, wrap: false)), other);
@@ -277,9 +256,7 @@ sealed class Onboarding : Window
 
     // MARK: 1 · 用其他服务 (OnboardingKey.swift › otherEntry)
 
-    /// Another service than Ling is chosen (用不了 Ling？): step 1 asks for its key instead.
     bool Other => app.Settings.AiProvider != "ling";
-    /// What the page offers; a custom address is set up in 设置 › AI 服务.
     static readonly string[] Others = ["openrouter", "zenmux"];
 
     void Switch(string provider)
@@ -309,7 +286,6 @@ sealed class Onboarding : Window
         return Page(L("用其他服务"), L("听、纪要和翻译都能用，模型已经选好。"), card);
     }
 
-    /// The key field with its reveal button, and 粘贴并检查.
     DockPanel KeyRow(string placeholder)
     {
         var reveal = Ui.IconButton(Icons.Eye, L("显示 key"), () =>
@@ -356,10 +332,8 @@ sealed class Onboarding : Window
     async Task SaveKey()
     {
         var text = keyBox.Password.Trim();
-        // 继续 is always allowed once a key is in: a failed check stays in 还差几步 and the settings.
         if (text.Length == 0 && app.Ling.HasKey) { Go(1); return; }
         if (!text.StartsWith("sk-")) { Status(false, L("要粘贴 sk- 开头的那串")); return; }
-        // The prefix says whose key it is (SettingsWindow.SaveKey does the same).
         if (AICheck.Owner(text) is { } whose)
         {
             var (owner, management) = whose;
@@ -391,8 +365,6 @@ sealed class Onboarding : Window
         if (app.Ling.Health.Passed) { await Task.Delay(600); if (step == 0) Go(1); }
     }
 
-    /// What the last check found, under the key: a tick when it passed (busy too), else where it
-    /// broke and the one thing that fixes it, as in the settings.
     void ShowCheck()
     {
         var ling = app.Ling;
@@ -404,7 +376,6 @@ sealed class Onboarding : Window
         else keyStatus.Content = AICheckView.Steps(app, () => { keyBox.Clear(); keyStatus.Content = null; keyBox.Focus(); }, recheckInStep: true, compact: true);
     }
 
-    /// A check finished or a meeting request reported back while the key page is open.
     void LingChanged() => Dispatcher.BeginInvoke(() => { if (step == 0 && !checking && keyBox.Password.Length == 0) ShowCheck(); });
 
     // MARK: 2 · System audio
@@ -437,7 +408,6 @@ sealed class Onboarding : Window
                 Ui.Spread(Ui.Stack(2, Ui.Text(L("没有声音在放？"), 14, Palette.Ink, wrap: false), Ui.Helper(L("放 3 秒测试声音，从默认扬声器出来"))), test),
             },
         });
-        // The two sounds side by side: people try speaking first, but this step hears the PC.
         var sources = new Grid { Margin = new Thickness(0, 12, 0, 0) };
         sources.ColumnDefinitions.Add(new ColumnDefinition());
         sources.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
@@ -449,7 +419,6 @@ sealed class Onboarding : Window
         return Page(L("让知了听到电脑里的声音"), L("会议里对方说的话从电脑扬声器放出来，字幕和纪要都从这里来。Windows 上不用授权。"), card, sources);
     }
 
-    /// One of the two sounds: where it goes, outlined in ink when it is this step's.
     static FrameworkElement Source(string title, FrameworkElement badge, string[] flow, bool on)
     {
         var path = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
@@ -473,16 +442,12 @@ sealed class Onboarding : Window
         double sum = 0;
         foreach (var s in buf) sum += (double)s * s;
         var rms = buf.Length == 0 ? 0 : Math.Sqrt(sum / buf.Length) / 32768;
-        // The loudest buffer since the last bar, not the last one (often a silent fill).
         level = Math.Max(level, rms);
         peak = Math.Max(peak, rms);
     }
 
     bool testing;
 
-    /// 放一段测试声音: the sample's first seconds through the default speakers. The listening tap
-    /// leaves Cicada's own sound out, so a second tap that hears only Cicada feeds the same bars:
-    /// they still move only if Windows really hands the PC's sound over.
     async Task PlayTest()
     {
         if (testing || Bundled.Sample() is not { } wav) return;
@@ -508,10 +473,8 @@ sealed class Onboarding : Window
         }
     }
 
-    /// A few bars of the last moment's loudness, newest on the right, in the accent once there's sound.
     void Meter()
     {
-        // A rolling history of the loudness, eased so a word reads as a rise and fall, not one spike.
         Array.Copy(levels, 1, levels, 0, levels.Length - 1);
         levels[^1] = Math.Max(Loudness(level), levels[^2] * 0.7);
         level = 0;
@@ -530,7 +493,6 @@ sealed class Onboarding : Window
         }
     }
 
-    /// -50 dBFS (a quiet room) to 0 dBFS on a log scale, so speech sits mid-bar instead of pinning it.
     static double Loudness(double rms) => rms <= 0 ? 0 : Math.Clamp((20 * Math.Log10(rms) + 50) / 50, 0, 1);
 
     // MARK: 3 · Try it
@@ -554,7 +516,6 @@ sealed class Onboarding : Window
 
     async Task PlaySample()
     {
-        // The notes panel opens along the right edge; keep the wizard's buttons clear of it.
         var area = SystemParameters.WorkArea;
         var room = area.Right - 440 - area.Left;
         Left = Math.Max(area.Left + 8, Math.Min(Left, room - Width));
@@ -604,7 +565,6 @@ sealed class Onboarding : Window
         return Page(L("线上开会时要说外语吗？"), LF("按住%@说话，线上的人听到翻译后的声音。不需要可以跳过。", PushToTalk.Label), card);
     }
 
-    /// After the install: where the computer's sound plays, so nobody thinks Cicada took it.
     FrameworkElement? SpeakerNote() =>
         Endpoints.SpeakerIsCable() ? CableInstaller.SpeakerStrip(this, Render)
         : Endpoints.Default(Endpoints.Flow.Render) is { } d ? Ui.Text(LF("电脑声音照常从 %@ 播放", d.Name), 13, Palette.Secondary) : null;
@@ -629,7 +589,6 @@ sealed class Onboarding : Window
 
     // MARK: Done · where the icon lives
 
-    /// Text that wraps on the left of a button that keeps its full width (English runs wider).
     static FrameworkElement Beside(FrameworkElement text, FrameworkElement button)
     {
         var d = new DockPanel();
@@ -669,7 +628,6 @@ sealed class Onboarding : Window
         return Page(L("好了，知了住在任务栏右下角"), L("Windows 会先把新图标收进 ^ 里。拖出来放在时钟旁边，开会时一眼就能看到。"), Columns(pin, keys, 260));
     }
 
-    /// The corner of the taskbar: the ^ overflow with 知了 in it, and a dashed arrow to beside the clock.
     static FrameworkElement TrayPicture()
     {
         var c = new Canvas { Height = 150, ClipToBounds = true };

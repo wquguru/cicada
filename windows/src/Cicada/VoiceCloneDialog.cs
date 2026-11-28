@@ -7,9 +7,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// 我自己的声音's recording, the Mac's VoiceCloneSheet in a Windows 11 dialog: read a passage for
-/// 10–15 s (it stops by itself at 15) → Ming hears what was said → listen to the recording and to the
-/// clone speaking the room's language → 用这个声音 keeps it. Nothing is kept until then.
 sealed class VoiceCloneDialog
 {
     enum Phase { Idle, Recording, Checking, Failed, Ready }
@@ -27,7 +24,6 @@ sealed class VoiceCloneDialog
     DateTime started;
     double seconds;
     bool saved, playingOriginal, playingClone;
-    // Updated ten times a second while recording, without rebuilding the dialog.
     ColumnDefinition? levelOn, levelOff, timeOn, timeOff;
     TextBlock? clock;
 
@@ -53,8 +49,6 @@ sealed class VoiceCloneDialog
         window.Closed += (_, _) => { StopRecording(); app.StopPreview(); };
     }
 
-    /// Shows the dialog; true when a recording was kept. `recorded`: a WAV taken as just read (the
-    /// debug pipe's `ownvoice dialog <wav>`, for a machine without a microphone).
     public static bool Open(Controller app, string target, byte[]? recorded)
     {
         var d = new VoiceCloneDialog(app, target, app.OpenSettings);
@@ -84,7 +78,6 @@ sealed class VoiceCloneDialog
         stack.Children.Add(Spaced(new Border { Background = Palette.Mica, CornerRadius = new CornerRadius(10), Padding = new Thickness(16, 14, 16, 14), Child = passage }, 16));
         stack.Children.Add(Spaced(Ui.Text(L("这是我自己的声音。只在我说话时用它替我翻译。"), 12, Palette.Secondary), 12));
 
-        // The level and the time read so far; the range under them.
         var level = Bar(Palette.Live, 6, out levelOn, out levelOff);
         clock = Ui.Text(Clock(seconds), 13, Palette.Ink, FontWeights.SemiBold, wrap: false);
         clock.Margin = new Thickness(12, 0, 0, 0);
@@ -153,7 +146,6 @@ sealed class VoiceCloneDialog
         await Check(Wav.Bytes(pcm));
     }
 
-    /// The Mac's VoiceRecorder.finish: long enough, heard, and read at a meeting's pace.
     async Task Check(byte[] recorded)
     {
         wav = recorded;
@@ -161,7 +153,6 @@ sealed class VoiceCloneDialog
         phase = Phase.Checking;
         Render();
         var (outcome, text, trimmed) = await VoiceCloneCheck.Check(recorded, app.Transcribe);
-        // What is played back, previewed and kept: the reading without the quiet at its ends.
         wav = trimmed;
         seconds = Math.Max(0, trimmed.Length - 44) / 32000.0;
         transcript = text;
@@ -188,7 +179,6 @@ sealed class VoiceCloneDialog
     FrameworkElement Review()
     {
         var stack = new StackPanel();
-        // A way out without keeping it: this step's two buttons are 重录 and 用这个声音.
         var close = Ui.IconButton(Icons.Close, L("关闭"), window.Close, Palette.Secondary, size: 32, iconSize: 14);
         close.VerticalAlignment = VerticalAlignment.Top;
         close.Margin = new Thickness(8, -4, -8, 0);
@@ -264,7 +254,6 @@ sealed class VoiceCloneDialog
 
     static string Clock(double s) => $"{(int)s / 60}:{(int)s % 60:00}";
 
-    /// A bar filled from the left by two star columns; Show sets the share.
     static Grid Bar(Brush fill, double height, out ColumnDefinition on, out ColumnDefinition off, Brush? track = null)
     {
         var grid = new Grid { Height = height, VerticalAlignment = VerticalAlignment.Center };
@@ -294,7 +283,6 @@ sealed class VoiceCloneDialog
         if (clock is not null) clock.Text = Clock(seconds);
     }
 
-    /// Two equal buttons, the main one on the right (Dialogs.Show's band).
     static Grid Buttons(FrameworkElement cancel, FrameworkElement primary)
     {
         var grid = new Grid();

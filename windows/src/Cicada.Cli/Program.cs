@@ -1,21 +1,3 @@
-// cicada-cli: the Windows engines without Windows.
-//
-//   cicada-cli listen <file.wav> [--target zh-CN] [--speed 1|0] [--notes]
-//       Plays the file into ListenEngine as if the PC were playing it, prints each line as it is
-//       recorded, then the record's folder. --speed 0 feeds it as fast as it can; --notes waits
-//       for the final notes and prints them. --room <mic.wav> hears that file as the room mic too
-//       (电脑和会议室: two engines, the echo gate and EchoMatch); --room-only hears it alone (会议室).
-//   cicada-cli check                     the AI service's key check: state, hears, catalog sizes
-//   cicada-cli speak <text> <out.wav>    the service's voice for <text>, as a 24 kHz WAV; --voice <id>,
-//       --lang <code> (Ming's language_id), --clone <reference.wav> [--clone-text <what it says>]
-//       [--from <my language>] for the user's own voice (Ling only), kept as the app keeps it
-//       (quiet ends trimmed) unless --raw sends the file as it is
-//   cicada-cli segments <file.wav>       where the segmenter cuts (compare with ming_asr.py)
-//   cicada-cli roundtrip <session.json>…  reads and writes records, says if anything changed
-//
-// --provider ling|openrouter|zenmux|custom (default ling) and --hear / --text <model> pick the AI
-// service. Records go to CICADA_HOME (default: a temp folder). The key comes from CICADA_KEY_FILE,
-// else the Mac app's dev or release key file for that service; it is never printed.
 using System.Text.Json.Nodes;
 using Cicada;
 
@@ -76,9 +58,6 @@ switch (args_[0])
     {
         var ling = Client();
         var pcm = new List<byte>();
-        // --clone <reference.wav>: the user's own voice, as 我自己的声音 does. The clip is checked
-        // as the app checks a recording (length, heard by the hear model, pace) unless --clone-text
-        // gives what it says.
         (string Audio, string Text)? reference = null;
         if (Opt("--clone", "") is { Length: > 0 } refFile)
         {
@@ -97,7 +76,6 @@ switch (args_[0])
             if (args_.Contains("--raw")) reference = ("data:audio/wav;base64," + Convert.ToBase64String(refWav), text);
             else
             {
-                // Kept and read back as the app keeps it (VoiceReference.Save trims the quiet ends).
                 var kept = new VoiceReference(new PlainProtector(), Path.Combine(Path.GetTempPath(), $"cicada-cli-voice-{Environment.ProcessId}"));
                 kept.Save(refWav, text);
                 reference = kept.Reference();
@@ -117,7 +95,6 @@ switch (args_[0])
     }
     case "hear":
     {
-        // One file to the hear model (Ming on Ling), raw reply printed: for checking the prompt.
         var ling = Client();
         var target = Opt("--target", "zh-CN");
         var reply = await ling.Chat(Translator.HearPrompt(target, null, []), Translator.HearInstruction(target), Priority.Translate,

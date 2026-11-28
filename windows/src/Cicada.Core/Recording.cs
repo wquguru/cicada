@@ -1,39 +1,26 @@
 namespace Cicada;
 
-/// 保存会议录音: what was heard goes into `system.m4a` beside session.json, as on the Mac
-/// (AudioFiles.swift). While the meeting runs it is written as ADTS (`system.aac`), which stays
-/// readable up to its last frame if the app is killed; when the meeting ends it is rewrapped into
-/// the .m4a, and a partial file left by a crash is rewrapped at the next launch. The encoder is
-/// the app's (Media Foundation); Core only decides what goes in and when.
 public interface IAudioFiles
 {
-    /// An AAC (ADTS) file at `path` for 16 kHz mono; null when this PC can't encode.
     IAudioWriter? Open(string path);
-    /// `from` (ADTS) into the .m4a `to`, the first `until` seconds only when given. False on failure.
     bool Rewrap(string from, string to, double? until);
 }
 
 public interface IAudioWriter
 {
     void Write(ReadOnlySpan<short> pcm);
-    /// Writes what is buffered and closes the file.
     void Close();
 }
 
-/// 电脑和会议室 keeps one recording, as the Mac does: the room side's samples are added into the
-/// PC's at the same place on the meeting's clock (each side counts the samples it gave, gaps
-/// filled). The PC's audio waits `Delay` before it is written, so a room buffer that arrives a
-/// little after the PC's is still mixed in; what the room says after the PC's last sample follows.
 public sealed class RoomMix(IAudioWriter writer) : IAudioWriter
 {
-    const int Delay = Segmenter.Rate; // 1 s
-    const int Limit = 30 * Segmenter.Rate; // the PC's audio stalled: older room audio goes
+    const int Delay = Segmenter.Rate;
+    const int Limit = 30 * Segmenter.Rate;
     readonly object gate = new();
     readonly List<short> pc = [], room = [];
-    long at, roomAt; // where on the clock pc[0] and room[0] are (everything before `at` is written)
+    long at, roomAt;
     bool closed;
 
-    /// The PC's audio (the main side), in order.
     public void Write(ReadOnlySpan<short> pcm)
     {
         short[] output;
@@ -46,7 +33,6 @@ public sealed class RoomMix(IAudioWriter writer) : IAudioWriter
         if (output.Length > 0) writer.Write(output);
     }
 
-    /// The room side's audio; `start`: its first sample's place on the clock.
     public void Room(ReadOnlySpan<short> pcm, long start)
     {
         lock (gate)
@@ -54,7 +40,7 @@ public sealed class RoomMix(IAudioWriter writer) : IAudioWriter
             if (closed) return;
             var end = roomAt + room.Count;
             if (room.Count == 0) roomAt = start;
-            else if (start > end) room.AddRange(new short[start - end]); // the room side stopped a while
+            else if (start > end) room.AddRange(new short[start - end]);
             else if (start < end) pcm = pcm[(int)Math.Min(end - start, pcm.Length)..];
             room.AddRange(pcm);
             Drop(at);
@@ -62,7 +48,6 @@ public sealed class RoomMix(IAudioWriter writer) : IAudioWriter
         }
     }
 
-    /// Everything still held goes into the file, then the file closes.
     public void Close()
     {
         List<short> output;
@@ -82,7 +67,6 @@ public sealed class RoomMix(IAudioWriter writer) : IAudioWriter
         writer.Close();
     }
 
-    /// Room audio for a place already written: too late to mix.
     void Drop(long upto)
     {
         var late = (int)Math.Min(room.Count, upto - roomAt);
@@ -91,7 +75,6 @@ public sealed class RoomMix(IAudioWriter writer) : IAudioWriter
         roomAt += late;
     }
 
-    /// The next `n` samples of the PC's audio with the room's added.
     short[] Take(int n)
     {
         if (n <= 0) return [];
@@ -117,7 +100,6 @@ public static class Recording
     public static string SystemAudio(string sessionId) => Path.Combine(Paths.Sessions, sessionId, "system.m4a");
     public static string Partial(string m4a) => Path.ChangeExtension(m4a, ".aac");
 
-    /// The file a record plays: its own recording, or an imported file's where it still is.
     public static string? Playable(Session s)
     {
         var own = SystemAudio(s.Id);
@@ -126,12 +108,6 @@ public static class Recording
         return null;
     }
 
-    /// Samples of silence that go in before a buffer so the recording keeps the meeting's clock:
-    /// loopback capture sends nothing while the PC is silent (SystemAudioTap fills only what it
-    /// notices), a source switch leaves a gap, and a line's `t` is its time since the meeting began.
-    /// `at`: meeting seconds when the buffer arrived; `fed`: samples already given; `count`: the
-    /// buffer's. Nothing while the stream is within LoopbackGap.Late of the clock, so a packet that
-    /// is merely late never puts a gap in a sentence.
     public static int Behind(double at, long fed, int count)
     {
         var lag = at - (fed + count) / (double)Segmenter.Rate;

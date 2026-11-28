@@ -2,15 +2,6 @@ using System.Runtime.InteropServices;
 
 namespace Cicada.App;
 
-/// The talk key's microphone through Windows' echo cancellation (VoiceMic.swift on the Mac): a
-/// WASAPI capture stream in the communications category, so the endpoint's AEC (its driver's, or
-/// Windows 11's Voice Clarity) takes the meeting playing on the speakers out of what I say. From
-/// build 22621 the AEC is pointed at those speakers; from 22000 the stream says which effects run
-/// (`EchoCancel.InEffect`). Records at 16 kHz mono until Stop, like DeviceRecorder.
-///
-/// EchoCancelled is true only when the stream lists an AEC that is on: then SpeakEngine skips the
-/// echo drop. Otherwise (Windows 10, a driver without AEC, a virtual mic) the press is the plain
-/// mic's and is dropped as before when the meeting played through it.
 sealed class EchoMic
 {
     readonly string id;
@@ -18,13 +9,10 @@ sealed class EchoMic
     readonly List<short> samples = [];
     Thread? thread;
     volatile bool running;
-    /// "denied" (Windows' microphone privacy switch), or why the stream wouldn't open.
     public string? Error { get; private set; }
     public bool EchoCancelled { get; private set; }
-    /// For the log: what Windows said about echo cancellation on this stream.
     public string Detail { get; private set; } = "";
 
-    /// `reference`: the render endpoint the meeting plays on; null leaves the choice to Windows.
     public EchoMic(string id, string? reference) { this.id = id; this.reference = reference; }
 
     public void Start()
@@ -50,17 +38,13 @@ sealed class EchoMic
         try
         {
             client = Endpoints.Activate(id);
-            // Before Initialize: the category picks the endpoint's communications processing.
-            // Options stay 0: RAW would turn off the very processing wanted here.
-            var props = new AudioClientProperties { cbSize = 16, bIsOffload = 0, eCategory = 3 /* AudioCategory_Communications */, Options = 0 };
+            var props = new AudioClientProperties { cbSize = 16, bIsOffload = 0, eCategory = 3, Options = 0 };
             Marshal.ThrowExceptionForHR(((IAudioClient2)client).SetClientProperties(ref props));
             var fmt = Endpoints.Pcm16(16000);
             int hr = client.Initialize(0, Endpoints.AutoConvert, 2_000_000, 0, fmt, IntPtr.Zero);
             Marshal.FreeHGlobal(fmt);
             Marshal.ThrowExceptionForHR(hr);
             var notes = new List<string>();
-            // The speakers the meeting plays on as the AEC's reference (22621+). E_NOINTERFACE: no
-            // AEC here, or one that picks its own reference; neither is an error.
             var iid = typeof(IAcousticEchoCancellationControl).GUID;
             if (client.GetService(ref iid, out var c) == 0 && c is IAcousticEchoCancellationControl control)
             {
@@ -94,7 +78,6 @@ sealed class EchoMic
         }
         catch (Exception e)
         {
-            // 0x80070005: Windows' microphone privacy switch is off for desktop apps.
             Error = e.HResult == unchecked((int)0x80070005) ? "denied" : $"0x{e.HResult:X8}";
             EchoCancelled = false;
             Log.Debug($"echo mic: failed 0x{e.HResult:X8}");
@@ -103,8 +86,6 @@ sealed class EchoMic
         finally { if (client is not null) Marshal.ReleaseComObject(client); }
     }
 
-    /// The stream's effects (22000+), with an AEC that is off but may be set turned on first; null
-    /// when Windows can't list them.
     static List<EchoCancel.AudioEffect>? Effects(IAudioClient client, List<string> notes)
     {
         var iid = typeof(IAudioEffectsManager).GUID;
@@ -112,7 +93,7 @@ sealed class EchoMic
         var list = Read(manager);
         if (list is not null && EchoCancel.CanTurnOn(list))
         {
-            var hr = manager.SetAudioEffectState(EchoCancel.Effect, 1 /* AUDIO_EFFECT_STATE_ON */);
+            var hr = manager.SetAudioEffectState(EchoCancel.Effect, 1);
             notes.Add(hr == 0 ? "turned AEC on" : $"AEC on failed 0x{hr:X8}");
             list = Read(manager);
         }
@@ -125,7 +106,6 @@ sealed class EchoMic
         var list = new List<EchoCancel.AudioEffect>();
         try
         {
-            // AUDIO_EFFECT: GUID id, BOOL canSetState, AUDIO_EFFECT_STATE state: 24 bytes.
             for (int i = 0; i < n; i++)
             {
                 var e = Marshal.PtrToStructure<AudioEffect>(p + i * Marshal.SizeOf<AudioEffect>());
@@ -147,7 +127,6 @@ sealed class EchoMic
     [StructLayout(LayoutKind.Sequential)]
     struct AudioEffect { public Guid id; public int canSetState; public int state; }
 
-    /// IAudioClient's methods again, in order: a ComImport interface doesn't inherit vtable slots.
     [ComImport, Guid("726778CD-F60A-4eda-82DE-E47610CD78AA"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     interface IAudioClient2
     {

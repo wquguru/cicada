@@ -1,6 +1,4 @@
 #!/bin/bash
-# Regenerates windows/spike/clips/{en,zh,ja}.wav from the .txt beside them: one `say` call per
-# sentence, 0.8 s of silence between sentences so the pauses look like a meeting. macOS only.
 set -euo pipefail
 cd "$(dirname "$0")/clips"
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT

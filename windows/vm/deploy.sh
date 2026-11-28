@@ -1,5 +1,4 @@
 #!/bin/bash
-# Quits Cicada in the test VM and copies in fresh builds (run scripts/build.sh first).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 "$here/vmctl.sh" ssh 'Get-Process Cicada -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 1; Remove-Item C:\cicada-test\Cicada-win-arm64, C:\cicada-test\Cicada-win-x64 -Recurse -Force -ErrorAction SilentlyContinue; exit 0'

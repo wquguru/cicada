@@ -1,14 +1,9 @@
 namespace Cicada;
 
-/// The frames of an ADTS file (`system.aac`), for rewrapping into an .m4a without re-encoding.
-/// Windows' own ADTS reader hands out byte chunks of several frames each, which the MP4 sink can't
-/// time, so the file is split here. A frame cut off by a crash ends the list.
 public static class Adts
 {
     public readonly record struct Frame(int Offset, int Length);
 
-    /// What the frames hold: AAC object type, sample rate and channels, and the AudioSpecificConfig
-    /// an MP4 track needs.
     public sealed record Config(int ObjectType, int Rate, int Channels, byte[] SpecificConfig);
 
     static readonly int[] Rates = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
@@ -24,7 +19,6 @@ public static class Adts
         return new Config(obj, Rates[index], channels, asc);
     }
 
-    /// Each frame's payload (the header left out), in order.
     public static List<Frame> Frames(ReadOnlySpan<byte> file)
     {
         var frames = new List<Frame>();
@@ -35,10 +29,9 @@ public static class Adts
             int length = ((h[3] & 3) << 11) | (h[4] << 3) | (h[5] >> 5);
             int header = (h[1] & 1) == 1 ? 7 : 9;
             if (length <= header) { at = Sync(file, at + 1); continue; }
-            if (at + length > file.Length) break; // cut off mid-frame
+            if (at + length > file.Length) break;
             frames.Add(new Frame(at + header, length - header));
             at += length;
-            // Something not a frame (a torn write): skip to the next sync word.
             if (at < file.Length && !IsSync(file, at)) at = Sync(file, at);
         }
         return frames;

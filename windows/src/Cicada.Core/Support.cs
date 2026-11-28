@@ -3,8 +3,6 @@ using System.Globalization;
 
 namespace Cicada;
 
-/// Where the app keeps its files: %APPDATA%\Cicada (release) or "Cicada Dev" (dev builds, so a
-/// dev build never touches real records). Tests and the CLI point it elsewhere with CICADA_HOME.
 public static class Paths
 {
     public static bool Dev { get; set; } = Environment.GetEnvironmentVariable("CICADA_DEV") == "1";
@@ -22,12 +20,10 @@ public static class Paths
 
     public static string Sessions => Path.Combine(Root, "Sessions");
     public static string Settings => Path.Combine(Root, "settings.json");
-    /// One key file per AI service, named as on the Mac.
     public static string KeyFile(string service = "ling") => Path.Combine(Root, service == "ling" ? "ling-api-key" : "ai-key-" + service);
     public static string Log => Path.Combine(Path.GetTempPath(), Dev ? "cicada-dev-debug.log" : "cicada-debug.log");
 }
 
-/// The debug log (`%TEMP%\cicada-dev-debug.log`): timings and states, never meeting text or the key.
 public static class Log
 {
     static readonly object Gate = new();
@@ -46,7 +42,6 @@ public static class Log
 
 public sealed record Lang(string Name, string Code);
 
-/// The languages the Mac app offers (Languages.swift), as translation codes.
 public static class Languages
 {
     public static readonly Lang[] Sources =
@@ -61,7 +56,6 @@ public static class Languages
         new("한국어", "ko"), new("Español", "es"), new("Français", "fr"), new("Deutsch", "de"), new("Português", "pt"),
     ];
 
-    /// "Simplified Chinese", "Japanese": the names prompts use.
     public static string EnglishName(string code) => code switch
     {
         "zh-CN" => "Simplified Chinese",
@@ -74,7 +68,6 @@ public static class Languages
         try { return CultureInfo.GetCultureInfo(code); } catch { return null; }
     }
 
-    /// A system UI language ("zh-Hans-CN", "zh-TW", "en-US") as a translation code.
     public static string FromSystem(string name)
     {
         var parts = name.Split('-');
@@ -82,7 +75,6 @@ public static class Languages
         return parts.Contains("Hant") || parts.Contains("TW") || parts.Contains("HK") || parts.Contains("MO") ? "zh-TW" : "zh-CN";
     }
 
-    /// Normalizes what Ming says the language is ("zh", "zh-Hans", "cmn") to a source code.
     public static string Normalize(string? reported, string fallback)
     {
         if (string.IsNullOrWhiteSpace(reported)) return fallback;
@@ -95,8 +87,6 @@ public static class Languages
 
     static bool IsCjk(Rune r) => r.Value is >= 0x3040 and <= 0x9FFF or >= 0xAC00 and <= 0xD7AF;
 
-    /// Whether text is in the target's script: Chinese, Japanese and Korean targets need some CJK,
-    /// others must not be mostly CJK (TranslationService.cleanTranslation's check).
     public static bool InScript(string text, string target)
     {
         int letters = 0, cjk = 0;
@@ -111,7 +101,6 @@ public static class Languages
         return wantsCjk ? cjk > 0 : cjk * 2 <= letters;
     }
 
-    /// Notes' check: CJK languages need a fair share (names and numbers stay Latin).
     public static bool WrittenIn(string text, string englishLanguage)
     {
         int letters = 0, cjk = 0;

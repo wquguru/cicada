@@ -6,24 +6,16 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// Windows 11 ContentDialogs: a title, a line or a field, and two equal buttons on a grey band,
-/// primary first. Enter takes the primary button, Esc cancels.
 static class Dialogs
 {
-    /// Asks before something that can't be undone. True when the user agreed.
     public static bool Confirm(Window owner, string title, string body, string ok, bool danger)
     {
         var text = Ui.Text(body, 14, Palette.Body);
         return Show(owner, title, text, ok, danger, null) is not null;
     }
 
-    /// Something to know, with one button.
     public static void Tell(Window owner, string title, string body) => Show(owner, title, Ui.Text(body, 14, Palette.Body), L("知道了"), danger: false, null, single: true);
 
-    /// Two ways on, both named (开始听 blocked: 换成推荐的并开始 / 打开设置): 1 for `primary`, 2 for
-    /// `other`, 0 when closed. No `primary`: just `other` and 取消. No owner: the screen's centre.
-    /// `retry` makes `primary` work in place (重新检查并开始): the dialog stays with 正在检查… on the
-    /// button, then closes as 1 when it returns null, or shows the body it returns and waits again.
     public static int Choose(Window? owner, string title, string body, string? primary, string other, Func<Task<string?>>? retry = null)
     {
         int chosen = 0;
@@ -35,7 +27,6 @@ static class Dialogs
         return r is not null ? 1 : chosen;
     }
 
-    /// A one-line answer: the new text (maybe empty), or null when cancelled.
     public static string? Prompt(Window owner, string title, string value, string? hint, string ok)
     {
         var box = new TextBox { Text = value };
@@ -45,8 +36,6 @@ static class Dialogs
         return Show(owner, title, content, ok, danger: false, box);
     }
 
-    /// One of a few options, each a bordered row (the Mac's FolderChoice): its index, or null when
-    /// cancelled. The first is chosen to start with.
     public static int? Pick(Window? owner, string title, IReadOnlyList<(string Title, string? Detail)> options, string ok)
     {
         int pick = 0;
@@ -65,7 +54,6 @@ static class Dialogs
             var index = i;
             var text = options[i].Detail is { } d ? Ui.Stack(2, Ui.Text(options[i].Title, 13, Palette.Ink), Ui.Helper(d)) : Ui.Stack(2, Ui.Text(options[i].Title, 13, Palette.Ink));
             var row = new Border { CornerRadius = new CornerRadius(9), Padding = new Thickness(12, 10, 12, 10), Margin = new Thickness(0, 0, 0, 8), Background = Palette.Surface, Cursor = Cursors.Hand, Child = text };
-            // Down, and handled: the dialog drags itself on a press, which would swallow the release.
             row.MouseLeftButtonDown += (_, e) => { pick = index; Restyle(); e.Handled = true; };
             System.Windows.Automation.AutomationProperties.SetName(row, options[i].Title);
             rows.Add(row);
@@ -102,7 +90,6 @@ static class Dialogs
         }
         primary = Ui.Button(ok, Accept, danger ? Ui.Kind.Danger : Ui.Kind.Primary);
         cancel = secondary ?? Ui.Button(L("取消"), dialog.Close);
-        // A named second way on isn't 取消: Esc just closes.
         primary.IsDefault = true; cancel.IsCancel = secondary is null;
         if (secondary is not null) dialog.KeyDown += (_, e) => { if (e.Key == Key.Escape) dialog.Close(); };
         var buttons = new Grid();

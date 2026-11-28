@@ -1,10 +1,5 @@
 namespace Cicada;
 
-/// 改正听错的词, between the translation and the records (the Mac's LiveFixes.swift): which fixes a
-/// line takes, which wait for the user (待确认), and what the user's answers and edits teach the
-/// word list. Who wins: the user's own decisions, then the word list, then a later pass, then the
-/// first live guess. UI-free and thread-safe (replies arrive on worker threads); `Changed` fires on
-/// whichever thread made the change, and the app shows `Pending`, `Asking` and `Toast`.
 public sealed class LiveFixes
 {
     readonly SessionStore store;
@@ -13,23 +8,17 @@ public sealed class LiveFixes
     readonly object gate = new();
     public event Action? Changed;
 
-    /// The last thing the user did, said back with 撤销 for a few seconds.
     public sealed record Note(int Id, string Text);
     public Note? Toast { get; private set; }
     int toastIds;
     Timer? toastTimer;
 
-    /// Fixes said no to in this meeting ("from→to"), and how often each heard form was turned down
-    /// overall this run: twice and it leaves the word list.
     HashSet<string> refused = [];
     readonly Dictionary<string, int> refusals = [];
-    /// 稍后再看 on the card: still waiting, but asked again only after the meeting.
     HashSet<string> deferred = [];
-    /// What 撤销 puts back: the lines' fixes and the word list as they were.
     sealed record Step(string Session, Dictionary<string, List<LineFix>> Lines, List<Vocabulary.Term> Words, HashSet<string> Refused, HashSet<string> Deferred);
     readonly List<Step> undo = [];
 
-    /// The card asks about at most this many names in a row; the rest wait for after the meeting.
     public const int AskAtOnce = 3;
 
     public LiveFixes(SessionStore store, Vocabulary vocabulary, AppSettings settings)
@@ -46,8 +35,6 @@ public sealed class LiveFixes
 
     // MARK: The service's proposals
 
-    /// What a finished sentence's request carries; null while fixing is off. On a second pass (a
-    /// joined line) the lines after it and the notes' summary are there too.
     public Translator.FixContext? Context(string id, string lineId)
     {
         if (!settings.FixMisheard || store.Get(id) is not { } s) return null;
@@ -59,8 +46,6 @@ public sealed class LiveFixes
         return new Translator.FixContext(topic, Vocabulary.PromptLines(), recent, following, s.Notes?.Summary is { Length: > 0 } sum ? sum : null);
     }
 
-    /// The service's proposals for a line (none at all is an answer too: a later pass takes back
-    /// what isn't proposed again).
     public void Received(string id, string lineId, IReadOnlyList<Correction.Edit> edits)
     {
         if (!settings.FixMisheard) return;
@@ -75,7 +60,6 @@ public sealed class LiveFixes
                 if (verdict == Correction.Verdict.Apply)
                 {
                     fresh.Add(new LineFix(e.From, e.To));
-                    // A listed word counts as used whichever way the fix was found (a sound-alike too).
                     Vocabulary.Use(Correction.Core(e.From, e.To).To);
                 }
                 else if (verdict == Correction.Verdict.Ask && settings.AskNames) fresh.Add(new LineFix(e.From, e.To, ask: true));
@@ -89,8 +73,6 @@ public sealed class LiveFixes
         Changed?.Invoke();
     }
 
-    /// The word list's confirmed heard forms, fixed without asking anyone: also with no AI service.
-    /// Two characters at least, so a single 压 never turns into 押 everywhere.
     public void ApplyKnown(string id, string lineId)
     {
         if (!settings.FixMisheard) return;
@@ -108,8 +90,6 @@ public sealed class LiveFixes
         foreach (var t in Vocabulary.Terms)
             foreach (var h in t.Heard)
             {
-                // A heard form two words claim (两个都留) is never fixed silently. A translation a yes taught
-                // before that was refused (平台 → platform) isn't either; one the user typed is.
                 if (Correction.Length(h) < 2 || Correction.WordIn(h, src) < 0 || refused.Contains(Pair(h, t.Word))
                     || (t.Source != "user" && Correction.Translation(h, t.Word))
                     || Vocabulary.Owners(h, t.Word).Count > 0) continue;
@@ -127,7 +107,6 @@ public sealed class LiveFixes
 
     // MARK: 待确认
 
-    /// 待确认 in a meeting: each (from → to) once, oldest first.
     public List<(TranscriptLine Line, LineFix Fix)> Pending(string id)
     {
         var seen = new HashSet<string>();
@@ -138,8 +117,6 @@ public sealed class LiveFixes
         return out_;
     }
 
-    /// What the notes window's card asks now: not what was put off (稍后再看), and only the first
-    /// few, so a burst of names doesn't keep the card up all meeting.
     public (TranscriptLine Line, LineFix Fix, int Position, int Of)? Asking(string id)
     {
         HashSet<string> later;
@@ -149,7 +126,6 @@ public sealed class LiveFixes
         return (open[0].Line, open[0].Fix, 1, Math.Min(open.Count, AskAtOnce));
     }
 
-    /// The card's ×: asked again only after the meeting.
     public void Later(LineFix fix, string id)
     {
         lock (gate)
@@ -160,8 +136,6 @@ public sealed class LiveFixes
         Say(Strings.L("已收进人名和术语，稍后再看"));
     }
 
-    /// 对 / 不对 on a waiting fix: every line in the meeting waiting on the same change follows,
-    /// and a yes goes into the word list so the next meeting fixes it without asking.
     public void Answer(LineFix fix, bool yes, string id)
     {
         var c = Correction.Core(fix.From, fix.To);
@@ -177,7 +151,6 @@ public sealed class LiveFixes
             if (yes)
             {
                 Vocabulary.Confirm(c.From, c.To);
-                // The rest of the meeting heard the same way follows now, not with the next line.
                 if (settings.FixMisheard)
                     foreach (var l in others)
                         if (Line(id, l.Id) is { } now) Set(Known(now.Src, now.Fixes ?? []), l.Id, id);
@@ -188,14 +161,12 @@ public sealed class LiveFixes
         Say(yes ? Strings.LF("已改 %@ → %@，记进词表", c.From, c.To) : Strings.LF("这场不再问 %@", c.From));
     }
 
-    /// 改回: this line goes back to what was heard, and the meeting stops making this change.
     public void Revert(LineFix fix, string lineId, string id)
     {
         var c = Correction.Core(fix.From, fix.To);
         lock (gate)
         {
             if (Line(id, lineId) is not { Fixes: { } fixes }) return;
-            // The one still on: an earlier, already undone copy of the same change may sit before it.
             int k = fixes.FindIndex(f => f.From == fix.From && f.To == fix.To && f.Applied);
             if (k < 0) k = fixes.FindIndex(f => f.From == fix.From && f.To == fix.To);
             if (k < 0) return;
@@ -215,8 +186,6 @@ public sealed class LiveFixes
 
     // MARK: 改这句…
 
-    /// How many lines of the meeting the same edit would change ("整场听成 木娜 的 2 处都改").
-    /// An edit that only adds or drops words stays on its line (count 1, nothing to learn).
     public (string Heard, int Count, bool Swap)? SameHeard(string lineId, string id, string edited)
     {
         if (store.Get(id) is not { } s || s.Lines.FirstOrDefault(l => l.Id == lineId) is not { } l
@@ -225,8 +194,6 @@ public sealed class LiveFixes
         return (e.Heard, Math.Max(1, n), e.Swap);
     }
 
-    /// The user rewrote a line (改这句…): what changed becomes their own fix, on this line or on
-    /// every line showing the same words, and with `remember` the heard form joins the word list.
     public int Edit(string lineId, string id, string edited, bool everywhere, bool remember)
     {
         int count;
@@ -241,8 +208,6 @@ public sealed class LiveFixes
             Remember(id, targets.Select(t => t.Id));
             foreach (var t in targets)
             {
-                // A guess still waiting on the same words is answered by the edit: not that.
-                // The same change made again replaces any earlier copy (say, one undone with 改回).
                 var fixes = (t.Fixes ?? []).Where(f => !(f.From == e.Fix.From && f.To == e.Fix.To)).Select(f => f.Ask == true && (f.From.Contains(e.Heard, StringComparison.Ordinal) || e.Heard.Contains(f.From, StringComparison.Ordinal))
                     ? f with { Ask = null, Off = true } : f).ToList();
                 Set([.. fixes, e.Fix], t.Id, id);
@@ -250,12 +215,8 @@ public sealed class LiveFixes
             count = targets.Count;
             heard = e.Heard;
             to = Correction.Core(e.Fix.From, e.Fix.To).To.Trim();
-            // Only a change made everywhere teaches the word list (a one-off must not), and only a
-            // word for a word (`Vocabulary.Learnable`).
             learned = remember && everywhere && Vocabulary.Learnable(heard, to) is not null;
             if (learned) Vocabulary.Confirm(heard, to, "user");
-            // A swap reads as the words swapped; an added or dropped word as the span it changed
-            // ("in → in now", not "in → now").
             if (!e.Swap) (heard, to) = (e.Fix.From, e.Fix.To);
         }
         Log.Debug($"fix edited lines={count} learned={learned}");

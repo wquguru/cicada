@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Lists Windows UI text with no translation: every L("…") / LF("…") key in windows/src that is in
-neither the Mac's Resources/<lang>.lproj/Localizable.strings nor windows/src/Cicada/Strings/<lang>.lproj/Windows.strings.
---write appends the missing keys to Windows.strings as TODO lines (value = the Chinese)."""
 import re, sys, pathlib
-# The Windows console is cp1252: Chinese keys would crash the report itself.
 sys.stdout.reconfigure(encoding="utf-8")
 win = pathlib.Path(__file__).resolve().parent.parent
 root = win.parent

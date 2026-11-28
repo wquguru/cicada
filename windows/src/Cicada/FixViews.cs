@@ -7,10 +7,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// 改正听错的词's pieces, shared by the notes window and the meeting record (the Mac's FixViews.swift
-/// and NotesViews.swift › FixedWords, FixConfirmCard, joinFixed): the line with its fixed words
-/// underlined, what each was heard as with 改回, the 这样改对吗？ card, the banner over a finished
-/// meeting, and the toast with 撤销.
 static class FixViews
 {
     static readonly SolidColorBrush ChipFill = Frozen(0xF2, 0xF3, 0xF5);
@@ -26,8 +22,6 @@ static class FixViews
         return c;
     }
 
-    /// The line as shown, each fixed word with a dotted underline; words waiting for the user
-    /// (这样改对吗？) on a pale wash, as heard.
     public static TextBlock LineText(TranscriptLine l, double size, Brush color)
     {
         var t = Ui.Text("", size, color);
@@ -50,9 +44,6 @@ static class FixViews
         return t;
     }
 
-    /// The records' search (#33, TranscriptSearch.highlighted on the Mac): every term in `t` on the
-    /// pale accent; in the match being looked at, solid accent with white text. The runs are split
-    /// where a mark starts or ends, keeping their own look (a fixed word's underline) otherwise.
     public static T Mark<T>(T t, IReadOnlyList<string> terms, bool current) where T : TextBlock
     {
         if (terms.Count == 0) return t;
@@ -87,8 +78,6 @@ static class FixViews
         return t;
     }
 
-    /// Under a paragraph: each fixed word, what it was heard as, and 改回. `edit`: 改这句… after them
-    /// (the meeting record).
     public static FrameworkElement FixedWords(TranscriptLine l, Action<LineFix> revert, Action? edit = null)
     {
         var wrap = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
@@ -120,9 +109,6 @@ static class FixViews
         return wrap;
     }
 
-    /// 这样改对吗？: a name sound couldn't check, asked about once. Clicks only: the notes window
-    /// never takes focus. 对 fixes every line waiting on it and adds it to the word list; × puts it
-    /// off until after the meeting (稍后再看).
     public static FrameworkElement ConfirmCard(TranscriptLine line, LineFix fix, int count, Action<bool> answer, Action? later)
     {
         var c = Correction.Label(fix);
@@ -164,8 +150,6 @@ static class FixViews
 
     static Button Small(Button b) { b.MinWidth = 0; b.Padding = new Thickness(14, 0, 14, 0); return b; }
 
-    /// Above a finished meeting's transcript: how many words were fixed, and the ones waiting for
-    /// the user, one at a time (对 / 不对 / 改成…). Nothing once there was nothing to fix.
     public static FrameworkElement? Banner(Session s, LiveFixes fixes, Action<string> show, Action<TranscriptLine, string> edit)
     {
         var waiting = fixes.Pending(s.Id);
@@ -200,7 +184,6 @@ static class FixViews
 
     static readonly SolidColorBrush AccentWash = Frozen(0xFE, 0xF6, 0xF3);
 
-    /// The last fix decision said back for a few seconds, with 撤销 (null when there is none).
     public static FrameworkElement? Toast(LiveFixes fixes)
     {
         if (fixes.Toast is not { } t) return null;
@@ -222,9 +205,6 @@ static class FixViews
         };
     }
 
-    /// 改这句… in the meeting record: the line as shown, to rewrite. What changed becomes the
-    /// user's own fix, on every line heard the same way or only this one; Enter applies, Esc
-    /// cancels.
     public sealed class Editor : StackPanel
     {
         readonly TranscriptLine line;
@@ -275,7 +255,6 @@ static class FixViews
                 one.Checked += (_, _) => { everywhere = false; Options(); };
                 stack.Children.Add(all); stack.Children.Add(one);
             }
-            // Only a word for a word can teach the list: an added or dropped word can't.
             if (same.Swap)
             {
                 var remember = new CheckBox { Content = L("记进词表，以后自动改"), IsChecked = keep, FontSize = 12, Margin = new Thickness(0, 6, 0, 0), IsEnabled = same.Count <= 1 || everywhere };

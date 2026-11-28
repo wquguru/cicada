@@ -3,9 +3,6 @@ using System.Text;
 
 namespace Cicada;
 
-/// The meeting records: one folder per meeting under Sessions\<yyyyMMdd-HHmmss>\ with
-/// session.json, as on the Mac. Saves are debounced by 1.5 s; a meeting with no lines is removed
-/// when it ends. Thread-safe; `Changed` fires on whichever thread made the change.
 public sealed class SessionStore
 {
     readonly object gate = new();
@@ -13,13 +10,8 @@ public sealed class SessionStore
     readonly HashSet<string> dirty = [];
     Timer? saveTimer;
     public event Action<string>? Changed;
-    /// The moment recognised words land in a record: a new line (theirs or mine) or a half sentence
-    /// that grew. What 结束会议 counts as someone speaking (MeetingEndWatch.Heard).
     public event Action<string>? Words;
-    /// A record was written to disk (存到文件夹 follows its changes); on the saving thread.
     public event Action<string>? Saved;
-    /// The app's audio encoder (Media Foundation); null where there is none (the Mac CLI, tests
-    /// that don't set one): meetings are then kept without a recording.
     public IAudioFiles? Audio { get; set; }
 
     public SessionStore() { Load(); }
@@ -37,7 +29,6 @@ public sealed class SessionStore
             try
             {
                 if (Json.Read<Session>(File.ReadAllText(file)) is not { } s) continue;
-                // The app quit mid-meeting: it ended just after its last line (SessionStore.swift › load).
                 s.EndedAt ??= s.Lines.Count > 0 ? s.StartedAt.AddSeconds(s.Lines[^1].T + 5) : s.StartedAt;
                 sessions[s.Id] = s;
             }
@@ -45,7 +36,6 @@ public sealed class SessionStore
         }
     }
 
-    /// Newest first.
     public List<Session> All()
     {
         lock (gate) return sessions.Values.OrderByDescending(s => s.StartedAt).ToList();
@@ -65,13 +55,9 @@ public sealed class SessionStore
         return s;
     }
 
-    /// The stored default title is always Chinese ("会议 11月1日 14:30"), as on the Mac; the UI
-    /// shows DisplayTitle instead.
     public static string DefaultTitle(DateTimeOffset at) =>
         "会议 " + at.ToLocalTime().ToString("M月d日 HH:mm", CultureInfo.InvariantCulture);
 
-    /// The user's own title, else the date and the name the notes gave the meeting, else the
-    /// default title in the UI language (Session.displayTitle).
     public static string DisplayTitle(Session s)
     {
         if (s.Renamed ?? !s.Title.StartsWith("会议 ")) return s.Title;
@@ -96,16 +82,13 @@ public sealed class SessionStore
         {
             int i = s.Lines.FindIndex(l => l.Id == line.Id);
             if (i < 0) return;
-            grew = line.Src.Length > s.Lines[i].Src.Length; // a half sentence joined, not a retranslation
-            // The listening engine keeps its own copy of the line and knows nothing of its fixes
-            // (SetFixes): a retranslation or a join keeps them.
+            grew = line.Src.Length > s.Lines[i].Src.Length;
             line.Fixes ??= s.Lines[i].Fixes;
             s.Lines[i] = line;
         });
         if (grew) Words?.Invoke(id);
     }
 
-    /// A line's fixes (Correction): what the AI service proposed and the user decided.
     public void SetFixes(string id, string lineId, IReadOnlyList<LineFix> fixes)
     {
         Mutate(id, s =>
@@ -120,14 +103,11 @@ public sealed class SessionStore
 
     public void SetNotes(string id, MeetingNotes notes) => Mutate(id, s => s.Notes = notes);
 
-    /// Heard through a microphone in the room for some or all of it (SessionStore.swift › markLiveInRoom).
     public void MarkRoom(string id)
     {
         if (Get(id) is { Room: not true }) Mutate(id, s => s.Room = true);
     }
 
-    /// An empty title, or the one shown already, goes back to / stays on the automatic one
-    /// (SessionStore.swift › rename): saving the dialog unchanged mustn't freeze the notes' name.
     public void Rename(string id, string title)
     {
         var t = title.Trim();
@@ -136,14 +116,8 @@ public sealed class SessionStore
         Mutate(id, s => { s.Title = t; s.Renamed = true; });
     }
 
-    /// Back to the default title, so the name the notes give the meeting shows again.
     public void ResetTitle(string id) => Mutate(id, s => { s.Title = DefaultTitle(s.StartedAt); s.Renamed = false; });
 
-    /// The meeting ended (at `endedAt` when it ended by itself a while ago): kept if anything was
-    /// said, removed otherwise.
-    /// The meeting's recording, if any, is closed by then (ListenEngine.Stop): it is rewrapped into
-    /// system.m4a in the background, cut at `endedAt` when the meeting ended by itself a while ago
-    /// (its silent tail), as SessionStore.swift › end does.
     public void End(string id, DateTimeOffset? endedAt = null)
     {
         bool empty;
@@ -162,8 +136,6 @@ public sealed class SessionStore
         _ = Task.Run(() => FinishAudio(id, until));
     }
 
-    /// Recordings a meeting didn't get to close (the app was killed or the PC went off): the
-    /// partial file is rewrapped now, as SessionStore.swift › load does. Call once Audio is set.
     public void FinishLeftovers(string? live = null)
     {
         List<string> left;
@@ -175,8 +147,6 @@ public sealed class SessionStore
         }
     }
 
-    /// system.aac into system.m4a. A partial file beside an .m4a means the last rewrap was cut
-    /// short: it is done again. One that fails leaves the partial file for the next launch.
     void FinishAudio(string id, double? until)
     {
         var m4a = Recording.SystemAudio(id);
@@ -229,7 +199,6 @@ public sealed class SessionStore
         }
     }
 
-    /// Writes every changed record now (also on quit).
     public void Flush()
     {
         List<(string id, string json)> writes;
@@ -254,7 +223,6 @@ public sealed class SessionStore
 
     // MARK: Export
 
-    /// The record as Markdown: notes, then the bilingual transcript.
     public static string Markdown(Session s)
     {
         var b = new StringBuilder();
@@ -266,7 +234,6 @@ public sealed class SessionStore
         var names = SpeakerLabels.Names(s);
         foreach (var l in s.Lines.OrderBy(x => x.T))
         {
-            // Your own lines (the talk key) say so: what the meeting heard was their translation (同传).
             var who = l.Speaker == "me" ? Strings.L("你 · 同传") : numbers.TryGetValue(l.Id, out var num) ? names.GetValueOrDefault(num) ?? Strings.LF("说话人 %lld", num) : null;
             b.AppendLine($"**{Languages.Clock(l.T)}**{(who is null ? "" : $" {who}：")} {l.Shown}  ");
             if (!string.IsNullOrEmpty(l.Dst) && l.Dst != l.Src && l.Dst != l.Shown) b.AppendLine($"{l.Dst}");
@@ -275,7 +242,6 @@ public sealed class SessionStore
         return b.ToString();
     }
 
-    /// The notes alone (复制纪要): title, summary, topics, conclusions, to-dos.
     public static string NotesMarkdown(Session s) =>
         s.Notes is { IsEmpty: false } n ? $"# {DisplayTitle(s)}\n\n" + NotesBody(n) : "";
 

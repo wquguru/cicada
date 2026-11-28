@@ -6,18 +6,12 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// The AI service's check, step by step (AICheck; the Mac's AICheckView.swift): settings and the
-/// onboarding show the same list. Every step that ran shows its result; the one that failed says
-/// why in one line and offers the one thing that fixes it (one dark button, at most one other).
 static class AICheckView
 {
     static readonly SolidColorBrush OkPale = Frozen(0xE3, 0xF1, 0xE8);
 
     static SolidColorBrush Frozen(byte r, byte g, byte b) { var x = new SolidColorBrush(Color.FromRgb(r, g, b)); x.Freeze(); return x; }
 
-    /// `changeKey` opens the key field (settings: 更换; onboarding: back to pasting). The settings
-    /// have 重新检查 beside the key already; the onboarding needs it in the failed step. `compact`
-    /// (the onboarding, under two numbered rows): only the steps that have a result.
     public static FrameworkElement Steps(Controller app, Action changeKey, bool recheckInStep, bool compact = false)
     {
         var ling = app.Ling;
@@ -62,11 +56,9 @@ static class AICheckView
         return dock;
     }
 
-    /// Why it failed, the proxy box when the network is the trouble, and what fixes it.
     static void Problem(Controller app, AICheck check, StackPanel into, Action changeKey, bool recheckInStep)
     {
         var ling = app.Ling;
-        // A hear model at its own address: the one it couldn't reach is that one.
         var host = check.Failure?.Step == AICheck.StepId.Hear ? ling.HearHost : ling.ServiceHost;
         if (check.Message(ling.ServiceLabel, host, ling.Config.TextModel, ling.HearName) is { } why)
         {
@@ -88,7 +80,6 @@ static class AICheckView
         into.Children.Add(row);
     }
 
-    /// One primary fix and at most one other.
     static List<(string Title, Action Run)> Actions(Controller app, AICheck check, Action changeKey, bool recheckInStep)
     {
         if (check.Failure is not { } f) return [];
@@ -98,7 +89,6 @@ static class AICheckView
         switch (f.Why)
         {
             case AICheck.Reason.Unreachable:
-                // A proxy has nothing to do with a server on this PC or the local network.
                 if (AIProvider.IsNearby(ling.ServiceHost)) return recheck;
                 return [(L("怎么设置代理"), () => Open(AICheck.HelpUrl)), .. recheck];
             case AICheck.Reason.InvalidKey or AICheck.Reason.MgmtKey:
@@ -115,7 +105,6 @@ static class AICheckView
         }
     }
 
-    /// Where to add money: OpenRouter's credits page, else the service's own site.
     public static string TopUp(AIProvider p) => p.Id == "openrouter" ? "https://openrouter.ai/settings/credits" : p.Site ?? "https://zenmux.ai";
 
     public static void Open(string url)
@@ -124,7 +113,6 @@ static class AICheckView
         catch (Exception e) { Log.Debug($"ai: open failed {e.GetType().Name}"); }
     }
 
-    /// The round mark before a step: a tick, a cross, "!" for busy, "…" while running, "–" for the rest.
     static FrameworkElement Disc(AICheck.Kind kind)
     {
         var (bg, fg) = kind switch
@@ -148,8 +136,6 @@ static class AICheckView
         return g;
     }
 
-    /// All passed, in one line: "已连接 · 文字 1.8 秒 · 听 2.1 秒", or when the newest evidence came
-    /// from a meeting, "正常 · 12 分钟前开会时用过". Null otherwise.
     public static string? Summary(AICheck check)
     {
         if (!check.Passed || check.IsBusy) return null;
@@ -161,7 +147,6 @@ static class AICheckView
         return string.Join(" · ", parts);
     }
 
-    /// The settings' status line, named after the step that failed: a missing model is not a connection problem.
     public static string? Status(AICheck check) => check.IsRunning ? L("正在检查…")
         : check.Failure is { Why: not AICheck.Reason.Busy } f ? f.Step switch
         {

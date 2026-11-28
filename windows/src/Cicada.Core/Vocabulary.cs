@@ -4,18 +4,12 @@ using System.Text.Json.Serialization;
 
 namespace Cicada;
 
-/// 词表: the spellings the user stands behind, and how speech recognition has misheard each. Only
-/// these let a new name be fixed without asking: names the notes guess are often wrong, so they
-/// stay suggestions until the user confirms one. One JSON file beside the records
-/// (vocabulary.json, the Mac's format); not a secret, so not one of the key files. Thread-safe.
 public sealed class Vocabulary
 {
     public sealed class Term
     {
         [JsonPropertyName("fixes")] public int Fixes { get; set; }
-        /// Wrong forms the recognizer produced, as confirmed or typed by the user.
         [JsonPropertyName("heard")] public List<string> Heard { get; set; } = [];
-        /// "user" (added or imported), "live" (confirmed during a meeting).
         [JsonPropertyName("source")] public string Source { get; set; } = "user";
         [JsonPropertyName("used")] public DateTimeOffset? Used { get; set; }
         [JsonPropertyName("word")] public string Word { get; set; } = "";
@@ -23,7 +17,6 @@ public sealed class Vocabulary
         public Term Clone() => new() { Fixes = Fixes, Heard = [.. Heard], Source = Source, Used = Used, Word = Word };
     }
 
-    /// More would make every sentence's request long, and more terms means more wrong swaps.
     public const int Limit = 300;
 
     readonly object gate = new();
@@ -43,10 +36,8 @@ public sealed class Vocabulary
 
     public static string DefaultPath => Path.Combine(Paths.Root, "vocabulary.json");
 
-    /// A copy of the list, in its order.
     public List<Term> Terms { get { lock (gate) return terms.Select(t => t.Clone()).ToList(); } }
 
-    /// Same word whatever its width, case or spacing ("ＡＡＶＥ" is "aave").
     public static string Key(string s) =>
         string.Join(" ", s.Normalize(NormalizationForm.FormKC).ToLowerInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
@@ -58,9 +49,6 @@ public sealed class Vocabulary
         lock (gate) return Find(word) is { } t && t.Heard.Any(x => Key(x) == h);
     }
 
-    /// What a fix can teach the list, or null: both sides trimmed of spaces and punctuation, no
-    /// punctuation inside, short, and a real swap. An edit that only adds or drops words around the
-    /// heard ones ("我来" → "OK我来") or ends on a full stop ("持。" → "讲。") teaches nothing.
     public static (string Heard, string Word)? Learnable(string heard, string word)
     {
         static bool Edge(Rune r) => Rune.IsWhiteSpace(r) || Rune.IsPunctuation(r) || Rune.IsSymbol(r);
@@ -80,9 +68,6 @@ public sealed class Vocabulary
         return (h, w);
     }
 
-    /// The user said yes to a fix (or added it): the word, and the form it was heard as. A pair
-    /// that isn't a word for a word (`Learnable`) adds the word only, or nothing. A yes in a meeting
-    /// never teaches a translation (平台 → platform): it would rewrite that word everywhere after.
     public void Confirm(string heard, string word, string source = "live")
     {
         if (heard.Length > 0)
@@ -101,7 +86,6 @@ public sealed class Vocabulary
         Save();
     }
 
-    /// A heard form the user turned down twice stops being one.
     public void Forget(string heard, string word)
     {
         lock (gate)
@@ -112,7 +96,6 @@ public sealed class Vocabulary
         Save();
     }
 
-    /// 词表 › click a word: its spelling changes; what it was heard as stays with it.
     public void Rename(string word, string to)
     {
         var n = to.Trim();
@@ -121,7 +104,6 @@ public sealed class Vocabulary
             if (n.Length == 0 || Correction.Length(n) > 40 || Find(word) is not { } t) return;
             if (Find(n) is { } other && other != t)
             {
-                // Renamed onto a word already there: the two become one.
                 foreach (var h in t.Heard) if (!other.Heard.Any(x => Key(x) == Key(h))) other.Heard.Add(h);
                 terms.Remove(t);
             }
@@ -130,14 +112,12 @@ public sealed class Vocabulary
         Save();
     }
 
-    /// The other words a heard form already belongs to ("莫拉" is Morpho's).
     public List<string> Owners(string heard, string? except = null)
     {
         lock (gate)
             return terms.Where(t => t.Heard.Any(x => Key(x) == Key(heard)) && Key(t.Word) != Key(except ?? "")).Select(t => t.Word).ToList();
     }
 
-    /// Back where it was, after 撤销 on a delete.
     public void Insert(Term term, int index)
     {
         lock (gate)
@@ -148,7 +128,6 @@ public sealed class Vocabulary
         Save();
     }
 
-    /// 撤销: the list as it was.
     public void Restore(List<Term> saved)
     {
         lock (gate) terms = saved.Select(t => t.Clone()).ToList();
@@ -172,7 +151,6 @@ public sealed class Vocabulary
         Save();
     }
 
-    /// For the request: the most recently useful first, "Morpho (heard as 莫拉, 莫法)".
     public List<string> PromptLines()
     {
         lock (gate)
@@ -180,8 +158,6 @@ public sealed class Vocabulary
                 .Select(t => t.Heard.Count == 0 ? t.Word : $"{t.Word} (heard as {string.Join(", ", t.Heard)})").ToList();
     }
 
-    /// 粘贴导入: one per line, heard forms after "=" ("Morpho = 莫拉、莫法"). Lines too long or empty
-    /// are reported by number; a word already there gains the new heard forms.
     public sealed record ImportResult(int Added, int Updated, List<int> Skipped)
     {
         public override string ToString() => $"added={Added} updated={Updated} skipped=[{string.Join(",", Skipped)}]";
@@ -206,7 +182,6 @@ public sealed class Vocabulary
         return out_;
     }
 
-    /// What 粘贴导入 would do, before it does it (the sheet's counts and its button).
     public ImportResult Preview(string text)
     {
         int added = 0, updated = 0;

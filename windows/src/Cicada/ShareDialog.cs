@@ -6,9 +6,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// 分享…: a meeting as a link on cicada.indaloop.app (the Mac's ShareSheet). Settings, then the
-/// server's review, then the link (and its password) or what the review stopped. A meeting already
-/// shared opens on its link. Drawn in the chrome of Dialogs, its content swapped per step.
 sealed class ShareDialog : Window
 {
     enum Step { Settings, Working, Blocked, Done, Failed }
@@ -30,7 +27,6 @@ sealed class ShareDialog : Window
 
     bool HasNotes => session.Notes is { IsEmpty: false };
 
-    /// The open one, for the debug pipe (`sharesheet`).
     public static ShareDialog? Current { get; private set; }
 
     public ShareDialog(Controller app, Session session, Window? owner)
@@ -101,7 +97,6 @@ sealed class ShareDialog : Window
         }
         else
         {
-            // The choices already made, in one line; 更改 opens them in place.
             var change = Ui.Button(L("更改"), () => { showOptions = true; Render(); }, height: 28);
             change.MinWidth = 0; change.Padding = new Thickness(12, 0, 12, 0); change.Margin = new Thickness(8, 0, 0, 0);
             var line = Ui.Text(Summary, 13, Palette.Secondary, wrap: false);
@@ -124,8 +119,6 @@ sealed class ShareDialog : Window
         days == 365 ? L("1 年有效") : LF("%lld 天有效", days),
         names ? L("显示名字") : L("不显示名字"));
 
-    /// Takes the dialog's settings from the debug pipe: `sharesheet <id>[,full][,pw][,names][,30][,more][,go]`
-    /// (more presses 更改); on the done step, `copy`, `copylink` and `copypw` press 复制 and its menu's items.
     public void Debug(IReadOnlyCollection<string> p)
     {
         if (step == Step.Done && record is { } r)
@@ -148,7 +141,6 @@ sealed class ShareDialog : Window
         if (p.Contains("go")) Go();
     }
 
-    /// Debug: the blocked step's 去掉这些内容后分享.
     public void DebugLeaveOut() { if (step == Step.Blocked && LeftAfterRemoving()) LeaveOut(); }
 
     public string StepName => step.ToString().ToLowerInvariant();
@@ -222,8 +214,6 @@ sealed class ShareDialog : Window
         Go();
     }
 
-    /// Would anything be left to share once the flagged parts are out? (A notes-only share whose
-    /// notes were flagged has nothing; the server would refuse an empty document.)
     bool LeftAfterRemoving()
     {
         var notesLeft = HasNotes && !dropNotes && !hits.Any(h => h.Part == "notes");
@@ -235,7 +225,6 @@ sealed class ShareDialog : Window
 
     FrameworkElement HitRow(ShareHit h)
     {
-        // A list in the reader's language (the Mac's ListFormatter): 、 in Chinese and Japanese, ", " otherwise.
         var what = string.Join(Strings.Culture.TwoLetterISOLanguageName is "zh" or "ja" ? "、" : ", ", h.Questions.Select(Category));
         string place, quote;
         if (h.Part == "notes")
@@ -311,9 +300,6 @@ sealed class ShareDialog : Window
         return p;
     }
 
-    /// The link and, under it, the password in one grey box; beside it one 复制 that copies both as
-    /// one message, its arrow either alone for whoever sends them apart (the Mac's Menu with a
-    /// primary action). Without a password it is a plain button.
     FrameworkElement Link(ShareRecord r)
     {
         TextBox Value(string text, Brush color) => new()
@@ -421,7 +407,6 @@ sealed class ShareDialog : Window
         return r;
     }
 
-    /// Equal buttons on one row, the last (primary) on the right, as Dialogs.
     static Grid Buttons(params Button[] buttons)
     {
         var g = new Grid();

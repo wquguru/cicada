@@ -3,37 +3,24 @@ using System.Text;
 
 namespace Cicada;
 
-/// UI text. The Chinese text is the key, as on the Mac, and the translations are the Mac's own
-/// `Resources/{en,ja,ko}.lproj/Localizable.strings`, copied next to the app at build time, plus
-/// `windows/src/Cicada/Strings/*.lproj/Windows.strings` for text only the Windows app has, and the
-/// Mac's `Localizable.stringsdict` for plurals ("1 line", "2 lines"). Placeholders are the Mac's
-/// `%@`, filled in order. Never for prompts, logs or stored values.
 public static class Strings
 {
     static Dictionary<string, string> table = [];
     static Dictionary<string, Plural> plurals = [];
 
-    /// A stringsdict entry: the format with `%#@n@` placeholders, and each variable's forms by
-    /// plural category ("one", "other").
     public sealed record Plural(string Format, Dictionary<string, Dictionary<string, string>> Forms);
     public static string Language { get; private set; } = "zh-Hans";
-    /// Dates in the app's language, not Windows': English Cicada on Chinese Windows writes "Nov 4".
     public static CultureInfo Culture { get; private set; } = CultureInfo.GetCultureInfo("zh-CN");
 
-    /// Loads the table for `language` ("en", "ja", "ko"; anything else is Chinese) from
-    /// `folder`/<lang>.lproj/Localizable.strings.
     public static void Load(string folder, string? language = null) =>
         Load(path => File.Exists(Path.Combine(folder, path)) ? File.ReadAllText(Path.Combine(folder, path), Encoding.UTF8) : null, language);
 
-    /// The same from `read("<lang>.lproj/<name>")`: the app reads the tables from inside its exe,
-    /// so the installer is one file that already speaks the user's language.
     public static void Load(Func<string, string?> read, string? language = null)
     {
         var ui = language ?? CultureInfo.CurrentUICulture.Name;
         var head = ui.Split('-')[0];
         Language = head is "en" or "ja" or "ko" ? head : "zh-Hans";
         Culture = CultureInfo.GetCultureInfo(Language switch { "en" => "en-US", "ja" => "ja-JP", "ko" => "ko-KR", _ => "zh-CN" });
-        // The Mac's table, then the Windows-only strings over it (Windows.strings, same format).
         table = [];
         foreach (var name in new[] { "Localizable.strings", "Windows.strings" })
         {
@@ -43,15 +30,11 @@ public static class Strings
         plurals = read($"{Language}.lproj/Localizable.stringsdict") is { } dict ? ParsePlurals(dict) : [];
     }
 
-    /// Only English has more than one form among the app's languages: "one" for exactly 1.
     static string Category(object? n) =>
         Language == "en" && n is IConvertible c && c.ToDouble(CultureInfo.InvariantCulture) == 1 ? "one" : "other";
 
     public static string L(string key) => table.TryGetValue(key, out var v) && v.Length > 0 ? v : key;
 
-    /// L() with the Mac's `%@` placeholders: LF("纪要停留在 %@。", clock). A key in the stringsdict
-    /// takes its plural form for the number: `%#@n@` (or `%2$#@n@`) becomes variable n's "one" or
-    /// "other" text.
     public static string LF(string key, params object[] args)
     {
         var plural = plurals.GetValueOrDefault(key);
@@ -60,7 +43,6 @@ public static class Strings
         int next = 0;
         for (int i = 0; i < text.Length; i++)
         {
-            // %#@n@ or %2$#@n@: the variable's form for its number, with the number in it.
             int j = i + 1;
             int? position = null;
             if (plural is not null && text[i] == '%' && j + 1 < text.Length && char.IsDigit(text[j]) && text[j + 1] == '$') { position = text[j] - '1'; j += 2; }
@@ -78,7 +60,6 @@ public static class Strings
                 b.Append(next < args.Length ? args[next++] : "");
                 i++;
             }
-            // The Mac's integer placeholders (Swift interpolation of an Int becomes %lld).
             else if (text[i] == '%' && i + 3 < text.Length && text.AsSpan(i + 1, 3) is "lld")
             {
                 b.Append(next < args.Length ? args[next++] : "");
@@ -90,22 +71,18 @@ public static class Strings
                 b.Append(n >= 0 && n < args.Length ? args[n] : "");
                 i += 3;
             }
-            // A numbered integer: "All %2$lld places heard as %1$@".
             else if (text[i] == '%' && i + 5 < text.Length && char.IsDigit(text[i + 1]) && text[i + 2] == '$' && text.AsSpan(i + 3, 3) is "lld")
             {
                 int n = text[i + 1] - '1';
                 b.Append(n >= 0 && n < args.Length ? args[n] : "");
                 i += 5;
             }
-            // A percent sign, written %% in a format ("正在下载 %@：%lld%%").
             else if (text[i] == '%' && i + 1 < text.Length && text[i + 1] == '%') { b.Append('%'); i++; }
             else b.Append(text[i]);
         }
         return b.ToString();
     }
 
-    /// The Mac's Localizable.stringsdict (an XML plist of dicts and strings) as key → Plural. A
-    /// small reader of its own: XmlReader refuses the plist's DOCTYPE unless told to skip DTDs.
     public static Dictionary<string, Plural> ParsePlurals(string xml)
     {
         int i = 0;
@@ -154,7 +131,6 @@ public static class Strings
         return result;
     }
 
-    /// `"key" = "value";` lines, with /* */ and // comments and \" \\ \n escapes.
     public static Dictionary<string, string> Parse(string text)
     {
         var result = new Dictionary<string, string>();

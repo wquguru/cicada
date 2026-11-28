@@ -5,19 +5,13 @@ using Microsoft.Win32;
 
 namespace Cicada.App;
 
-/// The release build installed for this user only, so nothing asks for admin rights: the exe in
-/// %LOCALAPPDATA%\Programs\Cicada, a Start menu shortcut, the Run key for 开机时启动知了 and an
-/// entry in Settings › Apps whose 卸载 runs `Cicada.exe --uninstall`. The windows are SetupWindow.
 static class Install
 {
     public static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Cicada");
     public static string Exe => Path.Combine(Folder, "Cicada.exe");
     const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Cicada";
-    /// The release build's single-instance mutex (Program.Main).
     public const string Mutex = "com.wquguru.cicada";
 
-    /// The installed version, from Settings › Apps' entry (the exe's own version resource isn't
-    /// written when the app is built on the Mac). Null when nothing is installed.
     public static string? InstalledVersion()
     {
         if (!File.Exists(Exe)) return null;
@@ -25,10 +19,8 @@ static class Install
         catch { return "0"; }
     }
 
-    /// The running Cicada (installed, or an old copy from a zip), through its pipe: null when none.
     public static bool? Listening() => DebugServer.Send("setup status") is { } reply ? reply.Contains("\"listening\":true") : null;
 
-    /// Asks the running Cicada to quit (it ends a meeting first and saves it), and waits until it has.
     static void QuitRunning()
     {
         if (DebugServer.Send("setup quit") is null && !Running()) return;
@@ -48,28 +40,23 @@ static class Install
         return false;
     }
 
-    /// Copies this exe in, then registers it. `step` reports 1–3 as each part is done. First install:
-    /// the two choices. An upgrade (`choices` null) keeps the shortcut and autostart as they were.
     public static void Run((bool StartMenu, bool AutoStart)? choices, Action<int> step)
     {
         var self = Environment.ProcessPath ?? throw new IOException("no exe path");
         Directory.CreateDirectory(Folder);
-        // Copied beside the old one first, so a full disk or a scanner holding the file leaves the
-        // installed copy as it was.
         var next = Exe + ".new";
         File.Copy(self, next, overwrite: true);
         QuitRunning();
         for (int i = 0; ; i++)
         {
             try { File.Move(next, Exe, overwrite: true); break; }
-            catch (IOException) when (i < 20) { Thread.Sleep(250); } // the old process is still letting go of it
+            catch (IOException) when (i < 20) { Thread.Sleep(250); }
             catch (UnauthorizedAccessException) when (i < 20) { Thread.Sleep(250); }
         }
         step(1);
         var hadShortcut = Shortcuts().Any(File.Exists);
         if (choices?.StartMenu ?? hadShortcut) Shortcut(); else foreach (var f in Shortcuts()) File.Delete(f);
         step(2);
-        // A copy from a zip may have left the Run key pointing into Downloads: point it here.
         AutoStart.Set(Exe, choices?.AutoStart ?? AutoStart.Enabled);
         Register();
         step(3);
@@ -82,8 +69,6 @@ static class Install
         catch (Exception e) { Log.Debug($"setup: launch failed {e.GetType().Name}"); }
     }
 
-    /// Removes the app; the records, settings and key too unless `keepRecords`. The folder itself
-    /// goes once this process has exited (a running exe can't delete itself): RemoveFolderLater.
     public static void Uninstall(bool keepRecords)
     {
         QuitRunning();
@@ -94,7 +79,6 @@ static class Install
         Log.Debug($"setup: uninstalled, records {(keepRecords ? "kept" : "removed")}");
     }
 
-    /// A hidden cmd that waits for this process to go, then deletes the install folder.
     public static void RemoveFolderLater()
     {
         if (!Directory.Exists(Folder)) return;
@@ -131,7 +115,6 @@ static class Install
         finally { Marshal.FinalReleaseComObject(link); }
     }
 
-    /// Settings › Apps: no 修改 or 修复, just 卸载.
     static void Register()
     {
         using var k = Registry.CurrentUser.CreateSubKey(UninstallKey);

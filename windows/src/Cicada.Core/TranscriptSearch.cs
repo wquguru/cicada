@@ -1,13 +1,9 @@
 namespace Cicada;
 
-/// Searching a meeting's lines (the Mac's TranscriptSearch.swift): the records' Ctrl+F finds the
-/// same lines as on the Mac, misheard names included, and marks them the same way (#33).
 public static class TranscriptSearch
 {
-    // Ordinal: a match is exactly as long as its term, so the marks land on it.
     const StringComparison Fold = StringComparison.OrdinalIgnoreCase;
 
-    /// The query, plus every way the notes say that name was heard (江充 also finds 江松).
     public static List<string> Terms(string query, IEnumerable<NoteTerm>? notes)
     {
         var q = query.Trim();
@@ -25,12 +21,9 @@ public static class TranscriptSearch
     public static bool Matches(TranscriptLine l, IReadOnlyList<string> terms) =>
         terms.Any(t => l.Shown.Contains(t, Fold) || (l.Dst?.Contains(t, Fold) ?? false));
 
-    /// The ids of the lines a search finds, in order.
     public static List<string> Matches(IEnumerable<TranscriptLine> lines, IReadOnlyList<string> terms) =>
         terms.Count == 0 ? [] : lines.Where(l => Matches(l, terms)).Select(l => l.Id).ToList();
 
-    /// Where the terms are in `text`, as (start, length) spans in order, overlaps merged: the
-    /// parts to mark.
     public static List<(int Start, int Length)> Spans(string text, IReadOnlyList<string> terms)
     {
         var marked = new bool[text.Length];

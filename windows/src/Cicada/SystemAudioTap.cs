@@ -2,10 +2,6 @@ using System.Runtime.InteropServices;
 
 namespace Cicada.App;
 
-/// Everything the PC plays except Cicada itself: WASAPI process loopback with this process's tree
-/// excluded (Windows 10 2004+), the counterpart of the Mac's Core Audio process tap. Asks Windows
-/// for 16 kHz mono directly and falls back to 48 kHz stereo converted here. The capture thread
-/// only hands buffers on; ListenEngine queues them.
 sealed class SystemAudioTap : IAudioSource
 {
     const string LoopbackDevice = "VAD\\Process_Loopback";
@@ -14,8 +10,6 @@ sealed class SystemAudioTap : IAudioSource
 
     Thread? thread;
     volatile bool running;
-    /// Only Cicada's own sound instead of everything else: the onboarding's test sound, which the
-    /// normal tap leaves out by design. Proves process loopback works on this PC all the same.
     public bool OnlySelf { get; init; }
     public event Action<short[]>? Samples;
     public event Action<string?>? Ended;
@@ -34,8 +28,6 @@ sealed class SystemAudioTap : IAudioSource
         thread?.Join(1000);
     }
 
-    /// A capture that breaks (the Windows Audio service restarting, a driver or a dock's audio
-    /// resetting) opens again; only one that keeps failing ends listening, with its reason.
     void Run()
     {
         int failures = 0;
@@ -67,7 +59,6 @@ sealed class SystemAudioTap : IAudioSource
             var fmt = WaveFormat.Pcm16(r, c);
             var p = Marshal.AllocHGlobal(Marshal.SizeOf<WaveFormat>());
             Marshal.StructureToPtr(fmt, p, false);
-            // A 1 s buffer (100 ns units): a capture thread held up for a moment must not lose audio.
             int hr = client.Initialize(0, StreamLoopback | StreamEventCallback | AutoConvertPcm | SrcDefaultQuality, 10_000_000, 0, p, IntPtr.Zero);
             Marshal.FreeHGlobal(p);
             if (hr == 0) { rate = r; channels = c; break; }
@@ -86,8 +77,6 @@ sealed class SystemAudioTap : IAudioSource
         Marshal.ThrowExceptionForHR(client.Start());
         try
         {
-            // Loopback sends nothing while nothing plays, so we feed silence ourselves (LoopbackGap:
-            // only after a second without a packet, or a late packet splits its sentence in two).
             var lastPacket = DateTime.UtcNow; var fedUntil = lastPacket;
             int gaps = 0;
             while (running)
@@ -103,11 +92,8 @@ sealed class SystemAudioTap : IAudioSource
                     }
                     continue;
                 }
-                // How long packets stall here (a VM): a stall over LoopbackGap.Late puts a gap in a sentence.
                 var waited = (DateTime.UtcNow - lastPacket).TotalMilliseconds;
                 if (waited >= 300 && fedUntil == lastPacket) Log.Debug($"tap: packets late by {waited:F0} ms");
-                // A failing call (the device invalidated, the audio service gone) must throw: ending the
-                // loop quietly would feed silence for the rest of the meeting.
                 while (true)
                 {
                     Marshal.ThrowExceptionForHR(capture.GetNextPacketSize(out var packet));
@@ -146,7 +132,7 @@ sealed class SystemAudioTap : IAudioSource
 
     IAudioClient Activate()
     {
-        var p = new ActivationParams { ActivationType = 1, TargetProcessId = (uint)Environment.ProcessId, ProcessLoopbackMode = OnlySelf ? 0 /* include tree */ : 1 /* exclude tree */ };
+        var p = new ActivationParams { ActivationType = 1, TargetProcessId = (uint)Environment.ProcessId, ProcessLoopbackMode = OnlySelf ? 0 : 1 };
         int size = Marshal.SizeOf<ActivationParams>();
         var blob = Marshal.AllocHGlobal(size);
         Marshal.StructureToPtr(p, blob, false);
@@ -168,7 +154,6 @@ sealed class SystemAudioTap : IAudioSource
     static extern int ActivateAudioInterfaceAsync(string path, ref Guid riid, ref PropVariantBlob activationParams,
         IActivateAudioInterfaceCompletionHandler handler, out IActivateAudioInterfaceAsyncOperation op);
 
-    // Must be agile, or activation fails with E_ILLEGAL_METHOD_CALL.
     [ComVisible(true)]
     sealed class Completion : IActivateAudioInterfaceCompletionHandler, IAgileObject
     {

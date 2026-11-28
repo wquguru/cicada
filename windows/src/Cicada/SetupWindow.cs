@@ -7,9 +7,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// Install, upgrade and uninstall (Install.cs does the work), in onboarding's look: the logo, a big
-/// heading with one grey line, one white card, the action bottom right. Installing has one button
-/// and two ticks; once done the installed copy opens onboarding, so there's no "finished" page.
 sealed class SetupWindow : Window
 {
     public enum Mode { Install, Upgrade, Uninstall }
@@ -21,12 +18,10 @@ sealed class SetupWindow : Window
     int done;
     string? error;
     bool startMenu = true, autoStart = true, keepRecords = true;
-    /// The running Cicada is listening: an upgrade waits, an uninstall says it ends the meeting.
     bool busy;
     readonly ContentControl body = new();
     readonly DispatcherTimer poll = new() { Interval = TimeSpan.FromSeconds(2) };
 
-    /// Runs the window as the whole process (no tray, no engines) and returns the exit code.
     public static int Run(Mode mode)
     {
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
@@ -34,7 +29,6 @@ sealed class SetupWindow : Window
         app.ThemeMode = ThemeMode.Light;
 #pragma warning restore WPF0001
         app.DispatcherUnhandledException += (_, e) => { Log.Debug($"setup: unhandled {e.Exception.GetType().Name}: {e.Exception.Message}"); e.Handled = true; };
-        // An upgrade or uninstall speaks the language the user picked; a first install the system's.
         var ui = AppSettings.Load().UiLanguage;
         Strings.Load(Bundled.Strings, ui == "system" ? null : ui);
         Log.Debug($"setup: {mode} {Controller.Version} from {Environment.ProcessPath}");
@@ -130,7 +124,6 @@ sealed class SetupWindow : Window
                 return;
             }
             if (mode == Mode.Uninstall) { phase = Phase.Done; Render(); return; }
-            // Let the last tick show, then the installed copy takes over (onboarding, or a toast).
             await Task.Delay(500);
             Install.Launch(mode == Mode.Install ? "--installed" : "--updated");
             Close();

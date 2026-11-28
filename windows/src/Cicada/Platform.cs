@@ -4,7 +4,6 @@ using Microsoft.Win32;
 
 namespace Cicada.App;
 
-/// Ctrl+Alt+L anywhere: start or end listening. A message-only window receives WM_HOTKEY.
 sealed class Hotkey : IDisposable
 {
     public const string Label = "Ctrl+Alt+L";
@@ -12,13 +11,12 @@ sealed class Hotkey : IDisposable
     const uint ModAlt = 0x1, ModControl = 0x2, ModNoRepeat = 0x4000, VkL = 0x4C;
     readonly HwndSource source;
     readonly Action pressed;
-    /// False when another app already holds the combination (Settings says so).
     public bool Registered { get; }
 
     public Hotkey(Action pressed)
     {
         this.pressed = pressed;
-        source = new HwndSource(new HwndSourceParameters("CicadaHotkey") { ParentWindow = new IntPtr(-3) /* HWND_MESSAGE */, Width = 0, Height = 0 });
+        source = new HwndSource(new HwndSourceParameters("CicadaHotkey") { ParentWindow = new IntPtr(-3), Width = 0, Height = 0 });
         source.AddHook(Hook);
         Registered = RegisterHotKey(source.Handle, Id, ModControl | ModAlt | ModNoRepeat, VkL);
         Log.Debug($"hotkey: {(Registered ? "registered" : "taken")} {Label}");
@@ -40,15 +38,12 @@ sealed class Hotkey : IDisposable
     [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hwnd, int id);
 }
 
-/// 开机时启动知了: the per-user Run key, so no admin rights. The dev build has its own entry.
 static class AutoStart
 {
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     static string Name => Paths.Dev ? "Cicada Dev" : "Cicada";
-    // --background: started with Windows, so stay in the tray; opened by hand, the main window shows.
     static string Command(string exe) => $"\"{exe}\" --background" + (Paths.Dev ? " --dev" : "");
 
-    /// Rewrites an entry made before --background existed, which would open the main window at sign-in.
     public static void Refresh()
     {
         try
@@ -70,7 +65,6 @@ static class AutoStart
         set => Set(Environment.ProcessPath ?? "", value);
     }
 
-    /// The installer sets it for the copy it put in place, not for itself in Downloads.
     public static void Set(string exe, bool on)
     {
         try
@@ -83,18 +77,11 @@ static class AutoStart
     }
 }
 
-/// The default playback device's name ("扬声器 (Realtek High Definition Audio)") for onboarding.
-/// Through Endpoints, never a second [ComImport] MMDeviceEnumerator: the enumerator is one COM object
-/// per process, and while an RCW of another class for it lives, `new` of Endpoints' class throws
-/// InvalidCastException, so the virtual cable looked uninstalled after onboarding's sound step.
 static class AudioDevice
 {
     public static string? DefaultName() => Endpoints.Default(Endpoints.Flow.Render)?.Name;
 }
 
-/// The meeting apps reading a microphone now (MicUse in Cicada.Core reads the entries): what
-/// Windows keeps for Settings › 隐私和安全性 › 麦克风, whose LastUsedTimeStop is 0 while an app has
-/// the mic open. Both desktop apps (NonPackaged) and Store apps (the new Teams).
 static class MicReaders
 {
     const string Root = @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone";
@@ -112,7 +99,6 @@ static class MicReaders
                 {
                     if (name == "NonPackaged") continue;
                     using var k = parent.OpenSubKey(name);
-                    // An app granted the mic but never used has both times 0: not in a call.
                     if (k?.GetValue("LastUsedTimeStop") is long stop && k.GetValue("LastUsedTimeStart") is long start && start > 0)
                         entries.Add((name, stop));
                 }
@@ -125,13 +111,10 @@ static class MicReaders
     }
 }
 
-/// Windows' own proxy settings (Settings › Network & internet › Proxy, which proxy apps switch on as
-/// "system proxy"): only read, to word the "can't reach" hint. Cicada never sets or uses one itself.
 static class WinProxy
 {
     const string Key = @"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 
-    /// A manual proxy, or an auto-config (PAC) script, is on.
     public static bool SystemOn()
     {
         try
@@ -142,7 +125,6 @@ static class WinProxy
         catch (Exception e) { Log.Debug($"proxy: unreadable ({e.GetType().Name})"); return false; }
     }
 
-    /// The settings that decide where requests go, as one string to compare (WatchProxy).
     public static string Snapshot()
     {
         try

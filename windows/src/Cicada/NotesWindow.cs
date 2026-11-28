@@ -7,32 +7,22 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// The window shown while listening: the live notes panel (default) or the subtitle bar. Like the
-/// Mac's it never takes focus (the user keeps typing in their meeting app) and stays out of screen
-/// captures unless 共享屏幕时让对方看到 is on, which it then says plainly.
 sealed class NotesWindow : Window
 {
     readonly Controller app;
     readonly DispatcherTimer clock = new() { Interval = TimeSpan.FromSeconds(1) };
-    // Hosts kept between renders: the clock redraws only the header, and the body keeps its scroll.
     ContentControl header = new(), bars = new(), live = new(), tabs = new(), footer = new();
     ScrollViewer scroll = new();
     string? builtFor;
     string tab = "notes";
-    /// Whether Windows agreed to keep the window out of captures; if not, it says it may be seen.
     bool hiddenFromCapture;
     bool renderQueued, placedSubtitles;
-    // Rebuilt only when what they show changes, so a click never lands on a button that a
-    // re-render just replaced; the clock and the countdown are text updated in place.
     string? headerKey, tabsKey, barsKey;
     readonly TextBlock clockText = Ui.Text("", 13, Palette.Secondary, wrap: false), dueText = Ui.Text("", 12, Palette.Tertiary, wrap: false);
 
     public NotesWindow(Controller app)
     {
         this.app = app;
-        // Transparent, so it can have the Mac's 16-point corners (Windows' own frame stops at 8). WPF
-        // redraws such a window in software, so nothing here animates: the clock is the one redraw a
-        // second, and the shadow is plain rings (Ui.Floating), not a blur.
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -47,11 +37,9 @@ sealed class NotesWindow : Window
             Native.MakeNonActivating(this);
             ApplyCaptureSetting();
         };
-        // Drag from anywhere that isn't a control (buttons and links mark the press handled).
         MouseLeftButtonDown += (_, e) => { if (e.ButtonState == MouseButtonState.Pressed) try { DragMove(); } catch { } };
         clock.Tick += (_, _) => { Tick(); Pulse(); };
         IsVisibleChanged += (_, _) => { if (IsVisible) clock.Start(); else clock.Stop(); };
-        // The subtitle bar fits its text and grows upward, so its bottom edge stays put.
         SizeChanged += (_, e) =>
         {
             if (!Subtitles || !e.HeightChanged) return;
@@ -64,7 +52,6 @@ sealed class NotesWindow : Window
 
     bool Subtitles => app.Settings.View == "subtitles";
 
-    /// The panel along the right edge, the subtitle bar along the bottom, on the primary work area.
     public void Place()
     {
         var area = SystemParameters.WorkArea;
@@ -91,7 +78,6 @@ sealed class NotesWindow : Window
         Render();
     }
 
-    /// Changes come from engine threads: coalesce them into one render on the UI thread.
     public void Refresh()
     {
         if (renderQueued) return;
@@ -122,8 +108,6 @@ sealed class NotesWindow : Window
     readonly TextBlock endingDetail = Ui.Text("", 12, Palette.Secondary);
     readonly TextBlock endingNotice = Ui.Text("", 13, Brushes.White, FontWeights.SemiBold, wrap: false);
 
-    /// 已经 10 分钟没人说话 · 60 秒后结束 (MeetingEndingStrip): what will happen, and 继续记录 / 现在结束.
-    /// The window never takes focus, so a click lands on the buttons at once.
     FrameworkElement EndingStrip()
     {
         if (!app.Listen.Listening) return new Border();
@@ -142,8 +126,6 @@ sealed class NotesWindow : Window
         return new Border { Background = Palette.AccentPale, CornerRadius = new CornerRadius(12), Padding = new Thickness(14), Margin = new Thickness(12, 0, 12, 8), Child = stack };
     }
 
-    /// 结束这场会议？ (NotesWindow.swift › meetingBar): below the header, away from the 结束 button,
-    /// so a double click can't confirm it; no timeout, so it never vanishes under the pointer.
     FrameworkElement ConfirmEnd()
     {
         var stack = Ui.Stack(3, Ui.Text(L("结束这场会议？"), 14, Palette.Ink, FontWeights.Bold), Ui.Text(ConfirmEndDetail(), 12, Palette.Secondary));
@@ -195,7 +177,6 @@ sealed class NotesWindow : Window
         var offset = scroll.VerticalOffset;
         soundBars.Clear();
         scroll.Content = tab == "transcript" ? Transcript() : NotesBody();
-        // The transcript follows new lines while the reader is at its end; otherwise nothing jumps.
         if (tab == "transcript" && atBottom) scroll.ScrollToEnd(); else scroll.ScrollToVerticalOffset(offset);
     }
 
@@ -205,13 +186,9 @@ sealed class NotesWindow : Window
     {
         var dock = new DockPanel();
         void Top(UIElement e) { DockPanel.SetDock(e, Dock.Top); dock.Children.Add(e); }
-        // The Mac's layout: the header, 纪要 / 文字记录 as a two-part switch, the notes, and the
-        // sentence being said now on a dark card along the bottom, where the eye rests.
         Top(header);
         Top(ending);
         Top(bars);
-        // 这样改对吗？ above both tabs: the window opens on 纪要, where a card in the transcript
-        // would never be seen.
         Top(ask);
         tabs.Margin = new Thickness(12, 0, 12, 0);
         Top(tabs);
@@ -220,7 +197,6 @@ sealed class NotesWindow : Window
         live.Margin = new Thickness(12, 8, 12, 0);
         DockPanel.SetDock(live, Dock.Bottom);
         dock.Children.Add(live);
-        // The last fix decision with 撤销, just above the sentence being said.
         toast.HorizontalAlignment = HorizontalAlignment.Center;
         toast.Margin = new Thickness(12, 8, 12, 0);
         DockPanel.SetDock(toast, Dock.Bottom);
@@ -239,7 +215,6 @@ sealed class NotesWindow : Window
             buttons.Children.Add(Ui.IconButton(Icons.Notes, L("换成纪要"), () => app.SetView("notes"), Palette.NightText, 32, 16, onDark: true));
             if (listen.Listening)
             {
-                // 打开麦克风 (the Mac's bar has it while editing; this bar takes clicks anyway).
                 var mic = Ui.IconButton(Icons.Mic, app.MicOn ? L("关闭麦克风") : L("打开麦克风"), () => app.SetMic(!app.MicOn),
                                         app.MicOn ? NightAccent : Palette.NightText, 32, 15, onDark: true);
                 if (app.MicOn) mic.Background = new SolidColorBrush(Color.FromArgb(0x33, 0xE8, 0x55, 0x2B));
@@ -274,20 +249,15 @@ sealed class NotesWindow : Window
         main.MinWidth = 0; main.Padding = new Thickness(12, 0, 12, 0);
         if (listen.Listening)
         {
-            // The Mac's header buttons are 12 pt: at 14 the English "Turn off mic" and "End" pushed
-            // 收起 out of the window.
             Snug(main);
             right.Children.Add(Gap(Snug(TrayFlyout.MicButton(app, panel: false)), 8));
         }
         right.Children.Add(Gap(main, 8));
         right.Children.Add(Gap(Ui.IconButton("M5,10 H15", L("收起（继续听）"), Collapse, Palette.Body, 34, 16), 4));
-        // The buttons are docked first so a long status in a wide language clips the clock, never 收起.
         var row = new DockPanel { LastChildFill = false };
         DockPanel.SetDock(right, Dock.Right); DockPanel.SetDock(left, Dock.Left);
         row.Children.Add(right); row.Children.Add(left);
         left.ClipToBounds = true;
-        // Too narrow for the word and the clock (English with the mic button): the live dot and
-        // the clock say it on their own.
         if (listening is not null)
             row.SizeChanged += (_, e) =>
             {
@@ -301,15 +271,10 @@ sealed class NotesWindow : Window
         return row;
     }
 
-    /// What needs the user: the AI service failing, or the window being visible to others.
     FrameworkElement Bars()
     {
         var stack = new StackPanel { Margin = new Thickness(12, 0, 12, 0) };
         void Add(FrameworkElement bar) { bar.Margin = new Thickness(0, 0, 0, 8); stack.Children.Add(bar); }
-        // AI trouble is one status line each (NotesWindow.swift › banner): a dot, what waits for
-        // what · what still works, at most one action. The service hears the meeting here, so its
-        // failing stops the subtitles as well: hearing's line comes first and the notes' own lines
-        // only add what it doesn't already say.
         (string, Action)? useLing = app.CanSwitchToLing ? (L("改用 Ling"), app.SwitchToLing) : null;
         var problem = app.Listen.Problem;
         if (problem is { } p)
@@ -317,17 +282,12 @@ sealed class NotesWindow : Window
             var ling = app.Ling;
             var (title, body, settings) = ListenEngine.Words(p, app.Listen.ProblemStatus, ServiceLabel(), ling.HearName);
             var text = (title is null ? body : title.TrimEnd('。', '.') + " · " + body).TrimEnd('。', '.');
-            // Can't reach it: picks up by itself once it answers; the proxy hint is in 设置 › AI 服务.
             if (p is LingException.Kind.Network or LingException.Kind.Timeout) Add(Ui.StatusLine(Ui.Tone.Waiting, text, useLing));
-            // Busy or erring (a 5xx): it passes by itself, nothing to press.
             else if (p == LingException.Kind.RateLimited || ListenEngine.IsServerError(p, app.Listen.ProblemStatus)) Add(Ui.StatusLine(Ui.Tone.Waiting, text));
             else if (settings) Add(Ui.StatusLine(Ui.Tone.NeedsYou, text, (p is LingException.Kind.InvalidKey or LingException.Kind.NoKey ? L("换 key") : L("设置"), app.ShowAISettings)));
-            // Anything else (a garbled reply, Ling's 400) also picks up by itself; 重试 asks now.
             else Add(Ui.StatusLine(Ui.Tone.Waiting, text, (L("重试"), () => { app.Listen.ClearProblem(); _ = app.Ling.Check(); })));
         }
         var unreachable = app.Ling.Health.Failure?.Why == AICheck.Reason.Unreachable;
-        // 语音和文字只发给你的服务, and finished sentences go untranslated: it picks up by itself, and
-        // no 改用 Ling (that would send the meeting elsewhere). When hearing failed, its line says so.
         var notesWait = app.Notes.Status is NotesEngine.State.Unreachable or NotesEngine.State.Updating && unreachable;
         var stalled = problem is null && app.Listen.Listening && app.Translator.GoogleOff && app.Translator.SentencesUntranslated;
         if (stalled)
@@ -336,18 +296,12 @@ sealed class NotesWindow : Window
         if (app.Listen.Listening)
             switch (app.Notes.Status)
             {
-                // Hearing goes ahead of the notes, so it is usually still fine: unless its line says otherwise.
                 case NotesEngine.State.RateLimited when problem is null:
                     Add(Ui.StatusLine(Ui.Tone.Waiting, LF("%@ 很忙 · 纪要稍后补上，字幕照常", ServiceLabel())));
                     break;
-                // Both: the notes' own request failed, and the service doesn't answer anything; notes that
-                // only timed out while translations still came back retry on the next round. The retry
-                // that follows (Updating) hangs as long as a timeout: the line stays meanwhile. When
-                // hearing can't reach it either, its line above says so already.
                 case NotesEngine.State.Unreachable or NotesEngine.State.Updating when unreachable && !stalled:
                     if (problem is not (LingException.Kind.Network or LingException.Kind.Timeout))
                     {
-                        // A hear model served at another address still brings subtitles.
                         var until = NotesCoveredUntil();
                         var text = !app.Ling.Config.HearElsewhere ? LF("字幕和纪要等 %@ 恢复 · 连上后自动继续", ServiceLabel())
                             : until > 0 ? LF("纪要等 %@ 恢复 · 停在 %@，字幕照常", ServiceLabel(), Languages.Clock(until))
@@ -359,7 +313,6 @@ sealed class NotesWindow : Window
                     Add(Ui.StatusLine(Ui.Tone.Info, L("这轮纪要没写好 · 下轮自动补上")));
                     break;
             }
-        // Shown to others on purpose: the footer's 对方可见 says so. Not hidden though asked: a warning.
         if (!app.Settings.ShowInCapture && !hiddenFromCapture)
             Add(Ui.InfoBar(Ui.Severity.Warning, null, L("Windows 没能把这个窗口从屏幕共享里藏起来，对方可能看得到。")));
         return stack;
@@ -367,7 +320,6 @@ sealed class NotesWindow : Window
 
     string ServiceLabel() => app.Ling.ServiceLabel;
 
-    /// When the last line the notes cover was said (0: nothing covered yet).
     double NotesCoveredUntil()
     {
         var lines = app.Listen.SessionId is { } id ? app.Store.Get(id)?.Lines : null;
@@ -375,8 +327,6 @@ sealed class NotesWindow : Window
         return lines is not null && covered > 0 && covered <= lines.Count ? lines[covered - 1].T : 0;
     }
 
-    /// The newest line on the Mac's dark card: who in their colour and 正在说 while Ming works on the
-    /// next, the original small, its translation large and bold.
     FrameworkElement LiveCard()
     {
         var listen = app.Listen;
@@ -401,7 +351,6 @@ sealed class NotesWindow : Window
         return new Border { Background = Palette.Night, CornerRadius = new CornerRadius(14), Padding = new Thickness(16, 14, 16, 14), Child = stack, MinHeight = 96 };
     }
 
-    /// Text on the dark card: the accent lifted for contrast, and the original a light grey.
     static readonly SolidColorBrush NightAccent = new(Color.FromRgb(0xFF, 0x8A, 0x5C)), NightBody = new(Color.FromRgb(0xD9, 0xDC, 0xE1));
 
     FrameworkElement TabRow()
@@ -426,9 +375,6 @@ sealed class NotesWindow : Window
         {
             var heard = app.Listen.SessionId is { } id ? app.Store.Get(id)?.Lines.Count ?? 0 : 0;
             var status = app.Notes.Status;
-            // NotesWindow.swift › notesPane: while listening the placeholder stays up after lines
-            // arrive, until a request is actually out (the first waits for a few lines or 20 s);
-            // a key problem says so instead.
             var keyProblem = status is NotesEngine.State.NoKey or NotesEngine.State.InvalidKey;
             if (app.Listen.Listening && !keyProblem && !(status == NotesEngine.State.Updating && heard > 0)) return Listening(heard);
             var (title, hint) = status switch
@@ -475,15 +421,11 @@ sealed class NotesWindow : Window
 
     // MARK: Listening, no notes asked for yet (NotesViews.swift › NotesListeningView)
 
-    // Stepped once a second by the clock, like Ui.LiveDot: this window is redrawn in software, so a
-    // WPF animation would redraw it every frame. Holds only what the current render shows.
     readonly List<ScaleTransform> soundBars = [];
     readonly SolidColorBrush skeleton = new(SkeletonBase);
     int beat;
     static readonly Color SkeletonBase = Color.FromRgb(0xEE, 0xF0, 0xF3), SkeletonLight = Color.FromRgb(0xF7, 0xF8, 0xFA);
-    // The Mac's placeholder grey, its accentPale at 70% on white, and its chip fill.
     static readonly SolidColorBrush Placeholder = Frozen(0xB8, 0xBD, 0xC6), ListeningRow = Frozen(0xFE, 0xF1, 0xEC), ChipFill = Frozen(0xF2, 0xF3, 0xF5);
-    // How tall each sound bar stands, step by step; each bar runs two steps ahead of the one before.
     static readonly double[] levels = [0.35, 0.7, 1, 0.6, 0.3, 0.85, 0.5];
 
     static SolidColorBrush Frozen(byte r, byte g, byte b) { var x = new SolidColorBrush(Color.FromRgb(r, g, b)); x.Freeze(); return x; }
@@ -496,8 +438,6 @@ sealed class NotesWindow : Window
         skeleton.Color = beat % 2 == 0 ? SkeletonBase : SkeletonLight;
     }
 
-    /// One quiet status row, then the notes' own shape waiting to be filled, so the first version
-    /// lands where the reader is already looking.
     FrameworkElement Listening(int heard)
     {
         var body = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
@@ -534,7 +474,6 @@ sealed class NotesWindow : Window
         var topics = Ui.Stack(12, Ui.Text(L("议题"), 15, Placeholder, FontWeights.Bold), TopicSlot("00:00", [0.52, 0.88, 0.7]), later);
         body.Children.Add(Gap(topics, 22, top: true));
 
-        // Wraps: the English chips don't fit one line in a narrow window.
         var chips = new WrapPanel { Margin = new Thickness(0, 26, 0, 0) };
         var lead = Ui.Text(L("会整理出"), 12, Palette.Tertiary, wrap: false);
         lead.Margin = new Thickness(0, 4, 6, 10);
@@ -545,7 +484,6 @@ sealed class NotesWindow : Window
         return body;
     }
 
-    /// A placeholder line `fraction` of the width across, pulsing with the clock.
     FrameworkElement SkeletonBar(double fraction, double height)
     {
         var grid = new Grid { Height = height };
@@ -555,7 +493,6 @@ sealed class NotesWindow : Window
         return grid;
     }
 
-    /// A topic still to come: its time, then a heading and points as bars, in a dashed outline.
     FrameworkElement TopicSlot(string time, double[] lines)
     {
         var bars = new StackPanel();
@@ -567,7 +504,6 @@ sealed class NotesWindow : Window
         DockPanel.SetDock(clock, Dock.Left);
         dock.Children.Add(clock); dock.Children.Add(bars);
         var grid = new Grid();
-        // Dash lengths are in stroke widths: the Mac's 5 / 4 points at 1.5.
         grid.Children.Add(new System.Windows.Shapes.Rectangle { Stroke = Palette.Line, StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 5 / 1.5, 4 / 1.5 }, RadiusX = 12, RadiusY = 12 });
         grid.Children.Add(dock);
         return grid;
@@ -577,8 +513,6 @@ sealed class NotesWindow : Window
     {
         var lines = app.Listen.SessionId is { } id ? app.Store.Get(id)?.Lines ?? [] : [];
         var body = new StackPanel();
-        // Stored as they arrive (the notes count them); shown in time order, so a sentence I said
-        // sits between the other side's, which come back from Ming a little later.
         var sid = app.Listen.SessionId;
         var latest = lines.Count > 0 ? lines[^1].Id : null;
         foreach (var (l, who, ink, place) in Speakers(lines, app.Settings.SpeakerVoices))
@@ -586,9 +520,6 @@ sealed class NotesWindow : Window
         return body;
     }
 
-    /// Lines in time order with who said them, named only where the speaker changes (as chat apps
-    /// do): 你 for what I said into the meeting, 说话人 N once voices are told apart. A meeting that
-    /// heard the PC and the room says 现场 / 线上 where that changes too (`place`).
     internal static IEnumerable<(TranscriptLine line, string? who, Brush? ink, bool place)> Speakers(IReadOnlyList<TranscriptLine> lines, bool voices)
     {
         var numbers = voices ? SpeakerLabels.Numbers(lines) : [];
@@ -604,20 +535,13 @@ sealed class NotesWindow : Window
                 place = both && l.Speaker != "me";
                 if (key == "me") { who = L("你"); ink = Palette.AccentText; }
                 else if (numbers.TryGetValue(l.Id, out var m)) { who = LF("说话人 %lld", m); ink = Palette.Speaker(m); }
-                else if (numbers.Count > 0 && l.Via != "room") { who = L("未识别"); ink = Palette.Tertiary; }  // the room side tells no voices apart
+                else if (numbers.Count > 0 && l.Via != "room") { who = L("未识别"); ink = Palette.Tertiary; }
             }
             last = key;
             yield return (l, who, ink, place);
         }
     }
 
-    /// One line of the transcript as on the Mac: who (in their colour) and when, the original in
-    /// grey, the translation in ink. With `play` (a record with its recording) the time is a link
-    /// that plays from there; it is tagged "time" so the player can light it.
-    /// 改正听错的词: the fixed words are underlined; pointing at the line (or `open`, the line being
-    /// said: hover in a window that never takes focus isn't to be counted on) shows what each was
-    /// heard as with 改回 (`revert`), and 改这句… (`edit`, the meeting record). `editor` takes the
-    /// original's place while the line is being rewritten.
     internal static FrameworkElement TranscriptRow(TranscriptLine l, string? who = null, Brush? ink = null, bool place = false, Action<double>? play = null,
         Action<LineFix>? revert = null, bool open = false, Action? edit = null, FrameworkElement? editor = null,
         IReadOnlyList<string>? terms = null, bool found = false)
@@ -645,7 +569,6 @@ sealed class NotesWindow : Window
             text.Children.Add(Gap(editor, 3, top: true));
             return text;
         }
-        // `terms`: the records' search marks what it found (`found`: the match being looked at).
         terms ??= [];
         text.Children.Add(Gap(FixViews.Mark(FixViews.LineText(l, translated ? 13 : 15, translated ? Palette.Secondary : Palette.Ink), terms, found), 3, top: true));
         if (translated) text.Children.Add(Gap(FixViews.Mark(Ui.Text(l.Dst!, 15, Palette.Ink), terms, found), 2, top: true));
@@ -664,8 +587,6 @@ sealed class NotesWindow : Window
         return text;
     }
 
-    /// Your own line (SpeakerViews.swift › MeTag): said with the talk key, so what the other side
-    /// heard was its translation; 你 and an outlined 同传.
     static FrameworkElement MeTag(string who, Brush? ink)
     {
         var tag = Ui.Row(5, Ui.Text(who, 12, ink ?? Palette.AccentText, FontWeights.SemiBold, wrap: false), new Border
@@ -678,7 +599,6 @@ sealed class NotesWindow : Window
         return tag;
     }
 
-    /// 现场 / 线上 (SpeakerViews.swift › PlaceTag): the room's filled, the PC's outlined.
     internal static FrameworkElement PlaceTag(TranscriptLine l)
     {
         var room = l.Via == "room";
@@ -691,12 +611,9 @@ sealed class NotesWindow : Window
         };
     }
 
-    // 改正听错的词: the card and the toast, rebuilt only when what they show changes.
     ContentControl ask = new(), toast = new();
     string? askKey, toastKey;
 
-    /// 这样改对吗？ for the first name waiting. Not while the window is shown to the other side
-    /// (共享屏幕时让对方看到): names wait for after the meeting then.
     FrameworkElement? AskCard((TranscriptLine Line, LineFix Fix, int Position, int Of)? asking)
     {
         if (asking is not { } a || app.Listen.SessionId is not { } id) return null;
@@ -705,7 +622,6 @@ sealed class NotesWindow : Window
         return card;
     }
 
-    /// Who can see this window, and when the notes change next.
     FrameworkElement Footer()
     {
         var visible = app.Settings.ShowInCapture || !hiddenFromCapture;
@@ -734,25 +650,21 @@ sealed class NotesWindow : Window
         return Ui.Floating(new Border { Padding = new Thickness(22, 14, 14, 16), Child = grid }, new SolidColorBrush(Color.FromArgb(0xF2, 0x1B, 0x1D, 0x22)), 16, dark: true);
     }
 
-    /// The bar as on the Mac: who and the original on one small line, the translation big and bold.
     FrameworkElement SubtitleLine()
     {
         var listen = app.Listen;
         var session = listen.SessionId is { } id ? app.Store.Get(id) : null;
         var line = session?.Lines.LastOrDefault();
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
-        // Asked to end: the one time the bar carries buttons, as the panel's card does.
         if (listen.Listening && app.ConfirmingEnd)
         {
             text.Children.Add(Ui.Text(L("结束这场会议？"), 15, Brushes.White, FontWeights.Bold));
             text.Children.Add(Gap(Ui.Text(ConfirmEndDetail(), 12, Palette.NightText), 2, top: true));
-            // On the dark bar the ink button would vanish: 结束会议 takes the 结束 button's pale look.
             var buttons = Ui.Row(8, Ui.Button(L("继续记录"), app.CancelStop, height: 32), Ui.Button(L("结束会议"), () => _ = app.StopListening(), Ui.Kind.Pale, Icons.Stop, 32, iconFill: true));
             buttons.Margin = new Thickness(0, 8, 0, 0);
             text.Children.Add(buttons);
             return text;
         }
-        // The subtitle bar has no room for buttons: it says what will happen (the Mac's notice).
         if (listen.Listening && app.Ending is not null)
         {
             Detach(endingNotice);
@@ -784,7 +696,6 @@ sealed class NotesWindow : Window
         return e;
     }
 
-    /// A header button at the Mac's size: 13 px label, 10 px sides.
     static Button Snug(Button b)
     {
         b.Padding = new Thickness(10, 0, 10, 0);
@@ -804,7 +715,6 @@ sealed class NotesWindow : Window
         return dock;
     }
 
-    /// A to-do: an empty box (notes are read-only here), the task, and who has it.
     internal static FrameworkElement Todo(NoteItem todo)
     {
         var dock = new DockPanel();

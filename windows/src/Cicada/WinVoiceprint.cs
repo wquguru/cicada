@@ -2,8 +2,6 @@ using Windows.AI.MachineLearning;
 
 namespace Cicada.App;
 
-/// The voiceprint model on Windows' built-in Windows ML (no runtime to ship). Loaded on first use
-/// from inside the exe; one inference at a time, about 0.15 s for a 5 s line.
 sealed class WinVoiceprint : IVoiceprint
 {
     readonly object one = new();
@@ -41,7 +39,6 @@ sealed class WinVoiceprint : IVoiceprint
             using var res = typeof(WinVoiceprint).Assembly.GetManifestResourceStream("voiceprint.onnx") ?? throw new FileNotFoundException("voiceprint.onnx");
             var bytes = new byte[res.Length];
             res.ReadExactly(bytes);
-            // Written through a DataWriter: a .NET stream wrapper would close the WinRT stream with it.
             var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
             using (var w = new Windows.Storage.Streams.DataWriter(stream.GetOutputStreamAt(0)))
             {

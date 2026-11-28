@@ -15,7 +15,6 @@ static class Program
     static int Main(string[] args)
     {
         Paths.Dev = Paths.Dev || args.Contains("--dev");
-        // Before the single-instance check: the installer must run while the installed copy does.
         if (!Paths.Dev)
         {
             if (args.Contains("--uninstall")) return SetupWindow.Run(SetupWindow.Mode.Uninstall);
@@ -26,13 +25,10 @@ static class Program
                 case SetupPlan.Step.Open: Native.LetOthersTakeForeground(); Install.Launch("--opened"); return 0;
             }
         }
-        // One Cicada per user: a second launch just opens the records of the running one.
         using var single = new Mutex(true, Paths.Dev ? "com.wquguru.cicada.dev" : Install.Mutex, out bool first);
         if (!first) { Native.LetOthersTakeForeground(); DebugServer.Send(args.Contains("--opened") ? "setup opened" : "show records"); return 0; }
         Controller.Arrived = args.FirstOrDefault(a => a is "--installed" or "--updated" or "--opened");
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        // WPF's own Windows 11 (Fluent) look for the stock controls: menus, combo boxes, text boxes,
-        // check boxes and scroll bars. Light only for now; Cicada draws its own surfaces on top.
 #pragma warning disable WPF0001
         app.ThemeMode = ThemeMode.Light;
 #pragma warning restore WPF0001
@@ -43,13 +39,10 @@ static class Program
     }
 }
 
-/// Wires the engines to the windows, as AppModel does on the Mac. Engine events arrive on worker
-/// threads; everything here that touches UI runs on the dispatcher.
 sealed class Controller
 {
     readonly Application application;
     public readonly AppSettings Settings = AppSettings.Load();
-    /// The key of the AI service in use (one file per service).
     public readonly AIKey Key;
     public readonly LingClient Ling;
     public readonly SessionStore Store = new();
@@ -61,45 +54,30 @@ sealed class Controller
     public readonly UpdateChecker Updates;
     public readonly Vocabulary Vocabulary;
     public readonly LiveFixes Fixes;
-    /// 存到文件夹 (设置 › 隐私与启动): settled meetings written as Markdown into a folder.
     public readonly FolderExporter FolderExport;
-    /// 分享…: the share service, its device key and the links made (sealed files, never the record).
     public readonly ShareClient Sharing = new(new DpapiProtector(), "windows", Version);
-    /// 我自己的声音: the recording Ming clones the user's voice from, sealed like the keys.
     public readonly VoiceReference OwnVoice = new(new DpapiProtector());
-    /// Dev (`silentlisten`): the language `heard` lines are in.
     public string? SilentLang;
-    /// Started with Windows (--background): stay in the tray. Opened by hand, the main window shows.
     public bool Background { get; init; }
     Onboarding? onboarding;
-    /// 检查更新 in settings: null, or the result of the last manual check for a few seconds.
     public string? UpdateCheck { get; private set; }
     bool checksUpdates;
-    /// The tray panel opened: check in the background once the last answer is an hour old.
     public void PanelOpened() { if (checksUpdates) _ = Updates.CheckIfDue(UpdateChecker.Stale); }
     public static string Version => typeof(Controller).Assembly.GetName().Version?.ToString(3) ?? "0";
-    /// How the installer started this copy: --installed, --updated or --opened (it was already installed).
     public static string? Arrived;
     PushToTalk? talk;
     SpeakBar? speakBar;
-    /// The press's microphone: through echo cancellation, or the plain one when that won't open.
     EchoMic? echoMic;
     bool echoLogged;
     DeviceRecorder? mic;
-    /// Dev builds: a WAV that stands in for the microphone (the VM has none).
     string? fakeMic;
-    /// Dev builds: the input the talk key reads instead of the microphone (`talkmic CABLE Output`).
     string? talkMic;
     readonly Forms.NotifyIcon tray = new();
     System.Drawing.Icon? idleIcon, liveIcon, updateIcon;
-    /// Something only the user can fix (AICheck.Blocking), said beyond the panel: the tray's orange
-    /// dot and tooltip, and once a meeting a notification while the notes panel is put away.
     public string? Problem { get; private set; }
     bool problemNotified;
-    /// The installer's download progress (0…1) while an update is being fetched, and why the last one failed.
     public double? UpdateProgress { get; private set; }
     public string? UpdateFailure { get; private set; }
-    /// Whether the browser took the download over after the in-app one failed (it may not open).
     public bool UpdatePageOpened { get; private set; }
     Action? balloonClicked;
     Hotkey? hotkey;
@@ -109,14 +87,10 @@ sealed class Controller
     MainWindow? mainWindow;
     SettingsWindow? settingsWindow;
     Dispatcher Dispatch => application.Dispatcher;
-    // 结束会议 (MeetingEnd.cs): `Ending` while a meeting is about to end by itself, `AutoEnded` after
-    // one did (the tray says so, and the next call starts a new meeting).
     MeetingEndWatch? endWatch;
     public MeetingEndWatch.Pending? Ending { get; private set; }
     public bool AutoEnded { get; private set; }
-    /// 结束这场会议？ is showing in the notes window or subtitle bar (AppModel.requestStop).
     public bool ConfirmingEnd { get; private set; }
-    /// Dev: meeting apps pretending to be in a call, and (silence, countdown, grace) in seconds.
     public Dictionary<string, string>? FakeCalls;
     public (double Silence, double Countdown, double Grace)? EndTimes;
     bool readingCalls;
@@ -139,12 +113,9 @@ sealed class Controller
         Speak.Changed += () => Dispatch.BeginInvoke(() => { speakBar ??= new SpeakBar(this); speakBar.Refresh(); });
         Speak.Reference = OwnVoice;
         Listen.Voiceprint = new WinVoiceprint();
-        // No voices on the room side: its numbers would collide with the PC's.
-        // The talk key's echo check: the meeting playing through a press is sent back otherwise.
         var loudness = new LoudnessLog();
         Listen.Loudness = loudness;
         Speak.Echo = loudness;
-        // 改正听错的词: the word list beside the records, and the fixes both sides' lines take.
         Vocabulary = new Vocabulary(Vocabulary.DefaultPath);
         Fixes = new LiveFixes(Store, Vocabulary, Settings);
         Fixes.Changed += Changed;
@@ -156,8 +127,6 @@ sealed class Controller
         Notes.Changed += Changed;
         Store.Changed += _ => Changed();
         Store.Words += id => Dispatch.BeginInvoke(() => HeardWords(id));
-        // 存到文件夹: written once a record is settled, rewritten when it changes. Its state is the
-        // dispatcher's, as the Mac's is the main actor's.
         FolderExport = new FolderExporter(Store, Settings)
         {
             Post = a => Dispatch.BeginInvoke(a),
@@ -174,7 +143,6 @@ sealed class Controller
 
     public void Launch()
     {
-        // Process loopback and capture exclusion both arrived in Windows 10 2004 (build 19041).
         if (Environment.OSVersion.Version.Build < 19041)
         {
             MessageBox.Show(L("知了需要 Windows 10 2004 或更新的版本。"), L("知了"));
@@ -183,7 +151,6 @@ sealed class Controller
         }
         Log.Debug($"app: launch {(Paths.Dev ? "dev" : "release")} {Environment.OSVersion.Version}");
         SetUpTray();
-        // 保存会议录音: Windows' AAC encoder; a recording the last run didn't close is finished now.
         Store.Audio = new MediaFoundationAudio();
         Store.FinishLeftovers();
         hotkey = new Hotkey(() => Dispatch.BeginInvoke(() => _ = ToggleListening()));
@@ -195,19 +162,14 @@ sealed class Controller
         Log.Debug($"audio: speakers {Endpoints.Default(Endpoints.Flow.Render)?.Name ?? "none"}, mic {Endpoints.Microphone()?.Name ?? "none"}, cable {(Endpoints.Cable() is null ? "absent" : "present")}");
         DebugServer.Start(this);
         WatchNetwork();
-        // 存到文件夹: what is still waiting, now and whenever Cicada comes forward (a folder fixed
-        // in Windows 安全中心 meanwhile).
         FolderExport.Retry();
         application.Activated += (_, _) => FolderExport.Retry();
-        // A dev build isn't what a release replaces: it checks only when pointed at a test feed.
         UpdateChecker.CleanDownloads();
         if (!Paths.Dev || Environment.GetEnvironmentVariable("CICADA_UPDATE_FEED") is { Length: > 0 }) { checksUpdates = true; Updates.Start(); }
         var watch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         watch.Tick += (_, _) => _ = WatchEnd();
         watch.Start();
         if (AutoStart.Enabled) AutoStart.Refresh();
-        // The Mac shows its main window when opened by hand; a Windows user who double-clicks the
-        // exe expects a window too, not just a tray icon. Not set up yet: the onboarding on top.
         if (!Background || !Settings.Onboarded) ShowRecords();
         if (!Settings.Onboarded)
         {
@@ -224,9 +186,6 @@ sealed class Controller
         }
     }
 
-    /// VB-Cable holds the speaker (installed before Cicada gave it back, or outside Cicada): the user
-    /// hears nothing and may blame Cicada. Said once (CableDefaults.ShouldNotify); a click gives a
-    /// real speaker back.
     public void NotifyCableSpeaker()
     {
         var onCable = Endpoints.SpeakerIsCable();
@@ -243,7 +202,6 @@ sealed class Controller
         Settings.Save();
     }
 
-    /// The installer ran again with this version (or an older one) already here: bring the main window.
     public void FromInstaller()
     {
         ShowRecords();
@@ -259,11 +217,8 @@ sealed class Controller
         UpdateTray();
     });
 
-    /// Only update news re-renders settings: Changed fires on every line heard.
     void UpdatesChanged() => Dispatch.BeginInvoke(() => { Changed(); settingsWindow?.UpdatesChanged(); NotifyUpdate(); });
 
-    /// One Windows notification per version, for people who never open the tray panel; a click
-    /// installs. Held while listening or speaking: StopListening tells.
     void NotifyUpdate()
     {
         if (Updates.Available is not { } u) return;
@@ -284,14 +239,11 @@ sealed class Controller
         tray.Icon = idleIcon;
         tray.Text = L("知了");
         tray.Visible = true;
-        // Left click: the panel, or while listening the notes window (both live in this corner, so
-        // the panel would cover the notes). Right click: the menu, any time.
         tray.MouseUp += (_, e) =>
         {
             if (e.Button == Forms.MouseButtons.Left) Dispatch.BeginInvoke(() => { if (Listen.Listening && Settings.View == "notes") ToggleNotes(); else ShowFlyout(); });
             else if (e.Button == Forms.MouseButtons.Right) Dispatch.BeginInvoke(ShowMenu);
         };
-        // Cleared before the run: a click may show the next notification, with its own action.
         tray.BalloonTipClicked += (_, _) => Dispatch.BeginInvoke(() => { var c = balloonClicked; balloonClicked = null; c?.Invoke(); });
         UpdateTray();
     }
@@ -306,8 +258,6 @@ sealed class Controller
         catch { return System.Drawing.SystemIcons.Application; }
     }
 
-    /// The logo with a dot on its corner: orange while listening or something needs fixing, grey
-    /// for a new version (it can wait).
     static System.Drawing.Icon WithDot(System.Drawing.Icon icon, System.Drawing.Color colour)
     {
         using var bmp = new System.Drawing.Bitmap(32, 32);
@@ -326,19 +276,13 @@ sealed class Controller
     void UpdateTray()
     {
         CheckProblem();
-        // Orange says 正在听 or something to fix (the Mac's problem badge), grey a new version;
-        // the tooltip names the problem first.
         tray.Icon = Listen.Listening || Problem is not null ? liveIcon : Updates.Available is not null ? updateIcon : idleIcon;
         var text = Problem is { } p ? L("知了") + " · " + p
             : Listen.Listening ? L("知了") + " · " + L("正在听")
             : Updates.Available is { } u ? L("知了") + " · " + LF("有新版本 %@", u.Version) : L("知了");
-        // NotifyIcon.Text throws past 127 characters (a long model id in the title).
         tray.Text = text.Length > 127 ? text[..126] + "…" : text;
     }
 
-    /// On every change: the tray's problem, and its one notification a meeting. Only while
-    /// listening, and only when the notes panel isn't up (its banner says so; the subtitle bar has
-    /// none). Never a dialog: it would take the focus from the meeting app.
     void CheckProblem()
     {
         var p = Ling.HasKey && Ling.Health.Blocking ? AIProblem()?.Title : null;
@@ -359,7 +303,6 @@ sealed class Controller
         flyout.Toggle();
     }
 
-    /// The right-click menu needs a window of ours in front, or it won't close on an outside click.
     public void ShowMenu()
     {
         menuHost ??= new Window { WindowStyle = WindowStyle.None, AllowsTransparency = true, Background = System.Windows.Media.Brushes.Transparent, ShowInTaskbar = false, Width = 1, Height = 1, Left = -10000, Top = -10000, Topmost = true };
@@ -373,8 +316,6 @@ sealed class Controller
             item.Click += (_, _) => act();
             return item;
         }
-        // The Mac's status menu: what the AI service needs from the user, where it stands, then what
-        // to do, then the windows, then 退出.
         if (AIProblem() is { } ai)
         {
             var (problem, detail) = ai;
@@ -391,7 +332,6 @@ sealed class Controller
             if (Settings.View == "notes") menu.Items.Add(NotesVisible ? Item(L("隐藏纪要窗"), ToggleNotes) : Item(L("显示纪要"), ShowNotes));
         }
         else menu.Items.Add(Item(L("开始听"), () => _ = ToggleListening(), Hotkey.Label.Replace('+', ' ')));
-        // 麦克风: one checkable item for what 听哪里's three were.
         var micItem = Item(L("麦克风"), () => SetMic(!MicOn));
         micItem.IsCheckable = true; micItem.IsChecked = MicOn;
         menu.Items.Add(micItem);
@@ -406,22 +346,18 @@ sealed class Controller
         menu.IsOpen = true;
     }
 
-    /// 存到文件夹 couldn't write after a meeting (not inside a folder controlled folder access
-    /// protects: Windows says that itself). Once until a write works again.
     void NotifyFolderDenied()
     {
         if (FolderExport.Folder is not { } folder) return;
         Toast(L("纪要没存到文件夹"), LF("知了没有权限写入 %@。点按去设置", FolderExportUi.ShortPath(folder)), ShowFolderSettings);
     }
 
-    /// 设置 › 隐私与启动, where 会后存一份 says what is wrong.
     public void ShowFolderSettings()
     {
         ShowSettings();
         SettingsPage("privacy");
     }
 
-    /// A Windows notification from the tray icon; a click on it runs `clicked`.
     public void Toast(string title, string body, Action? clicked = null)
     {
         balloonClicked = clicked;
@@ -437,29 +373,21 @@ sealed class Controller
         else await StartChecked(NewSource);
     }
 
-    /// What 听哪里 says to listen to: the PC's audio, or the room through a microphone.
     public IAudioSource NewSource() => Settings.ListensToRoom ? RoomSource() : new SystemAudioTap();
 
-    /// The room mic, muted while you hold the talk key. Dev: a WAV stands in (the VM has no mic).
     GatedSource RoomSource()
     {
         if (fakeRoom is { } wav) return new GatedSource(new FileAudioSource(wav)) { Name = "fake" };
         return new GatedSource(new MicSource(Endpoints.RoomMic)) { Muted = Speak.State == SpeakEngine.Phase.Recording };
     }
 
-    /// The room mic listening hears right now, if any (muted while you speak).
     readonly List<GatedSource> roomSources = [];
 
-    /// Dev builds: a WAV the room mic hears instead of a microphone.
     string? fakeRoom;
     public void SetFakeRoom(string? path) { fakeRoom = path; Log.Debug($"room: fake mic {(path is null ? "off" : "on")}"); }
-    /// Dev builds: what the echo measurement says, instead of measuring (the VM has no speakers).
     bool? fakeEcho;
     public void SetFakeEcho(bool? on) { fakeEcho = on; if (Listen.Echo is { } e) e.Gate.Forced = on; Log.Debug($"room: echo sim {on?.ToString() ?? "real"}"); }
 
-    /// 打开麦克风 / 关闭麦克风 (AppModel.setMic on the Mac): the PC's audio is always heard; the mic
-    /// adds the people in the room to the same meeting. Not kept for the next launch: listening
-    /// never starts with the microphone open. Turning it on while nothing is heard starts listening.
     public bool MicOn => Settings.HearsBoth;
 
     public void SetMic(bool on)
@@ -482,9 +410,7 @@ sealed class Controller
 
     // MARK: 电脑和会议室
 
-    /// The room side of 电脑和会议室: its own engine on the room mic, adding to the same meeting.
     public readonly ListenEngine RoomListen;
-    /// 电脑和会议室 but Windows won't give Cicada the microphone: the PC's side keeps recording.
     public bool HybridMicDenied { get; private set; }
 
 
@@ -512,7 +438,6 @@ sealed class Controller
                 }
                 else if (reason == "none") Toast(L("没有可用的麦克风"), L("电脑声音照常在记"));
                 else Toast(L("会议室的麦克风断开了"), L("电脑声音照常在记"));
-                // The mic is really off now: say so in the tray and the menu, not only stop hearing it.
                 if (reason == "denied") { _ = StopRoomSide(); Changed(); } else SetMic(false);
             });
         };
@@ -529,8 +454,6 @@ sealed class Controller
         Log.Debug("hybrid: room side stopped");
     }
 
-    /// A source about to be listened to: a room mic is remembered (the talk key mutes it), and one
-    /// that can't go on says why.
     IAudioSource Watch(IAudioSource source)
     {
         if (source is GatedSource room) roomSources.Add(room);
@@ -554,12 +477,6 @@ sealed class Controller
         return source;
     }
 
-    /// The user's 开始听: blocked only by a failure the last result knows of. A hear model that
-    /// can't hear asks to switch to the recommended one; an unreachable service is looked at once
-    /// more, but only waited for briefly (a check that can't connect takes 10–20 s): still unknown
-    /// then, the dialog says what the last check found and its 重新检查并开始 waits in place, with
-    /// 正在检查… on the button. Unknown or busy starts as usual. A dialog comes after a yield, so
-    /// the debug pipe that asked for the start replies first; a start that needs none has happened by then.
     public async Task StartChecked(Func<IAudioSource> source)
     {
         if (Listen.Listening || starting) return;
@@ -596,8 +513,6 @@ sealed class Controller
                 string Body(AICheck h) => (h.Message(Ling.ServiceLabel, Ling.ServiceHost, Ling.Config.TextModel, Ling.HearName) ?? "")
                     + (h.ProxyLine(Ling.ServiceLabel, Ling.ServiceHost) is { } proxy ? "\n" + proxy : "");
                 await Task.Yield();
-                // 重新检查并开始: the check already under way (or one that finished reachable while the
-                // dialog was up), else a new one; reachable closes the dialog.
                 async Task<string?> Retry()
                 {
                     var under = recheck;
@@ -611,7 +526,6 @@ sealed class Controller
                 if (choice == 2) ShowAISettings();
                 else if (choice == 1)
                 {
-                    // Reached now; the check may still have found something else (a deaf model): ask again.
                     starting = false;
                     await StartChecked(source);
                 }
@@ -623,15 +537,10 @@ sealed class Controller
     }
 
     bool starting;
-    /// How long 开始听 waits for a fresh look at an unreachable service before asking.
     static readonly TimeSpan QuickLook = TimeSpan.FromSeconds(2);
 
-    /// A window of ours to put a dialog over; null (the screen's centre) from the tray.
     Window? VisibleWindow() => new Window?[] { settingsWindow, mainWindow, onboarding }.FirstOrDefault(w => w?.IsVisible == true && w.WindowState != WindowState.Minimized);
 
-    /// The user's 结束 (buttons, menu, hotkey): a meeting with lines ends only after asking, in the
-    /// notes window or subtitle bar, which never take focus, so no modal dialog fights them for it.
-    /// An empty one just stops.
     public void RequestStop()
     {
         if (!Listen.Listening) return;
@@ -661,14 +570,12 @@ sealed class Controller
         ShowNotes();
     }
 
-    /// The meeting being ended: Quit waits for it, or a meeting ended a moment before quitting
-    /// (its last sentences still out at the AI service) was never closed and came back empty.
     Task stopping = Task.CompletedTask;
 
     public Task StopListening(DateTimeOffset? endedAt = null, bool auto = false)
     {
         var t = Stopping(endedAt, auto);
-        if (!t.IsCompleted) stopping = t; // a second, empty stop mustn't hide the one still running
+        if (!t.IsCompleted) stopping = t;
         return t;
     }
 
@@ -685,7 +592,7 @@ sealed class Controller
         await Listen.Stop(endedAt);
         if (id is not null) FolderExport.Ended(id);
         Changed();
-        NotifyUpdate(); // held while the meeting was on
+        NotifyUpdate();
         if (id is not null) _ = TellWhenNotesReady(id);
     }
 
@@ -697,7 +604,6 @@ sealed class Controller
         return EndTimes is { } t ? c with { SilenceAfter = t.Silence, Countdown = t.Countdown, AppGrace = t.Grace } : c;
     }
 
-    /// Words recognised in the live meeting (theirs or mine): the silence countdown stops now.
     void HeardWords(string id)
     {
         if (endWatch is null || !Listen.Listening || id != Listen.SessionId) return;
@@ -705,8 +611,6 @@ sealed class Controller
         SetEnding(endWatch.Waiting);
     }
 
-    /// Every 2 s: while listening, whether the meeting is over; after one ended by itself, whether a
-    /// meeting app started the next call. The registry is read off the UI thread.
     async Task WatchEnd()
     {
         bool live = Listen.Listening && endWatch is not null, after = !Listen.Listening && AutoEnded;
@@ -740,13 +644,10 @@ sealed class Controller
         Changed();
     }
 
-    /// Ends where the meeting really ended: a little after the last words, or at the hang-up if that
-    /// was later.
     async Task AutoEnd(MeetingEndWatch.Reason reason, MeetingEndWatch w)
     {
         if (reason.Kind == "nobody")
         {
-            // Nothing to keep or summarise: back to 开始听, not 会议已自动结束.
             Log.Debug($"meeting end: nobody spoke for {(int)w.Settings.SilenceAfter} s, stopped");
             await StopListening();
             return;
@@ -759,7 +660,6 @@ sealed class Controller
         await StopListening(at, auto: true);
     }
 
-    /// 继续记录 on the ending prompt.
     public void KeepRecording()
     {
         endWatch?.KeepGoing(DateTimeOffset.Now);
@@ -773,7 +673,6 @@ sealed class Controller
 
     public static int EndingLeft(MeetingEndWatch.Pending p) => Math.Max(0, (int)Math.Round((p.Deadline - DateTimeOffset.Now).TotalSeconds));
 
-    /// The final notes take a few seconds after 结束; say so once they're written.
     async Task TellWhenNotesReady(string id)
     {
         for (int i = 0; i < 120; i++)
@@ -789,7 +688,6 @@ sealed class Controller
         }
     }
 
-    /// The panel was closed while listening: the first time, say that listening goes on.
     public void CollapsedWhileListening()
     {
         if (!Listen.Listening || Settings.ToldStillListening) return;
@@ -797,8 +695,6 @@ sealed class Controller
         Toast(L("知了还在听"), L("点任务栏右下角的知了图标再打开纪要。"), ShowNotes);
     }
 
-    /// The onboarding sample: heard straight from the file (Cicada's own sound is left out of
-    /// the system capture) while it plays aloud for the user.
     public async Task PlaySample()
     {
         if (Bundled.Sample() is not { } wav || Listen.Listening) return;
@@ -808,21 +704,19 @@ sealed class Controller
         StartListening(source);
         try { new SoundPlayer(wav).Play(); } catch (Exception e) { Log.Debug($"sample: play failed {e.GetType().Name}"); }
         await done.Task;
-        await Task.Delay(3000); // the last segment's reply
+        await Task.Delay(3000);
         await StopListening();
     }
 
     // MARK: Speaking (同声传译)
 
     public bool NotesVisible => notesWindow?.IsVisible == true;
-    /// Where the notes panel is on screen, when it shows as a panel: the talk bar keeps out of it.
     public Rect? NotesBounds => NotesVisible && Settings.View == "notes"
         ? new Rect(notesWindow!.Left, notesWindow.Top, notesWindow.ActualWidth, notesWindow.ActualHeight) : null;
 
     public void SetFakeMic(string? path) { fakeMic = path; Log.Debug($"speak: fake mic {(path is null ? "off" : "on")}"); }
     public void SetTalkMic(string? name) { talkMic = name; Log.Debug($"speak: talk mic {name ?? "default"}"); }
 
-    /// Dev: what the meeting hears. Records "CABLE Output" for `seconds` into `path` ("8 C:\x.wav").
     public async Task RecordCable(string arg)
     {
         var parts = arg.Split(' ', 2);
@@ -841,7 +735,6 @@ sealed class Controller
         if (!Settings.Speak || Speak.State is SpeakEngine.Phase.Recording or SpeakEngine.Phase.Translating) return;
         if (!Ling.HasKey) { Speak.Report(Ling.Config.IsLing ? L("需要 Ling key 才能说") : LF("需要 %@ 的 key 才能说", Ling.Config.Name)); return; }
         if (Endpoints.Cable() is null) { Speak.Report(L("还没装虚拟麦克风，去设置里装一下")); return; }
-        // With a fake mic the WAV is what is sent; a dev talk mic still opens, to run the real capture.
         if (fakeMic is null || talkMic is not null)
         {
             if (TalkMic() is not { } m) { if (fakeMic is null) { Speak.Report(L("没找到麦克风")); return; } }
@@ -851,17 +744,12 @@ sealed class Controller
             }
         }
         Speak.BeginRecording();
-        // What you say isn't someone in the room.
         foreach (var r in roomSources) r.Muted = true;
     }
 
-    /// The press's microphone: through Windows' echo cancellation when it opens, so what I say while
-    /// the other side talks on the speakers is sent (EchoMic); the plain mic when it doesn't. Null,
-    /// or why the mic can't be had ("denied").
     string? OpenTalkMic(Endpoints.Device m)
     {
         var speakers = Endpoints.Default(Endpoints.Flow.Render);
-        // The cable is where my own voice goes, never the meeting's speakers.
         var reference = speakers is not null && speakers.Id != Endpoints.Cable()?.Id ? speakers.Id : null;
         var aec = new EchoMic(m.Id, reference);
         aec.Start();
@@ -880,15 +768,12 @@ sealed class Controller
         return null;
     }
 
-    /// The talk key's microphone. Dev: `talkmic <name>` picks any input (the VM's only one is CABLE Output).
     Endpoints.Device? TalkMic() => talkMic is { } name
         ? Endpoints.All(Endpoints.Flow.Capture).FirstOrDefault(d => d.Description == name || d.Name.StartsWith(name))
         : Endpoints.Microphone();
 
-    /// Ends the press's recording: what it heard, and whether through echo cancellation.
     (short[] pcm, bool echoCancelled) StopTalkMic()
     {
-        // As logged when the press began (a stream still opening then counts as plain), and still so.
         var cancelled = echoLogged && echoMic?.EchoCancelled == true;
         echoLogged = false;
         var pcm = echoMic?.Stop() ?? mic?.Stop() ?? [];
@@ -897,7 +782,6 @@ sealed class Controller
         return (pcm, cancelled);
     }
 
-    /// Another key went down while a modifier talk key was held (Ctrl C): a shortcut, not talking.
     void PressInterrupted()
     {
         foreach (var r in roomSources) r.Muted = false;
@@ -907,7 +791,6 @@ sealed class Controller
         Log.Debug("talk: interrupted by another key");
     }
 
-    /// 更改 the talk key: the next key pressed anywhere comes to `chosen` (on the UI thread).
     public void ChooseTalkKey(Action<int> chosen)
     {
         if (talk is null) return;
@@ -930,9 +813,7 @@ sealed class Controller
         if (Speak.State != SpeakEngine.Phase.Recording) return;
         var (recorded, echoCancelled) = StopTalkMic();
         var pcm = fakeMic is { } f ? Wav.Read(f) : recorded;
-        // A tap, not a sentence.
         if (pcm.Length < Segmenter.Rate * 3 / 10) { Speak.Cancel(); return; }
-        // Held but nothing said (a muted mic): Ming would make something up from the hiss.
         if (pcm.Max(x => Math.Abs((int)x)) < 300) { Speak.Report(L("没听到你说话，没有发出去")); return; }
         _ = Speak.Speak(Wav.Bytes(pcm), new DeviceSpeaker(Endpoints.Cable), echoCancelled);
     }
@@ -942,8 +823,6 @@ sealed class Controller
     public bool Previewing => previewing is not null;
     public void StopPreview() => previewing?.Stop();
 
-    /// 试听: a voice speaks its sample line on the speakers (not into the meeting). It used to fail
-    /// without a word (#22); now the result says why, for the line under the voice.
     public async Task<PreviewResult> Preview(string language)
     {
         previewing?.Stop();
@@ -974,14 +853,11 @@ sealed class Controller
 
     // MARK: 我自己的声音
 
-    /// The microphone a recording for the user's own voice comes from: the talk key's.
     public Endpoints.Device? OwnVoiceMic() => TalkMic();
 
-    /// What a recording says, as the hear model (Ming on Ling) hears it; null when it heard nothing.
     public async Task<string?> Transcribe(byte[] wav) =>
         (await Translator.Hear(wav, Speak.Target, Speak.MyLanguage, Priority.Speak))?.Original;
 
-    /// Plays a recording (16 kHz mono WAV) on the speakers; 停止 is StopPreview.
     public async Task PlayRecording(byte[] wav)
     {
         previewing?.Stop();
@@ -997,8 +873,6 @@ sealed class Controller
         finally { if (previewing == speaker) previewing = null; }
     }
 
-    /// The review's 用你的声音说…: the language's sample line in a voice cloned from a recording not
-    /// yet kept, on the speakers. True once something played.
     public async Task<bool> PreviewOwnVoice(byte[] wav, string text, string language)
     {
         previewing?.Stop();
@@ -1024,7 +898,6 @@ sealed class Controller
         return chunks > 0;
     }
 
-    /// Keeps a recording as the user's own voice and uses it for `language` (VoiceCloneSheet.save).
     public void SaveOwnVoice(byte[] wav, string text, string language)
     {
         OwnVoice.Save(wav, text);
@@ -1034,7 +907,6 @@ sealed class Controller
         Changed();
     }
 
-    /// 删除: the recording goes, and every language that used it gets its default back.
     public void RemoveOwnVoice()
     {
         OwnVoice.Remove();
@@ -1046,7 +918,6 @@ sealed class Controller
 
     // MARK: Windows
 
-    /// The tray icon while listening: the notes window comes and goes.
     public void HideNotes()
     {
         if (NotesVisible) ToggleNotes();
@@ -1058,7 +929,6 @@ sealed class Controller
         Changed();
     }
 
-    /// The first time a window's × is clicked: closing it doesn't quit, Cicada stays in the tray.
     public void WindowClosed()
     {
         if (Settings.TrayHintShown) return;
@@ -1075,28 +945,21 @@ sealed class Controller
 
     // MARK: Setup (the main window's 还差几步 and the title bar's pill)
 
-    /// The setup steps, as the onboarding numbers them: what is done, by what really happened
-    /// rather than by "the onboarding was finished".
     public (bool Key, bool Audio, bool Sample) SetupDone => (Ling.HasKey && !KeyStepFailed, Settings.HeardSystemAudio || Settings.Onboarded, Settings.SampleSeen || Settings.Onboarded);
 
-    /// The AI service's last result is a failure only the user can fix (not "still checking", not
-    /// busy, not a server error, not a balance running low): 还差几步 shows it as not done yet.
     public bool KeyStepFailed => Ling.Health is { NeedsUser: true, Failure: not null };
 
-    /// Steps left before listening works; 0 once set up. 同声传译 is optional and never counted.
     public int SetupLeft
     {
         get
         {
             var (k, a, sm) = SetupDone;
             if (Settings.Onboarded && k) return 0;
-            // Set up once, and the service broke later: that one step is left.
             if (Settings.Onboarded && Ling.HasKey) return 1;
             return (k ? 0 : 1) + (a ? 0 : 1) + (sm ? 0 : 1);
         }
     }
 
-    /// The onboarding, at `step` or at the first step not done; one window at a time.
     public void ShowOnboarding(int? step = null)
     {
         var (k, a, _) = SetupDone;
@@ -1116,7 +979,6 @@ sealed class Controller
 
     public void ShowRecords() => ShowRecords(null);
 
-    /// Debug pipe: a record opened at a tab, and the player in it.
     public void OpenRecord(string id, string tab) { ShowRecords(id); mainWindow?.Select(id, tab); }
     public void Play(string arg) => mainWindow?.DebugPlay(arg);
     public JsonObject DebugSearch(string? text, int step)
@@ -1125,7 +987,6 @@ sealed class Controller
         return mainWindow!.DebugSearch(text, step);
     }
 
-    /// 分享…: the dialog over the records window (or the screen's centre without it).
     public ShareDialog ShareSheet(Session s)
     {
         ShareDialog.Current?.Close();
@@ -1151,15 +1012,12 @@ sealed class Controller
     }
 
     public void SettingsPage(string id) => settingsWindow?.Show(id);
-    /// The open settings window, for the debug pipe's preview and talkkey.
     public SettingsWindow? OpenSettings => settingsWindow;
-    /// Debug: 改这句… on a record's line; 词表 › 粘贴导入 with `text` pasted in.
     public void DebugEditLine(string id, string line) { ShowRecords(id); mainWindow?.DebugEdit(id, line); }
     public void DebugPaste(string text) { ShowSettings(); SettingsPage("words"); settingsWindow?.DebugImport(text); }
 
     // MARK: AI 服务
 
-    /// 设置 › AI 服务: another service, with its own key file and models; checked again.
     public void SetAIProvider(string provider)
     {
         if (AIProvider.Named(provider).Id != provider || provider == Settings.AiProvider) return;
@@ -1168,12 +1026,10 @@ sealed class Controller
         AIChanged();
     }
 
-    /// A model chosen over the recommended one ("text", "hear" or "voice"; "" goes back to it).
     public void SetAIModel(string kind, string model)
     {
         var p = Settings.AiProvider;
         if (kind == "text" && p == "ling") Settings.Model = model.Length > 0 ? model : LingClient.DefaultModel;
-        // A custom service's notes model: "" is the translation model's.
         else if (kind == "notes")
         {
             if (model.Length > 0) Settings.AiModels["custom.notes"] = model; else Settings.AiModels.Remove("custom.notes");
@@ -1188,14 +1044,12 @@ sealed class Controller
         AIChanged();
     }
 
-    /// 设置 › AI 服务, opened at its page (the fix for every AI problem the app names).
     public void ShowAISettings()
     {
         ShowSettings();
         SettingsPage("ai");
     }
 
-    /// One click on 换成推荐的: the service's first recommended text or hear model, then a fresh check.
     public void UseRecommended(AICheck.StepId step)
     {
         if (Ling.Recommended(step) is not { } id) return;
@@ -1203,7 +1057,6 @@ sealed class Controller
         SetAIModel(step == AICheck.StepId.Hear ? "hear" : "text", id);
     }
 
-    /// A key pasted for one service that belongs to another (改用 OpenRouter): switch, keep it there, check.
     public void SwitchService(string provider, string key)
     {
         if (AIProvider.Named(provider).Id != provider) return;
@@ -1213,8 +1066,6 @@ sealed class Controller
         AIChanged();
     }
 
-    /// "改用 Ling" where another service is out of reach: only when a Ling key is already saved,
-    /// so the one click works without a trip to the settings.
     public bool CanSwitchToLing => Settings.AiProvider != "ling" && Key.Read("ling") is not null;
 
     public void SwitchToLing()
@@ -1224,8 +1075,6 @@ sealed class Controller
         SetAIProvider("ling");
     }
 
-    /// What the tray says first when the AI service needs the user (title, detail); null otherwise.
-    /// On Windows the service hears too, so a dead service means no subtitles either.
     public (string Title, string Detail)? AIProblem()
     {
         var h = Ling.Health;
@@ -1244,8 +1093,6 @@ sealed class Controller
         };
     }
 
-    /// Network changes (Wi-Fi back, a proxy app's TUN, a cable): 3 s for it to settle, then the AI
-    /// service is looked at again if it was unreachable. No timer: nothing is checked while it stays the same.
     void WatchNetwork()
     {
         var settle = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
@@ -1255,10 +1102,6 @@ sealed class Controller
         System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged += (_, e) => { if (e.IsAvailable) Changed(); };
     }
 
-    /// Turning the system proxy on or off (or pointing it elsewhere) changes no address, so the
-    /// watch above misses it. While the service is unreachable (and through the check that follows)
-    /// the proxy settings are read every 3 s (three registry values; HttpClient follows them by
-    /// itself) and a change is checked like a network change. Not polled otherwise. ProxyWatch decides.
     void WatchProxy()
     {
         var h = Ling.Health;
@@ -1283,7 +1126,6 @@ sealed class Controller
     DispatcherTimer? proxyPoll;
     readonly ProxyWatch proxyWatch = new();
 
-    /// The service, its address, models or key changed: forget the old check and check again.
     public void AIChanged()
     {
         Translator.GoogleOff = Settings.GoogleOff;
@@ -1292,7 +1134,6 @@ sealed class Controller
         Changed();
     }
 
-    /// For the debug pipe: the AI service in use and what its last check found (never the key).
     public JsonObject AIState()
     {
         var c = Ling.Config;
@@ -1342,9 +1183,6 @@ sealed class Controller
 
     // MARK: Updates
 
-    /// 安装: Cicada downloads the installer itself and checks it against checksums.txt, then opens
-    /// it; its 更新知了 window quits this copy, replaces it and reopens (--updated). A release with
-    /// only the zip, or a failed download, falls back to the browser.
     public async void InstallUpdate()
     {
         if (Updates.Available is not { } u || UpdateProgress is not null) return;
@@ -1369,7 +1207,6 @@ sealed class Controller
         }
     }
 
-    /// 下载: the browser fetches this PC's installer or zip (or opens the release page when there is none).
     public bool DownloadUpdate()
     {
         if (Updates.Available is not { } u) return false;
@@ -1379,14 +1216,12 @@ sealed class Controller
 
     public void OpenReleaseNotes() { if (Updates.Available is { } u) Open(u.Page); }
 
-    /// False when no browser took it (none set, or Windows refused).
     public static bool Open(string url)
     {
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); return true; }
         catch (Exception e) { Log.Debug($"update: open failed {e.GetType().Name}: {e.Message}"); return false; }
     }
 
-    /// 检查更新: says 正在检查… / 已是最新版本 / 连不上 GitHub for a few seconds.
     public async Task CheckForUpdates()
     {
         if (UpdateCheck == L("正在检查…")) return;
@@ -1418,8 +1253,6 @@ sealed class Controller
         application.Shutdown();
     }
 
-    /// For the debug pipe: what a test needs to see (never meeting text).
-    /// 存到文件夹 for the debug pipe (paths and file names, never meeting text).
     public JsonObject ExportState()
     {
         var ex = FolderExport;
@@ -1483,22 +1316,6 @@ sealed class Controller
     };
 }
 
-/// Debug commands over a named pipe (\\.\pipe\cicada-dev), dev builds only: the Windows
-/// counterpart of the Mac's `tools/lsctl`. One command per connection, one JSON line back.
-///   state | start | stop | feed <wav> | sample | view notes|subtitles | capture on|off
-///   listensource system|room|both | fakeroom <wav>|off (a WAV the room mic hears; the VM has no mic)
-///   show notes|records|settings [page]|flyout|menu | quit
-///   updatefeed <url or file> | checkupdate
-///   calls <program=name,…>|none|real | realcalls | endtimes <silence> <countdown> <grace>|off | endkeep
-///   provider ling|openrouter|zenmux|custom | ai-model hear|text|voice <id> (设置 › AI 服务; no id: the recommended)
-///   ownvoice <wav>[|<text>] | ownvoice remove | ownvoice dialog [<wav>] | voice <lang>=<id> (我自己的声音)
-///   open <id> [transcript] | play <seconds>|toggle|speed|follow|row <i> | recordaudio on|off (保存会议录音 and 回放)
-///   aacencode <wav>|<out.aac> | aacrewrap <in.aac>|<out.m4a>[|<seconds>]
-///   ai-check | ai-check-sim <reason|lowBalance|off> (unreachable, invalidKey, noCredit, noModel, deaf, busy…)
-///   ai-custom-only on|off (语音和文字只发给你的服务; acts with the custom service only)
-///   改正听错的词: silentlisten [lang] | heard <text> (a finished sentence, no audio) | fixes on|off | asknames on|off
-///   vocabadd <word = heard、…|…> | vocabremove <word> | vocabstate | fixstate [@id] | fixanswer yes|no [@id]
-///   fixlater | fixrevert <line> [@id] | fixedit <line>=<text>[|one][|keep0] [@id] | fixundo
 static class DebugServer
 {
     static string Pipe => Paths.Dev ? "cicada-dev" : "cicada";
@@ -1516,8 +1333,6 @@ static class DebugServer
                     using var reader = new StreamReader(server);
                     using var writer = new StreamWriter(server) { AutoFlush = true };
                     var line = reader.ReadLine() ?? "";
-                    // A release build only takes a second launch's and the installer's few commands; the
-                    // rest is for dev builds.
                     if (!Paths.Dev && line is not ("show records" or "setup status" or "setup quit" or "setup opened")) { writer.WriteLine("{\"error\":\"dev builds only\"}"); continue; }
                     var reply = app.Dispatcher().Invoke(() => Run(app, line));
                     writer.WriteLine(reply.ToJsonString());
@@ -1536,11 +1351,9 @@ static class DebugServer
     {
         var parts = line.Trim().Split(' ', 2);
         var arg = parts.Length > 1 ? parts[1].Trim() : "";
-        // The installer asks for status every 2 seconds while its window is open: not worth a line each.
         if (line != "setup status") Log.Debug($"debug: {parts[0]}");
         switch (parts[0])
         {
-            // The installer (Install.cs): is a meeting on, quit for the new copy, show yourself.
             case "setup": return arg switch
             {
                 "status" => new JsonObject { ["listening"] = app.Listen.Listening },
@@ -1548,12 +1361,11 @@ static class DebugServer
                 _ => Opened(app),
             };
             case "start": _ = app.StartChecked(app.NewSource); break;
-            // mic:<on|off> is the button; listenSource:<system|room|both> the old names for it.
             case "mic" or "listensource": app.SetMic(arg is "on" or "both" or "room"); break;
             case "roomechosim": app.SetFakeEcho(arg is "real" or "" ? null : arg != "off"); break;
             case "fakeroom": app.SetFakeRoom(arg is "" or "off" ? null : arg); break;
             case "stop": _ = app.StopListening(); break;
-            case "end": app.RequestStop(); break;  // the user's 结束: asks first when anything was said
+            case "end": app.RequestStop(); break;
             case "notesproblem": app.Notes.SimulateStatus(arg); break;
             case "feed": _ = app.StartChecked(() => new FileAudioSource(arg)); break;
             case "sample": _ = app.PlaySample(); break;
@@ -1574,9 +1386,6 @@ static class DebugServer
                 if (arg == "on" || arg == "off") { app.Settings.Speak = arg == "on"; app.Settings.Save(); app.SettingsChanged(); }
                 else _ = app.Speak.Speak(Wav.Bytes(Wav.Read(arg)), new DeviceSpeaker(Endpoints.Cable));
                 break;
-            // 我自己的声音 without a microphone: "ownvoice <wav>[|<what it says>]" checks a recording as
-            // the dialog does (heard by Ming unless the words are given) and keeps it; "ownvoice remove"
-            // is 删除; "ownvoice dialog [<wav>]" opens the recording dialog (with a WAV: as if just read).
             case "ownvoice":
             {
                 if (arg == "remove") { app.RemoveOwnVoice(); return new JsonObject { ["ownVoice"] = app.OwnVoice.Exists }; }
@@ -1598,7 +1407,6 @@ static class DebugServer
                 });
                 break;
             }
-            // voice <lang>=<id>: 线上的人听到的声音 for a language ("voice en=clone", "voice zh=ming:灵小雅").
             case "voice":
             {
                 var kv = arg.Split('=', 2);
@@ -1606,10 +1414,8 @@ static class DebugServer
                 return new JsonObject { ["voice"] = app.Speak.ChosenVoice(kv[0]), ["clone"] = app.Speak.CloneReady };
             }
             case "provider": app.SetAIProvider(arg); break;
-            // switchtoling: the 改用 Ling on a status line (logs why when it isn't offered).
             case "switchtoling": Log.Debug($"switchtoling offered={app.CanSwitchToLing}"); app.SwitchToLing(); break;
             case "ai-check":
-                // ai-check: a check now; ai-check-sim <reason|lowBalance|off>: every check ends this way (screenshots).
                 _ = app.Ling.Check();
                 break;
             case "ai-check-sim":
@@ -1618,7 +1424,6 @@ static class DebugServer
                 _ = app.Ling.Check();
                 break;
             case "ai-custom-only": app.Settings.AiCustomOnly = arg == "on"; app.Settings.Save(); app.AIChanged(); break;
-            // 纪要 on a custom service: "ai-notes same|own [address]" (the notes model: ai-model notes <id>).
             case "ai-notes":
             {
                 var p = arg.Split(' ', 2);
@@ -1634,35 +1439,26 @@ static class DebugServer
                 break;
             }
             case "speakers": app.Settings.SpeakerVoices = arg == "on"; app.Settings.Save(); app.SettingsChanged(); break;
-            // speaker: the defaults and whether the cable holds the speaker; "cable" hands it the speaker
-            // (what Windows may do on install), "install" does that and then the installer's give-back,
-            // "restore" is 恢复声音, "notify" the startup notification again.
             case "speaker":
                 if (arg is "cable" or "install")
                 {
                     var before = Endpoints.Defaults();
                     var to = Endpoints.Cable()!.Id;
                     for (var role = 0; role < 3; role++) Endpoints.SetDefault(to, role);
-                    if (arg == "install") _ = CableInstaller.GiveBackDefaults(before); // about 4 s; ask "speaker" after
+                    if (arg == "install") _ = CableInstaller.GiveBackDefaults(before);
                 }
                 else if (arg == "restore") Endpoints.RestoreSpeaker();
                 else if (arg == "notify") { app.Settings.CableSpeakerNotified = false; app.NotifyCableSpeaker(); }
                 return new JsonObject { ["onCable"] = Endpoints.SpeakerIsCable(), ["speaker"] = Endpoints.Default(Endpoints.Flow.Render)?.Name, ["notified"] = app.Settings.CableSpeakerNotified,
                     ["defaults"] = string.Join(" ", Endpoints.Defaults().OrderBy(d => d.Key).Select(d => $"{d.Key}={(Endpoints.CableIds().Contains(d.Value) ? "cable" : "real")}")) };
             case "fakemic": app.SetFakeMic(arg == "off" ? null : arg); break;
-            // talkmic <name>: the talk key reads this input (with fakemic the WAV is still what is sent).
             case "talkmic": app.SetTalkMic(arg is "" or "off" ? null : arg); break;
             case "record": _ = app.RecordCable(arg); break;
-            // 回放: "open <id> [transcript]", "play <seconds>|toggle|speed|follow|row <i>" (follow: 回到正在播放; row: a line
-            // clicked), "recordaudio on|off".
-            case "rename": { var p = arg.Split(' ', 2); app.Store.Rename(p[0], p.Length > 1 ? p[1] : ""); break; }  // rename <id> <title> ("" back to automatic)
+            case "rename": { var p = arg.Split(' ', 2); app.Store.Rename(p[0], p.Length > 1 ? p[1] : ""); break; }
             case "open": { var p = arg.Split(' '); app.OpenRecord(p[0], p.Length > 1 ? p[1] : "notes"); break; }
             case "play": app.Play(arg); break;
-            // The records' Ctrl+F (#33): "search <text>" types into it (opens the records), "searchstep 1|-1" is
-            // Enter / the arrows. Logged as "main search:" with the meetings found, the lines found and where it is.
             case "search": return app.DebugSearch(arg, 0);
             case "searchstep": return app.DebugSearch(null, int.TryParse(arg, out var searchStep) ? searchStep : 1);
-            // 存到文件夹: export [state] | on | off | folder <path> | choose | all | retry
             case "export":
             {
                 var p = arg.Split(' ', 2);
@@ -1671,7 +1467,7 @@ static class DebugServer
                     case "on": if (app.FolderExport.Folder is { } f) app.FolderExport.Choose(f); else app.FolderExport.Choose(FolderExportFormat.DefaultFolder()); break;
                     case "off": app.FolderExport.TurnOff(); break;
                     case "folder" when p.Length > 1: app.FolderExport.Choose(p[1].Trim().Trim('"')); break;
-                    case "choose": // modal: shown after the reply, or the pipe would wait for it
+                    case "choose":
                         app.ShowFolderSettings();
                         app.Dispatcher().BeginInvoke(() => { if (FolderExportUi.Choose(app.OpenSettings, app.FolderExport.Folder) is { } picked) app.FolderExport.Choose(picked); });
                         break;
@@ -1681,7 +1477,6 @@ static class DebugServer
                 return app.ExportState();
             }
             case "recordaudio": app.Settings.RecordAudio = arg == "on"; app.Settings.Save(); app.SettingsChanged(); break;
-            // 保存会议录音 on its own: "aacencode <wav>|<out.aac>", "aacrewrap <in.aac>|<out.m4a>[|<seconds>]".
             case "aacencode":
                 {
                     var p = arg.Split('|');
@@ -1697,12 +1492,10 @@ static class DebugServer
                     var p = arg.Split('|');
                     return new JsonObject { ["ok"] = app.Store.Audio?.Rewrap(p[0], p[1], p.Length > 2 ? double.Parse(p[2], System.Globalization.CultureInfo.InvariantCulture) : null) ?? false };
                 }
-            // preview: 试听 in the open settings (its result line shows there), else on its own.
             case "preview":
                 if (arg.Length == 0 && app.OpenSettings is { } sw) _ = sw.RunPreview();
                 else _ = app.Preview(arg.Length > 0 ? arg : app.Speak.Target);
                 break;
-            // talkkey <name>: set it; talkkey choose: settings' 更改 (the next key pressed).
             case "talkkey":
                 if (arg == "choose") app.OpenSettings?.StartChoosingKey();
                 else if (TalkKey.All.FirstOrDefault(k => k.Name == arg) is { } tk) app.SetTalkKey(tk);
@@ -1719,11 +1512,9 @@ static class DebugServer
             case "updatefeed": app.Updates.Feed = arg; _ = app.CheckForUpdates(); break;
             case "updateinstall": app.InstallUpdate(); break;
             case "checkupdate": _ = app.CheckForUpdates(); break;
-            // 改正听错的词 (AppModel.debugCommand's fix commands). A command acts on the meeting being
-            // listened to, else the newest; "… @<id>" names another.
             case "silentlisten": app.SilentLang = arg.Length > 0 ? arg : "zh-CN"; app.StartListening(new SilentSource()); break;
             case "heard": app.Listen.DebugHeard(arg, app.SilentLang ?? "zh-CN"); break;
-            case "target": app.SetTarget(arg.Length > 0 ? arg : "system"); break;  // 翻译成: a code, or system
+            case "target": app.SetTarget(arg.Length > 0 ? arg : "system"); break;
             case "fixes": app.Settings.FixMisheard = arg != "off"; app.Settings.Save(); app.SettingsChanged(); break;
             case "asknames": app.Settings.AskNames = arg != "off"; app.Settings.Save(); app.SettingsChanged(); break;
             case "vocabadd": return new JsonObject { ["result"] = app.Vocabulary.Import(arg.Replace('|', '\n')).ToString() };
@@ -1745,20 +1536,20 @@ static class DebugServer
                             $"{l.Id} [{string.Join(", ", l.Fixes!.Select(f => $"{f.From}→{f.To}{(f.Ask == true ? "?" : f.Off == true ? "✗" : f.User == true ? "✓" : "")}"))}] {l.Shown} | {l.Dst}").ToArray()),
                     };
                 }
-            case "fixanswer":   // fixanswer yes|no [@id]
+            case "fixanswer":
                 {
                     var (id, rest) = FixTarget(app, arg);
                     if ((app.Fixes.Asking(id)?.Fix ?? app.Fixes.Pending(id).Select(p => p.Fix).FirstOrDefault()) is { } f) app.Fixes.Answer(f, rest == "yes", id);
                     break;
                 }
             case "fixlater": { var (id, _) = FixTarget(app, arg); if (app.Fixes.Asking(id) is { } ask) app.Fixes.Later(ask.Fix, id); break; }
-            case "fixrevert":   // fixrevert <line id> [@id]: the line's first applied fix
+            case "fixrevert":
                 {
                     var (id, lineId) = FixTarget(app, arg);
                     if (app.Store.Get(id)?.Lines.FirstOrDefault(l => l.Id == lineId)?.Fixes?.FirstOrDefault(f => f.Applied) is { } f) app.Fixes.Revert(f, lineId, id);
                     break;
                 }
-            case "fixedit":     // fixedit <line id>=<new text>[|one][|keep0] [@id]
+            case "fixedit":
                 {
                     var (id, rest) = FixTarget(app, arg);
                     var p = rest.Split('=', 2);
@@ -1767,12 +1558,10 @@ static class DebugServer
                     return new JsonObject { ["changed"] = app.Fixes.Edit(p[0], id, opts[0], everywhere: !opts.Contains("one"), remember: !opts.Contains("keep0")) };
                 }
             case "fixundo": app.Fixes.Undo(); break;
-            case "fixeditor": { var (id, lineId) = FixTarget(app, arg); app.DebugEditLine(id, lineId); break; }  // fixeditor <line> [@id]
-            case "vocabpaste": app.DebugPaste(arg); break;  // vocabpaste <line|line…>: 粘贴导入, filled in, not imported
+            case "fixeditor": { var (id, lineId) = FixTarget(app, arg); app.DebugEditLine(id, lineId); break; }
+            case "vocabpaste": app.DebugPaste(arg); break;
             case "share":
             {
-                // share <record id>[,full][,pw] shares a meeting as the dialog would (CICADA_SHARE_SERVER
-                // points a dev build at a local Worker); unshare <record id> turns it off.
                 var p = arg.Split(',');
                 if (app.Store.Get(p[0]) is not { } s) return new JsonObject { ["error"] = "no such record" };
                 var o = new ShareOptions
@@ -1799,10 +1588,6 @@ static class DebugServer
                 _ = Task.Run(async () => Log.Debug($"share: revoked {await app.Sharing.Revoke(r, arg)}"));
                 break;
             }
-            // sharesheet <record id>[,full][,pw][,names][,30|365][,more][,go] opens 分享… (more presses 更改,
-            // go 生成并复制); sharesheet leaveout presses 去掉这些内容后分享; on the done step
-            // sharesheet copy|copylink|copypw|menu presses 复制, its menu's items, or opens the menu;
-            // sharesheet alone closes it.
             case "sharesheet" or "shareSheet":
             {
                 var p = arg.Split(',', StringSplitOptions.RemoveEmptyEntries);
@@ -1814,7 +1599,6 @@ static class DebugServer
                 app.Dispatcher().BeginInvoke(() => app.ShareSheet(s).Debug(p));
                 break;
             }
-            // shareinfo <record id>: the link kept for it (dev builds only, never logged) and the open dialog's step.
             case "shareinfo":
             {
                 var r = app.Sharing.Store.Read(arg);
@@ -1830,8 +1614,6 @@ static class DebugServer
         return app.State();
     }
 
-    /// The meeting a fix command acts on ("… @<id>", else the one being listened to, else the
-    /// newest), and the rest of its argument.
     static (string Id, string Arg) FixTarget(Controller app, string arg)
     {
         var at = arg.LastIndexOf(" @", StringComparison.Ordinal);
@@ -1840,7 +1622,6 @@ static class DebugServer
         return (app.Listen.SessionId ?? app.Store.All().FirstOrDefault()?.Id ?? "", arg);
     }
 
-    /// Sends one command to the running app (a second launch uses it to bring records forward).
     public static string? Send(string command)
     {
         try

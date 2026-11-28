@@ -8,9 +8,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// Cicada's palette on Windows 11 shapes: the Mac's ground, ink and one orange for "live", plus the
-/// Fluent roles (strokes, subtle fills, info bars). Orange text and fills use darker shades of the
-/// accent so they pass 4.5:1; #E8552B itself is only for the live dot.
 static class Palette
 {
     static SolidColorBrush B(uint rgb) { var x = new SolidColorBrush(Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb)); x.Freeze(); return x; }
@@ -31,8 +28,6 @@ static class Palette
     public static readonly SolidColorBrush AccentFill = B(0xC9441D);
     public static readonly SolidColorBrush AccentPale = B(0xFDEBE4);
     public static readonly SolidColorBrush AccentText = B(0xA8370F);
-    /// 回放: a line's time as a link, the line at the playhead (the Mac's accentPale), the player
-    /// bar's box, and a line under the pointer that a click would play (the Mac's raised).
     public static readonly SolidColorBrush TimeLink = B(0xB33B14);
     public static readonly SolidColorBrush Playing = B(0xFCEDE7);
     public static readonly SolidColorBrush PlayerFill = B(0xF5F6F8);
@@ -47,22 +42,14 @@ static class Palette
     public static readonly SolidColorBrush Night = B(0x15171C);
     public static readonly SolidColorBrush Toggle = B(0xD9DBE0);
     public static readonly SolidColorBrush FieldLine = B(0xD1D4D9);
-    /// The Mac's ground for windows (onboarding, settings), a shade lighter than the panels' fill.
     public static readonly SolidColorBrush Page = B(0xF7F8FA);
-    /// The Mac's pale error and warning washes.
     public static readonly SolidColorBrush NightText = B(0xB4B9C2);
-    /// 说话人 1, 2, 3… cycling after four (the Mac's SpeakerColor): not the accent (live, and 你),
-    /// distinct in lightness, all ≥ 4.5:1 on white.
     static readonly SolidColorBrush[] inks = [B(0x0F7B6C), B(0x7A4CC2), B(0xB03A7A), B(0x8A5A00)];
     public static SolidColorBrush Speaker(int n) => inks[(Math.Max(1, n) - 1) % inks.Length];
     public static readonly FontFamily Font = new("Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Yu Gothic UI, Malgun Gothic");
-    /// Two weights only. Microsoft YaHei UI, which draws all the Chinese, has Regular and Bold and
-    /// nothing between: a semibold label renders Bold and the window reads black and cramped. So
-    /// levels come from size and grey, and Bold is for headings and the one main button.
     public static readonly FontWeight Strong = FontWeights.Bold;
 }
 
-/// Stroke icons on a 20×20 grid (Fluent's outline style), drawn with Ui.Icon.
 static class Icons
 {
     public const string Close = "M5,5 L15,15 M15,5 L5,15";
@@ -108,11 +95,9 @@ static class Ui
         FontFamily = Palette.Font,
     };
 
-    // The Mac's headings are bold, not semibold: they carry the page.
     public static TextBlock Heading(string text, double size = 15) => Text(text, size, Palette.Ink, FontWeights.Bold);
     public static TextBlock Helper(string text) => Text(text, 12, Palette.Secondary);
 
-    /// A 20×20 stroke icon, or a filled one, scaled to `size`.
     public static FrameworkElement Icon(string data, double size = 16, Brush? color = null, bool fill = false, double stroke = 1.5)
     {
         var path = new System.Windows.Shapes.Path { Data = Geometry.Parse(data), StrokeLineJoin = PenLineJoin.Round, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round };
@@ -146,7 +131,6 @@ static class Ui
         return s;
     }
 
-    /// A row whose last child sits at the right edge: [left…] ··· [right].
     public static DockPanel Spread(UIElement left, UIElement right)
     {
         var d = new DockPanel { LastChildFill = false };
@@ -157,9 +141,6 @@ static class Ui
 
     public enum Kind { Standard, Primary, Accent, Subtle, Danger, Pale }
 
-    /// The Mac's buttons (Views.swift › SoftButton and friends): Standard is a soft grey fill with no
-    /// border, Primary ink, Accent live orange (开始听 only), Subtle no fill until hover, Danger red,
-    /// Pale the 结束 pill. Corners 10, or 12 on the big ones; filled labels bold, the rest regular.
     public static Button Button(string label, Action onClick, Kind kind = Kind.Standard, string? icon = null, double height = 36, bool iconFill = false, bool iconAfter = false)
     {
         var (bg, fg) = kind switch
@@ -190,9 +171,6 @@ static class Ui
         return b;
     }
 
-    /// A split button, as Windows' own: the label does the usual thing, the chevron beside it opens
-    /// a menu of the alternatives. One soft-grey button with a hairline between the halves; `Open`
-    /// is the chevron's click, for the debug pipe.
     public static (FrameworkElement Button, Action Open) SplitButton(string label, Action onClick, IReadOnlyList<(string label, Action act)> items, double height = 32)
     {
         Button Half(UIElement content, Thickness padding)
@@ -211,7 +189,6 @@ static class Ui
         for (int i = 0; i < 3; i++) g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Grid.SetColumn(line, 1); Grid.SetColumn(arrow, 2);
         g.Children.Add(main); g.Children.Add(line); g.Children.Add(arrow);
-        // The halves are square; the whole is clipped to the usual 10-point corners.
         g.SizeChanged += (_, e) => g.Clip = new RectangleGeometry(new Rect(e.NewSize), 10, 10);
         void Open()
         {
@@ -228,14 +205,11 @@ static class Ui
         return (g, Open);
     }
 
-    /// A square icon-only button with a tooltip and an accessible name.
     public static Button IconButton(string icon, string name, Action onClick, Brush? color = null, double size = 40, double iconSize = 16, bool fill = false, bool onDark = false)
     {
         var b = new Button
         {
             Content = Icon(icon, iconSize, color ?? Palette.Body, fill), Width = size, Height = size, Background = Brushes.Transparent,
-            // No padding: the Fluent theme's 11 a side leaves a 34-wide button 12 for a 16 icon, and
-            // the Viewbox clips its right edge.
             BorderThickness = new Thickness(0), Cursor = Cursors.Hand, ToolTip = name, Padding = new Thickness(0),
         };
         b.Template = Template(plain: true, onDark: onDark, radius: 10);
@@ -246,7 +220,6 @@ static class Ui
 
     static void AutomationName(UIElement e, string name) => System.Windows.Automation.AutomationProperties.SetName(e, name);
 
-    /// Rounded, no Windows 7 chrome. Plain buttons get a grey wash on hover; filled ones dim a little.
     public static ControlTemplate Template(bool plain, bool onDark = false, Type? target = null, double radius = 10, bool soft = false)
     {
         var t = new ControlTemplate(target ?? typeof(Button));
@@ -265,7 +238,6 @@ static class Ui
         var pressed = new Trigger { Property = ButtonBase.IsPressedProperty, Value = true };
         if (plain)
         {
-            // A soft button darkens to the line grey; a subtle one gets the ground's fill.
             var wash = onDark ? new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)) : soft ? Palette.Line : (Brush)Palette.Mica;
             hover.Setters.Add(new Setter(Border.BackgroundProperty, wash, "bg"));
             pressed.Setters.Add(new Setter(Border.BackgroundProperty, onDark ? new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)) : Palette.Line, "bg"));
@@ -281,8 +253,6 @@ static class Ui
         return t;
     }
 
-    /// A text link in the accent's text shade. Acts on press and marks it handled, so the notes
-    /// window doesn't start a drag instead.
     public static TextBlock LinkText(string label, Action onClick, double size = 13)
     {
         var t = Text(label, size, Palette.AccentText, wrap: false);
@@ -295,10 +265,6 @@ static class Ui
 
     public static FrameworkElement Dot(Brush color, double size = 8) => new Ellipse { Width = size, Height = size, Fill = color, VerticalAlignment = VerticalAlignment.Center };
 
-    /// The live dot, dimming and brightening once a second while listening. Not a WPF animation:
-    /// the notes panel and subtitle bar are transparent, shadowed windows that WPF redraws in
-    /// software, and an animation redraws them every frame (3.5 cores in a VM, starving the very
-    /// audio being listened to). One step a second costs one redraw a second.
     public static FrameworkElement LiveDot(double size = 8)
     {
         var dot = new Ellipse { Width = size, Height = size, Fill = Palette.Live, VerticalAlignment = VerticalAlignment.Center };
@@ -318,18 +284,14 @@ static class Ui
         return t;
     }
 
-    /// A small pill: 对方可见 and the like.
     public static Border Badge(string text, Brush? bg = null, Brush? fg = null) => new()
     {
         Background = bg ?? Palette.AccentPale, CornerRadius = new CornerRadius(9), Padding = new Thickness(9, 3, 9, 4), VerticalAlignment = VerticalAlignment.Center,
         Child = Text(text, 12, fg ?? Palette.AccentText, wrap: false),
     };
 
-    /// Room around a floating window's card for its shadow.
     public const double ShadowRoom = 14;
 
-    /// A floating window's surface as on the Mac: 16-point corners and a soft shadow. The shadow is
-    /// a few translucent rings, not a blur effect: a blur is redrawn in software on every change.
     public static FrameworkElement Floating(UIElement content, Brush background, double radius = 16, bool dark = false)
     {
         var grid = new Grid { Margin = new Thickness(ShadowRoom - 6, ShadowRoom - 4, ShadowRoom - 6, ShadowRoom - 8) };
@@ -358,7 +320,6 @@ static class Ui
         Padding = padding ?? new Thickness(20), Child = child,
     };
 
-    /// The design's check box: an ink box, not the theme's blue one; still a CheckBox for keys and readers.
     public static CheckBox Check(string label, bool on, Action<bool> changed)
     {
         var box = new Border { Width = 18, Height = 18, CornerRadius = new CornerRadius(4) };
@@ -383,7 +344,6 @@ static class Ui
 
     public enum Severity { Error, Warning }
 
-    /// Fluent's InfoBar: an icon, a bold title, one line of body, and up to one action.
     public static Border InfoBar(Severity severity, string? title, string body, UIElement? action = null)
     {
         var error = severity == Severity.Error;
@@ -410,14 +370,9 @@ static class Ui
 
     public enum Tone { Waiting, NeedsYou, Info }
 
-    /// #C98A00: WarnIcon is too dark to tell from the text at 6 px.
     static readonly SolidColorBrush waitingDot = Frozen(Color.FromRgb(0xC9, 0x8A, 0x00));
     static SolidColorBrush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
 
-    /// A service in trouble, said the same way wherever it shows (Views.swift › StatusLine): a dot,
-    /// what waits for what · what still works, and at most one action. Colour sits in the dot only,
-    /// so a passing wait doesn't read as a fault: yellow waits and comes back by itself, red needs
-    /// you, grey is just so you know.
     public static Border StatusLine(Tone tone, string text, (string Title, Action Run)? action = null)
     {
         var dot = Dot(tone switch { Tone.Waiting => waitingDot, Tone.NeedsYou => Palette.Danger, _ => Palette.Tertiary }, 6);
@@ -449,7 +404,6 @@ static class Ui
         };
     }
 
-    /// The Mac's switch: an ink track when on, a grey one when off, a white knob; no 开/关 beside it.
     public static FrameworkElement Switch(bool on, Action<bool> changed, string name)
     {
         var knob = new Ellipse { Width = 18, Height = 18, Fill = Brushes.White, Stroke = new SolidColorBrush(Color.FromArgb(0x1A, 0, 0, 0)), StrokeThickness = 0.5 };
@@ -467,9 +421,6 @@ static class Ui
         return toggle;
     }
 
-    /// A segmented control: one choice of a few, the chosen one raised on a grey track.
-    /// No blur on the raised one (the notes panel redraws in software): a white fill and a hairline.
-    /// `fill` spreads the options over the full width in equal parts, as the notes panel's 纪要 / 文字记录.
     public static FrameworkElement Segmented(IEnumerable<(string value, string label)> options, string selected, Action<string> changed, bool fill = false, double height = 30)
     {
         var track = new Border { Background = Palette.Mica, CornerRadius = new CornerRadius(10), Padding = new Thickness(3) };
@@ -498,7 +449,6 @@ static class Ui
         return track;
     }
 
-    /// Pivot-style tabs: text with an ink underline on the chosen one.
     public static FrameworkElement Tabs(IEnumerable<(string value, string label)> options, string selected, Action<string> changed, double size = 14)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal };
@@ -516,8 +466,6 @@ static class Ui
         return row;
     }
 
-    /// A pop-up button, as the Mac's pickers: the chosen value on a soft fill with a chevron, and a
-    /// menu of the choices, the chosen one checked. (Windows' own combo box looks out of place here.)
     public static Button Choice(IEnumerable<(string value, string label)> options, string selected, Action<string> changed, double width = 200)
     {
         var list = options.ToList();
@@ -550,10 +498,8 @@ static class Ui
         return b;
     }
 
-    /// A text field as on the Mac: white, 10-point corners, a light line, generous padding.
     public static Border Field(Control box) => FieldFrame(StyleField(box), box);
 
-    /// The frame alone, around anything (a field with a button inside it); `focus` lights it.
     public static Border FieldFrame(UIElement child, Control? focus = null)
     {
         var border = new Border { Background = Brushes.White, BorderBrush = Palette.FieldLine, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Height = 40, Padding = new Thickness(12, 0, 12, 0), Child = child };
@@ -565,7 +511,6 @@ static class Ui
         return border;
     }
 
-    /// The text control itself, without Windows' frame.
     public static Control StyleField(Control box)
     {
         box.BorderThickness = new Thickness(0);
@@ -581,8 +526,6 @@ static class Ui
         return box;
     }
 
-    /// A key as printed on the keyboard (右 Ctrl, Ctrl Alt L): white, a hairline, a thicker bottom
-    /// edge. `big` is the one the user is asked to press.
     public static Border Keycap(string label, bool big = false) => new()
     {
         Background = Brushes.White, BorderBrush = Palette.ControlStroke, BorderThickness = new Thickness(1, 1, 1, big ? 3 : 2),
@@ -590,13 +533,8 @@ static class Ui
         Child = Text(label, big ? 15 : 12, Palette.Ink, big ? FontWeights.Bold : FontWeights.Normal, wrap: false),
     };
 
-    /// Shortcut text ("Ctrl+Alt+L") as keycaps: Ctrl Alt L.
     public static Border Shortcut(string keys) => Keycap(keys.Replace('+', ' '));
 
-    /// A window without Windows' title bar, as the Mac's: the content runs to the top edge and only
-    /// the three caption buttons stay, drawn by us at the top right. WindowChrome keeps what the
-    /// system frame gave: dragging by the top strip, snap, resizing at the edges, and on Windows 11
-    /// DWM's rounded corners and shadow (a one-pixel glass frame).
     public static FrameworkElement Frameless(Window w, FrameworkElement content, bool resizable = true, double captionHeight = 44, Action? close = null)
     {
         System.Windows.Shell.WindowChrome.SetWindowChrome(w, new System.Windows.Shell.WindowChrome
@@ -635,7 +573,6 @@ static class Ui
             buttons.Children.Add(Caption("M5.5,5.5 H14.5 V14.5 H5.5 Z", L("最大化"), () => w.WindowState = w.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized));
         buttons.Children.Add(Caption(Icons.Close, L("关闭"), close ?? w.Close, danger: true));
         var root = new Grid { Children = { content, buttons } };
-        // Maximized, Windows puts the frame's invisible border off screen; keep the content inside.
         void Fit() => root.Margin = w.WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
         w.StateChanged += (_, _) => Fit();
         return root;
@@ -647,7 +584,6 @@ static class Ui
 
     public static string TargetName(string code) => Languages.Targets.FirstOrDefault(t => t.Code == code)?.Name ?? code;
 
-    /// The name of a spoken language as people write it ("English", "日本語").
     public static string SpokenName(string? code)
     {
         if (code is null) return "";
@@ -666,7 +602,6 @@ static class AppIcon
         catch { return null; }
     }
 
-    /// The icon at `size`, from the .ico's largest frame (its first is 16 px and blurs when scaled up).
     public static Image Small(double size = 16) { var i = new Image { Source = size > 20 ? Large ?? Image : Image, Width = size, Height = size, VerticalAlignment = VerticalAlignment.Center }; RenderOptions.SetBitmapScalingMode(i, BitmapScalingMode.HighQuality); return i; }
 
     static readonly System.Windows.Media.Imaging.BitmapSource? Large = LoadLarge();

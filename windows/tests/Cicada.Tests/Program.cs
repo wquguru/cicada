@@ -1,6 +1,3 @@
-// Unit tests for Cicada.Core: `scripts/test.sh` (or `dotnet run --project tests/Cicada.Tests`).
-// Each test is a method below; a failed Check throws and the runner reports it. No network:
-// LingClient runs against a fake handler.
 using System.Net;
 using System.Reflection;
 using System.Text;
@@ -175,8 +172,8 @@ static class Tests
     {
         var calls = MicUse.Calls([
             ("C:#Program Files#Zoom#bin#Zoom.exe", 0), ("C:#Users#me#AppData#Roaming#Zoom#bin#Zoom.exe", 0),
-            ("C:#Program Files (x86)#Tencent#WeMeet#wemeetapp.exe", 133_000_000_000), // used earlier, closed now
-            ("C:#Program Files#Google#Chrome#Application#chrome.exe", 0),               // a browser isn't a meeting app
+            ("C:#Program Files (x86)#Tencent#WeMeet#wemeetapp.exe", 133_000_000_000),
+            ("C:#Program Files#Google#Chrome#Application#chrome.exe", 0),
             ("MSTeams_8wekyb3d8bbwe", 0),
             ("C:#Program Files (x86)#WXWork#WXWork.exe", 0),
         ]);
@@ -272,8 +269,6 @@ static class Tests
         Check(JsonNode.DeepEquals(JsonNode.Parse(mac), JsonNode.Parse(Json.Write(s))), "written back unchanged");
     }
 
-    /// 改正听错的词: a Mac record whose lines carry fixes reads and writes back byte for byte in
-    /// value, and the line shows (and exports) the fixed words while `src` stays what was heard.
     public static void KeepsTheMacsFixes()
     {
         const string mac = """
@@ -361,7 +356,6 @@ static class Tests
 
     public static void ExportMarksTalkKeyLinesAsInterpreted()
     {
-        // TranscriptExport.speakerName on the Mac: a "me" line was said with the talk key (同传).
         var s = new Session { Title = "会议 1月1日 10:00", StartedAt = DateTimeOffset.Now, Lines =
             [new TranscriptLine { Id = "h1-1", T = 1, Src = "Can we ship?", Dst = "能发布吗？", SrcLang = "en", DstLang = "zh-CN" },
              new TranscriptLine { Id = "m1", T = 5, Speaker = "me", Src = "可以", Dst = "Yes", SrcLang = "zh-CN", DstLang = "en" }] };
@@ -372,7 +366,6 @@ static class Tests
 
     public static void KeepsTheMacsImportAndRoomFields()
     {
-        // A Mac record of an imported room recording (a line by the room mic), plus a key no version knows yet.
         const string mac = """
         {"endedAt":"2026-01-01T02:10:00Z","futureKey":{"a":[1,2]},"hasAudio":true,"id":"20260101-100000","importing":false,"lines":[{"dstLang":"en","id":"h1-1","speaker":"them","src":"你好","srcLang":"zh-CN","t":2.5,"via":"room"}],"room":true,"sourceFile":"周会.m4a","sourcePath":"/Users/x/周会.m4a","startedAt":"2026-01-01T02:00:00Z","title":"会议 1月1日 10:00"}
         """;
@@ -385,7 +378,6 @@ static class Tests
 
     // MARK: 保存会议录音
 
-    /// Records what it is given; the "file" is a list of samples, and Rewrap copies the partial file.
     sealed class FakeAudio : IAudioFiles
     {
         public readonly List<short> Samples = [];
@@ -400,7 +392,6 @@ static class Tests
         }
     }
 
-    /// Loopback as it really is: sound while something plays, nothing at all in between.
     sealed class GappySource(params (double seconds, bool sound)[] parts) : IAudioSource
     {
         public event Action<short[]>? Samples;
@@ -424,19 +415,18 @@ static class Tests
         return m;
     }
 
-    /// 电脑和会议室: the room mic goes into the meeting's one recording at its place on the clock (#19).
     public static void TheRoomIsMixedIntoTheRecordingWhereItWasHeard()
     {
         var audio = new FakeAudio();
         var mix = new RoomMix(audio.Open(Path.Combine(Path.GetTempPath(), $"mix-{Guid.NewGuid()}.aac"))!);
-        for (int i = 0; i < 30; i++) // 3 s of the PC at 1000; the room at 500 from 1 s to 2 s, half a second late
+        for (int i = 0; i < 30; i++)
         {
             mix.Write(Enumerable.Repeat((short)1000, 1600).ToArray());
             if (i >= 15 && i < 25) mix.Room(Enumerable.Repeat((short)500, 1600).ToArray(), (i - 5) * 1600);
         }
         mix.Write(Enumerable.Repeat((short)30000, 1600).ToArray());
         mix.Room(Enumerable.Repeat((short)30000, 1600).ToArray(), 3 * 16000);
-        mix.Room(Enumerable.Repeat((short)30000, 1600).ToArray(), 4 * 16000); // after the PC's last sample
+        mix.Room(Enumerable.Repeat((short)30000, 1600).ToArray(), 4 * 16000);
         mix.Close();
         Check(audio.Closed, "closed");
         Equal(4 * 16000 + 1600, audio.Samples.Count, "the PC's 3.1 s, then silence up to the room's last words");
@@ -457,7 +447,7 @@ static class Tests
         var main = new ListenEngine(ling, new Translator(ling), store, new NotesEngine(ling, store), settings);
         var room = new ListenEngine(ling, new Translator(ling), store, new NotesEngine(ling, store), settings, roomSide: true);
         var pc = new GappySource((0.5, true), (2.5, false));
-        var mic = new GappySource((2.0, true)); // a mic sends all the time, quiet or not
+        var mic = new GappySource((2.0, true));
         var ended = new TaskCompletionSource();
         pc.Ended += _ => ended.TrySetResult();
         main.Start(pc);
@@ -479,7 +469,6 @@ static class Tests
 
     public static async Task TheRecordingKeepsTheMeetingsClock()
     {
-        // 0.5 s of sound, 2.5 s of nothing (loopback while the PC is silent), 0.5 s of sound.
         var fake = new Fake(_ => Reply("{}"));
         var ling = Client(fake);
         var store = new SessionStore { Audio = new FakeAudio() };
@@ -521,7 +510,6 @@ static class Tests
         Equal(600.0, audio.Rewraps[0].until, "a meeting that ended by itself is cut where it ended");
         Equal(m4a, Recording.Playable(store.Get(s.Id)!), "it plays");
 
-        // A meeting the app didn't get to close: finished at the next launch.
         var t = store.Begin(DateTimeOffset.Parse("2026-02-02T02:00:00Z"));
         store.Append(t.Id, new TranscriptLine { Id = "h1-1", Src = "hi", SrcLang = "en", DstLang = "zh-CN" });
         store.Flush();
@@ -535,7 +523,6 @@ static class Tests
 
     public static void AdtsFramesAreSplitAndACutOneDropped()
     {
-        // Two AAC-LC 16 kHz mono frames of 10 and 12 bytes (7-byte headers), then half a third.
         static byte[] Frame(int payload)
         {
             int length = 7 + payload;
@@ -572,7 +559,6 @@ static class Tests
     {
         var gate = new VoiceGate();
         Equal(0.004, gate.Threshold, "before the room is known");
-        // Half a minute of a fan at 0.003 with a voice at 0.02 now and then.
         for (int i = 0; i < 30 * 33; i++) gate.Voiced(i % 10 == 0 ? 0.02 : 0.003, 0.03);
         Check(Math.Abs(gate.Threshold - 0.006) < 1e-9, $"twice the room's noise, got {gate.Threshold}");
         Check(gate.Voiced(0.008, 0.03), "a quiet voice across the table");
@@ -584,7 +570,6 @@ static class Tests
 
     public static void ARoomMicHearsQuietSpeechTheFixedLineMisses()
     {
-        // A voice at -48 dBFS (0.004 RMS) over a quieter floor: under the fixed 0.01 line.
         var rng = new Random(1);
         short[] Noise(double seconds, double rms) => Enumerable.Range(0, (int)(seconds * Segmenter.Rate)).Select(_ => (short)((rng.NextDouble() * 2 - 1) * rms * 1.7 * 32768)).ToArray();
         short[] Voice(double seconds, double rms) => Enumerable.Range(0, (int)(seconds * Segmenter.Rate)).Select(i => (short)(Math.Sin(i * 0.05) * Math.Sin(i * 0.0007) * rms * 2 * 32768)).ToArray();
@@ -651,7 +636,6 @@ static class Tests
         Equal("ja", Translator.ParseHeard("lang: ja-JP\noriginal: はい\ntranslation: 是", "zh-CN", null)!.Lang, "labels in any case");
     }
 
-    // Same cases as the Android and Linux ports' noise tests.
     public static void DropsNoise()
     {
         foreach (var o in new[] { "嗯。", "Mm.", "uh, um", "呃呃呃呃呃", "嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯，嗯。", string.Concat(Enumerable.Repeat("滴答", 50)),
@@ -697,8 +681,6 @@ static class Tests
         Equal("Done.", Translator.CleanTranslation("<think>x</think>Done.", "en"), "leaked reasoning");
     }
 
-    /// While the check says the service is unreachable, a sentence doesn't wait on its timeout
-    /// every time: one in 15 s still tries it, the rest go straight to Google.
     public static async Task AnUnreachableServiceIsTriedOnceIn15Seconds()
     {
         var fake = new Fake(_ => Reply("你好"));
@@ -729,14 +711,11 @@ static class Tests
 
     // MARK: Segmenter
 
-    /// A 300 Hz tone that swells and fades four times a second like syllables; steady when not, or
-    /// rising and falling by `wobble` twice a second like a fan.
     static short[] Tone(double seconds, double amp = 0.3, bool syllables = true, double wobble = 0) =>
         Enumerable.Range(0, (int)(seconds * 16000)).Select(i => (short)(Math.Sin(2 * Math.PI * 300 * i / 16000)
             * (syllables ? 0.55 + 0.45 * Math.Sin(2 * Math.PI * 4 * i / 16000) : 1 + wobble * Math.Sin(2 * Math.PI * 0.5 * i / 16000))
             * amp * 32767)).ToArray();
     static short[] Silence(double seconds) => new short[(int)(seconds * 16000)];
-    /// Typing: a key click every 0.2 s, 6 ms of decaying crackle peaking near -12 dBFS (scripts/vad-clips.py).
     static short[] Keys(double seconds)
     {
         var x = Silence(seconds);
@@ -744,18 +723,15 @@ static class Tests
             for (int k = 0; k < 96; k++) x[at + k] = (short)(0.25 * Math.Exp(-k / 24.0) * (k % 2 == 1 ? 1 : -1) * 32767);
         return x;
     }
-    /// A sine at `freq` that swells and fades four times a second like syllables.
     static short[] Hz(double freq, double seconds, double amp) =>
         Enumerable.Range(0, (int)(seconds * 16000)).Select(i => (short)(Math.Sin(2 * Math.PI * freq * i / 16000)
             * (0.55 + 0.45 * Math.Sin(2 * Math.PI * 4 * i / 16000)) * amp * 32767)).ToArray();
-    /// One word on its own ("Thanks."): a 300 Hz tone that swells from nothing and fades back.
     static short[] Word(double seconds, double amp)
     {
         int n = (int)(seconds * 16000);
         return Enumerable.Range(0, n).Select(i => (short)(Math.Sin(2 * Math.PI * 300 * i / 16000) * Math.Pow(Math.Sin(Math.PI * i / n), 2) * amp * 32767)).ToArray();
     }
 
-    /// A 7 kHz tone faded in and out over 0.3 s: crosses zero like a hiss, swells like a word.
     static short[] Hiss(double seconds, double amp)
     {
         int n = (int)(seconds * 16000);
@@ -783,7 +759,6 @@ static class Tests
 
     public static void CutsLongSpeechAtItsQuietestMoment()
     {
-        // 7 s of speech, a 0.3 s dip (shorter than a pause), 4 s more: one cut, at the dip.
         var list = Cut(Tone(7), Tone(0.3, 0.004), Tone(4), Silence(1));
         Equal(2, list.Count, "split in two");
         Check(list[0].Seconds is > 6.9 and < 7.4, $"cut inside the dip, got {list[0].Seconds}");
@@ -812,8 +787,6 @@ static class Tests
         Equal(1, Cut(Silence(1), Word(1.2, 0.022), Silence(1)).Count, "one smooth run of voice on its own, no dips inside");
         Equal(1, Cut(Silence(1), Tone(0.5, 0.022, syllables: false), Tone(0.15, 0.0025, syllables: false), Silence(1)).Count,
             "a quiet word whose fade (an \"s\", a breath) falls under gate / 4 still swells: a meeting's quiet opening line");
-        // Wherever the 30 ms frames fall (a few ms more lead-in), a quiet phrase with brief dips between
-        // its words stays a word, and a hum or a faded hiss in silence stays out.
         short[] Flat(double s, double a) => Tone(s, a, syllables: false);
         short[] phrase = [.. Flat(0.35, 0.022), .. Flat(0.04, 0.0055), .. Flat(0.4, 0.022), .. Flat(0.04, 0.0055), .. Flat(0.35, 0.022), .. Flat(0.06, 0.0025)];
         for (int ms = 0; ms < 30; ms += 2)
@@ -831,13 +804,10 @@ static class Tests
 
     public static void LateLoopbackPacketsDontSplitASentence()
     {
-        // A VM held packets back for 0.3-0.7 s: silence went in front of them and lines split
-        // mid-phrase. The tap now waits a second before it calls a stall silence.
         Equal(0, LoopbackGap.Silence(0.3, 0.3), "a 300 ms stall is no silence");
         Equal(0, LoopbackGap.Silence(0.9, 0.9), "nor is a 900 ms one");
         Equal(16000, LoopbackGap.Silence(1.0, 1.0), "a second of nothing is: all of it goes in");
         Equal(1600, LoopbackGap.Silence(1.1, 0.1), "then what has passed since");
-        // The segmenter fed like the tap: speech, a 0.3 s break between words, a 0.5 s stall.
         var whole = Cut(Tone(2), Silence(0.3), Tone(2), Silence(1));
         Equal(1, whole.Count, "one sentence");
         var stalled = Cut(Tone(2), Silence(0.3), new short[LoopbackGap.Silence(0.5, 0.5)], Tone(2), Silence(1));
@@ -904,8 +874,6 @@ static class Tests
         Equal(2.0, next.Todos[0].T, "to-dos too");
     }
 
-    /// A heard form only a fix wrote ("platform" for 平台) isn't one: it would teach the translator
-    /// and the next fix the same mistake.
     public static void NotesTermsKeepOnlyFormsTheRecognizerWrote()
     {
         var l = new TranscriptLine { Id = "a", Speaker = "them", Src = "我们 twoty 平台", SrcLang = "zh-CN", DstLang = "en", Fixes = [new LineFix("平台", "platform")] };
@@ -915,7 +883,6 @@ static class Tests
 
     public static void NotesAndExportNameSpeakersLikeTheMac()
     {
-        // Two voices, five substantive lines each: 说话人 1 (voice 7) and 说话人 2 (voice 9).
         var lines = Enumerable.Range(0, 10).Select(i => new TranscriptLine { Id = $"h{i}-1", T = i * 10, Src = $"we will ship line {i}", Voice = i % 2 == 0 ? 7 : 9, SrcLang = "en", DstLang = "zh-CN" }).ToList();
         var s = new Session { Title = "会议 1月1日 10:00", StartedAt = DateTimeOffset.Now, Lines = lines,
             VoiceNames = new() { ["7"] = "George" }, VoiceGuesses = new() { ["9"] = new VoiceGuess { Name = "Anna" } } };
@@ -964,10 +931,8 @@ static class Tests
     public static void LiveNotesKeepFrozenTopicsAndTakeTheReplysTail()
     {
         var old = Enumerable.Range(0, 5).Select(i => Topic(i * 100, $"t{i}")).ToList();
-        // The model echoed everything, renamed the current topic and added one.
         var reply = new List<NoteTopic> { Topic(0, "t0"), Topic(100, "t1 改"), Topic(300, "t3"), Topic(400, "t4 改"), Topic(500, "t5") };
         Equal("t0,t1,t2,t3,t4 改,t5", Titles(NotesEngine.Merge(old, 3, reply)), "frozen kept, the reply's tail after them");
-        // The first update over many lines: nothing to echo, so every topic is the model's own.
         var own = Enumerable.Range(0, 5).Select(i => Topic(i * 100, $"t{i}")).ToList();
         Equal(Titles(own), Titles(NotesEngine.Merge([], 0, own)), "nothing frozen keeps every topic");
         Equal(Titles(own), Titles(NotesEngine.Merge([Topic(0, "t0")], 0, own)), "nothing frozen, with old topics");
@@ -981,8 +946,6 @@ static class Tests
 
     public static void FullLiveNotesJoinTheShortestSettledPair()
     {
-        // Twelve topics, t3 and t4 the shortest neighbours (t3 to t5 is 100 s): a new topic
-        // still starts, and those two become one.
         double[] starts = [0, 100, 200, 300, 330, 400, 600, 700, 800, 900, 1000, 1100];
         var old = starts.Select((s, i) => Topic(s, $"t{i}", [$"a{i}", $"b{i}", $"c{i}"])).ToList();
         var merged = NotesEngine.Merge(old, 10, [Topic(1000, "t10"), Topic(1100, "t11"), Topic(1200, "t12")]);
@@ -1014,7 +977,6 @@ static class Tests
 
     public static void LongMeetingsSplitByTime()
     {
-        // A line every 10 s: 90 min stays whole, 4 h becomes four parts of an hour.
         var whole = NotesEngine.Parts(TenSecondLines(540));
         Check(whole.Count == 1 && whole[0].Equals(0..540), "90 minutes stays whole");
         var four = NotesEngine.Parts(TenSecondLines(1440));
@@ -1029,8 +991,6 @@ static class Tests
         Check(ten.All(t => kept.Any(k => k.Title.Split(" / ").Contains(t.Title))), "every topic joined, none dropped");
         Equal("0", string.Join(",", NotesEngine.Thinned(ten, 1, 3000).Select(t => t.Start)), "one");
         Equal(3, NotesEngine.Thinned(ten.Take(3).ToList(), 4, 3000).Count, "fewer than asked stay");
-        // A 2.5-hour meeting's last part, asked for 2 topics, came back with 3: the budget topic's
-        // end as its own. Kept first and last, the budget topic at 125 min was lost.
         var part = new List<NoteTopic> { Topic(6000, "营销发布安排", ["a"]), Topic(7500, "预算评审", ["b"]), Topic(8982, "预算评审（续）", ["c"]) };
         var two = NotesEngine.Thinned(part, 2, 8990);
         Equal("营销发布安排,预算评审", Titles(two), "the topic kept over its continuation");
@@ -1049,7 +1009,6 @@ static class Tests
         Check(p.Contains("part 2 of 3"), "which part");
         Check(p.Contains("[L241 40:00 对方] line 240") && !p.Contains("[L238 "), "the transcript's own line numbers");
         Check(p.Contains("This part ran 39:50"), "the part's length");
-        // Each of three parts gets two of the eight topics.
         Check(p.Contains("use at most 2 topics"), "the part's share of the topics");
         var merge = NotesEngine.MergePrompt(["{\"summary\":\"a\"}", "{\"summary\":\"b\"}"], all, "English", voices: false);
         Check(merge.Contains("Part 2 of 2:\n{\"summary\":\"b\"}"), "the parts' notes");
@@ -1070,7 +1029,6 @@ static class Tests
 
     // MARK: Strings
 
-    /// The notes store a to-do's owner as the transcript's Chinese label; it shows and exports in the UI language.
     public static void TodoOwnersShowInTheUILanguage()
     {
         var res = Path.Combine(AppContext.BaseDirectory, "Resources");
@@ -1164,7 +1122,6 @@ static class Tests
         return new LingClient(key, fake, clock: clock);
     }
 
-    /// The start gate's time, moved on by each wait instead of waiting (one request at a time).
     sealed class FakeClock : GateClock
     {
         public DateTime Now = new(2026, 11, 5, 12, 0, 0, DateTimeKind.Utc);
@@ -1207,8 +1164,6 @@ static class Tests
 
     public static async Task LingHeardAudioRidesOutARunOf429s()
     {
-        // Ling's 429s come in runs (two in a row lost a line with one retry): heard audio backs off
-        // 1, 2, 4 s and gets through; text translation fails at once so the caller can fall back.
         int calls = 0;
         var clock = new FakeClock();
         var fake = new Fake(_ => Interlocked.Increment(ref calls) <= 3 ? Busy() : Reply("LANG: en\nORIGINAL: Hi.\nTRANSLATION: 嗨。"));
@@ -1242,7 +1197,6 @@ static class Tests
         var fake = new Fake(_ => Interlocked.Increment(ref calls) == 1 ? Busy("5") : Reply("ok"));
         Equal("ok", await Client(fake, clock).Chat("c", "i", Priority.Notes), "answered after the wait");
         Check(clock.Waits[0] is >= 5 and <= 5.5, $"waited as asked, got {clock.Waits[0]}");
-        // Asked to wait minutes: an outage, so the line goes now rather than after it.
         var outage = new Fake(_ => Busy("120"));
         try { await Client(outage, new FakeClock()).Chat("c", "i", Priority.Translate, model: LingClient.AudioModel, audio: [1]); throw new Exception("waited"); }
         catch (LingException e) { Equal(LingException.Kind.RateLimited, e.Failure, "given up"); }
@@ -1260,11 +1214,9 @@ static class Tests
         var fake = new Fake(_ => Interlocked.Increment(ref calls) == 1 ? Busy() : Reply("notes"));
         var ling = Client(fake, clock);
         try { await ling.Chat("first", "i", Priority.Translate); } catch (LingException) { }
-        // A translation that wouldn't retry fails at once, without spending a request on the limit…
         try { await ling.Chat("second", "i", Priority.Translate); throw new Exception("sent during the pause"); }
         catch (LingException e) { Equal(LingException.Kind.RateLimited, e.Failure, "busy"); }
         Equal(1, fake.Calls.Count, "nothing sent");
-        // …and one that would waits at the gate until the pause is over, then goes.
         Equal("notes", await ling.Chat("notes", "i", Priority.Notes), "notes after the pause");
         Check(clock.Waits.Sum() is >= 1 and <= 1.5, $"held for the pause, got {string.Join(",", clock.Waits)}");
     }
@@ -1306,7 +1258,6 @@ static class Tests
             var ling = Client(fake);
             var first = ling.Chat("first", "i", Priority.Notes);
             await Task.Delay(20);
-            // Queued while the gate is closed: the translation goes before the earlier notes call.
             var notes = ling.Chat("notes", "i", Priority.Notes);
             await Task.Delay(20);
             var translate = ling.Chat("translate", "i", Priority.Translate);
@@ -1373,7 +1324,6 @@ static class Tests
 
     public static void TheRoomsCopyOfARemoteSentenceIsAnEcho()
     {
-        // EchoMatchTests on the Mac, case for case.
         List<EchoMatch.Heard> online = [H("Revenue grew by 12%, mostly from the new region.", 10, 14)];
         Check(EchoMatch.IsEcho(H("revenue grew by 12% mostly from new region", 10.3, 14.2), online), "heard worse, a word lost");
         Check(!EchoMatch.IsEcho(H("I think we should check the numbers for Europe first", 11, 15), online), "room speech is kept");
@@ -1412,7 +1362,6 @@ static class Tests
     {
         double now = 0;
         var g = new EchoGate(() => now);
-        // Music: loud, and no words for EchoGate.Music seconds.
         for (; now < EchoGate.Music - 1; now += 0.1) g.Hold();
         Check(g.Closed && !g.PlayingMusic, "no words yet: still taken for speech");
         for (; now < EchoGate.Music + 1; now += 0.1) g.Hold();
@@ -1422,7 +1371,6 @@ static class Tests
         g.HeardWords(); g.Hold(); now += 0.1;
         Check(g.Closed, "words close it again");
 
-        // Headphones: the room mic stays at its floor while the computer plays.
         now = 1000;
         var h = new EchoGate(() => now);
         Check(h.Echo, "echo until measured");
@@ -1431,7 +1379,6 @@ static class Tests
         Check(!h.Echo, "no echo measured with headphones");
         h.Hold(); now += 0.1;
         Check(!h.Closed, "the room stays open with headphones");
-        // Speakers: the mic hears the computer.
         now += 100;
         for (var t = 0; t < 60; t++) { h.Hold(); now += 0.05; h.RoomLevel(0.03, 0.1); now += 0.05; }
         for (var t = 0; t < 60; t++) { now += 0.1; h.RoomLevel(0.001, 0.1); }
@@ -1460,8 +1407,6 @@ static class Tests
 
     public static async Task TheRoomSideDropsTheSpeakersAndKeepsTheTable()
     {
-        // The computer plays one sentence; the room mic hears it again from the speakers, then
-        // someone at the table says something else.
         const string remote = "LANG: en\nORIGINAL: Revenue grew by 12%, mostly from the new region.\nTRANSLATION: 收入增长了 12%，主要来自新区域。";
         const string table = "LANG: en\nORIGINAL: I think we should check the numbers for Europe first\nTRANSLATION: 我觉得应该先看欧洲的数字";
         var fake = new Fake(body =>
@@ -1512,7 +1457,6 @@ static class Tests
 
     public static async Task NeverJoinsTwoVoices()
     {
-        // Two halves of one "sentence" (no full stop, 0.4 s apart) in two different voices.
         var fake = new Fake(body =>
         {
             if (!body.Contains("Ming-3.0-audio-flash")) return Reply("{}");
@@ -1526,7 +1470,6 @@ static class Tests
             var store = new SessionStore();
             var engine = new ListenEngine(ling, new Translator(ling), store, new NotesEngine(ling, store), new AppSettings { Target = "zh-CN" })
             {
-                // Told apart by length: the first stretch is 2.5 s, the second 3 s.
                 Voiceprint = new FakePrint(s => s.Length < 50_000 ? Unit(1, 0, 0) : Unit(0, 1, 0)),
             };
             var path = Path.Combine(Path.GetTempPath(), $"cicada-voices-{Environment.ProcessId}.wav");
@@ -1612,7 +1555,6 @@ static class Tests
         LingClient.Spacing = 0.01;
         try
         {
-            // Ming hears and translates; Ming's voice streams two chunks.
             var spoken = new List<string>();
             var fake = new Fake(body =>
             {
@@ -1633,7 +1575,6 @@ static class Tests
             Check(sink.Rate == 24000 && sink.Chunks.Count == 2, "Ming's 24 kHz stream reaches the virtual mic");
             Equal("ming", engine.LastVoice, "voiced by Ming");
 
-            // No translation (Ming echoes the original, Ling and Google fail): nothing reaches the room.
             var echo = new Fake(body => body.Contains(LingClient.AudioModel)
                 ? Reply("LANG: zh-CN\nORIGINAL: 我们周三能测完吗？\nTRANSLATION: 我们周三能测完吗？")
                 : new HttpResponseMessage(HttpStatusCode.InternalServerError));
@@ -1643,7 +1584,6 @@ static class Tests
             Check(await e2.Speak(Wav.Bytes(Tone(1)), quiet) is null, "no translation, nothing said");
             Check(quiet.Chunks.Count == 0 && voice2.Calls == 0 && e2.State == SpeakEngine.Phase.Failed, "and no voice at all");
 
-            // The virtual mic went away during the press: nothing is played anywhere (never the speakers).
             var gone = new Sink { Ready = false };
             var voice3 = new NoVoice();
             var e3 = Speaker(Client(fake), voice3, new AppSettings { SpeakFrom = "zh-CN" });
@@ -1668,12 +1608,9 @@ static class Tests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("data:{\"type\":\"speech.audio.done\"}\n\n") };
             });
             var engine = Speaker(Client(fake), new NoVoice(), new AppSettings { SpeakFrom = "zh-CN" });
-            // A press nobody spoke in: not even sent to the service.
             Check(await engine.Speak(Wav.Bytes(new short[16000 * 3]), new Sink()) is null && asked == 0, "a silent press sends nothing");
             Check(engine.State == SpeakEngine.Phase.Idle && engine.Problem is null, "and says nothing about it");
-            // Ming heard only 嗯: nothing goes out.
             Check(await engine.Speak(Wav.Bytes(Tone(1)), new Sink()) is null && asked == 1, "a filler alone isn't sent");
-            // The computer played through the press: its echo, not me.
             double now = 0;
             var log = new LoudnessLog(() => now);
             engine.Echo = log;
@@ -1681,13 +1618,11 @@ static class Tests
             for (var i = 0; i < 30; i++) { log.Add(true); now += 0.1; }
             Check(await engine.Speak(Wav.Bytes(Tone(1)), new Sink()) is null && asked == 1, "pressed while the meeting played: not sent");
             Equal(Strings.L("对方在说话时说的，没有说出去"), engine.Problem, "and the bar says why");
-            // The same press through Windows' echo cancellation: the meeting is taken out, I am sent.
             reply = "LANG: zh-CN\nORIGINAL: 我们周三能测完吗？\nTRANSLATION: Can we finish testing by Wednesday?";
             engine.BeginRecording();
             for (var i = 0; i < 30; i++) { log.Add(true); now += 0.1; }
             Equal("Can we finish testing by Wednesday?", await engine.Speak(Wav.Bytes(Tone(1)), new Sink(), echoCancelled: true), "pressed while the meeting played, echo cancelled: sent");
             Check(asked == 2 && engine.Problem is null, "and heard by the service");
-            // Echo cancellation doesn't let a silent press through.
             engine.BeginRecording();
             for (var i = 0; i < 30; i++) { log.Add(true); now += 0.1; }
             Check(await engine.Speak(Wav.Bytes(new short[16000 * 3]), new Sink(), echoCancelled: true) is null && asked == 2, "a silent press still sends nothing");
@@ -1739,14 +1674,12 @@ static class Tests
 
     public static async Task ListenEngineEndToEndWithAFakeMing()
     {
-        // Two stretches of "speech", told apart by length (1 s, then 1.6 s); the fake Ming
-        // answers the first one slower, and lines still come out in order.
         var fake = new Fake(body =>
         {
             if (body.Contains("Ming-3.0-audio-flash"))
             {
                 var url = JsonNode.Parse(body)!["messages"]![1]!["content"]![0]!["audio_url"]!["url"]!.GetValue<string>();
-                bool first = url.Length < 60_000; // base64 of ~1.3 s at 32 kB/s, with lead-in and tail
+                bool first = url.Length < 60_000;
                 if (first) Thread.Sleep(400);
                 return Reply(first ? "LANG: en\nORIGINAL: First one.\nTRANSLATION: 第一句。" : "LANG: en\nORIGINAL: Second one.\nTRANSLATION: 第二句。");
             }
@@ -1802,7 +1735,6 @@ static class Tests
         Equal(null, UpdateChecker.ChecksumFor("ff00  Cicada-1.1.0-Windows-ARM64.exe", "Cicada-1.1.0-Windows-x64.exe"), "other file");
     }
 
-    /// The in-app download: the installer is kept only when it matches checksums.txt.
     public static async Task UpdateDownloadChecksTheInstaller()
     {
         var dir = Directory.CreateTempSubdirectory("cicada-upd-").FullName;
@@ -1824,7 +1756,6 @@ static class Tests
         Check(!File.Exists(got), "left-over installer removed");
     }
 
-    /// A release served over HTTP: checksums.txt, then the installer through `body`.
     sealed class Release(byte[] installer, Func<byte[], Stream> body) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
@@ -1838,7 +1769,6 @@ static class Tests
         }
     }
 
-    /// Sends `data` in `chunk`-sized pieces, then (when `stallAt` is reached) nothing at all.
     sealed class Trickle(byte[] data, int chunk, long stallAt = long.MaxValue) : Stream
     {
         long at;
@@ -1860,8 +1790,6 @@ static class Tests
         public override void Write(byte[] b, int o, int c) => throw new NotSupportedException();
     }
 
-    /// A slow download keeps going and reports progress up to 100 %; one that stops sending fails
-    /// after the stall limit, not after a fixed total time.
     public static async Task UpdateDownloadFailsOnAStallNotOnSlowness()
     {
         var installer = new byte[300_000];
@@ -1883,8 +1811,6 @@ static class Tests
         Check((DateTime.UtcNow - t).TotalSeconds < 5, "fails soon after the stall");
     }
 
-    /// The system proxy watch: polled from the first unreachable result; a change made while a
-    /// check runs is still acted on once that check ends unreachable; a reachable result stops it.
     public static void ProxyWatchKeepsAChangeMadeDuringACheck()
     {
         var w = new ProxyWatch();
@@ -1923,7 +1849,6 @@ static class Tests
         Equal(1, UpdateChecker.Decode(Rel("v1.5.0"))!.Count, "a single release");
         Equal(null, UpdateChecker.Decode("{\"message\":\"Not Found\"}"), "GitHub's 404");
         Equal(null, UpdateChecker.Decode("<html>"), "not JSON");
-        // A release with the installer: it's what to download, on each architecture.
         var withSetup = UpdateChecker.Decode("""
             [{"tag_name":"v1.6.0","html_url":"https://example.com/r","assets":[
               {"name":"Cicada-1.6.0-Windows-x64.zip","browser_download_url":"https://example.com/z","size":5},
@@ -1938,7 +1863,6 @@ static class Tests
         var older = UpdateChecker.NewestWindows(withSetup.Take(1), "ARM64")!;
         Equal("https://example.com/setup-arm", older.Download, "ARM's installer");
         Equal(8L, older.Size, "its size");
-        // 1.1.0's installer names still count, so a release carrying only those is found too.
         var legacy = UpdateChecker.Decode("""
             [{"tag_name":"v1.1.0","html_url":"https://example.com/r","assets":[
               {"name":"Cicada-Setup.exe","browser_download_url":"https://example.com/old","size":3},
@@ -1979,11 +1903,9 @@ static class Tests
 
     // MARK: AI 服务 (other services than Ling: linux/tests/test_providers.py, case for case)
 
-    /// Answers every request with `respond(url, body)` and records where each went.
     sealed class Service(Func<string, string, HttpResponseMessage> respond) : HttpMessageHandler
     {
         public readonly List<(string url, string body)> Sent = [];
-        /// The key each request carried ("Bearer …"), in the order of Sent.
         public readonly List<string?> Auth = [];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
         {
@@ -2070,7 +1992,6 @@ static class Tests
         Equal(null, s.AIConfig().HearBase, "http off the local network is no address");
         Equal("https://zenmux.ai/api/v1/", new AppSettings { AiProvider = "zenmux" }.AIConfig().HearBase, "other services: theirs");
         Equal("https://api.ant-ling.com/v1/", new AppSettings().AIConfig().HearBase, "Ling");
-        // Not reaching a hear server of its own says nothing about the text address.
         Equal((AICheck.StepId.Hear, AICheck.Reason.Unreachable, (int?)null), AICheck.Classify(LingException.Kind.Network, 0, AICheck.StepId.Hear, hearElsewhere: true), "hear elsewhere");
         Equal((AICheck.StepId.Reach, AICheck.Reason.Unreachable, (int?)null), AICheck.Classify(LingException.Kind.Timeout, 0, AICheck.StepId.Hear), "same address");
     }
@@ -2108,7 +2029,6 @@ static class Tests
         var old = LingClient.Spacing; LingClient.Spacing = 0;
         try
         {
-            // A strict gateway refuses chat_template_kwargs; the model thinks, its answer in reasoning_content.
             var fake = new Service((url, body) =>
                 body.Contains("chat_template_kwargs") ? Status(400)
                 : url.EndsWith("/models") ? Status(404)
@@ -2136,7 +2056,7 @@ static class Tests
             Equal(AICheck.Kind.Ok, ling.Health[AICheck.StepId.Hear].Kind, "hears");
             ling.KeyChanged();
             fake.Sent.Clear();
-            try { await ling.Chat("x", "Translate.", Priority.Translate); } catch (LingException) { } // its answer is all reasoning
+            try { await ling.Chat("x", "Translate.", Priority.Translate); } catch (LingException) { }
             Check(fake.Sent[0].body.Contains("chat_template_kwargs"), "settings changed: tried again");
         }
         finally { LingClient.Spacing = old; }
@@ -2147,8 +2067,6 @@ static class Tests
         var old = LingClient.Spacing; LingClient.Spacing = 0;
         try
         {
-            // No JSON mode on this server (OpenRouter's Novita for Ling 3.1 Flash): 400 with or
-            // without the kwargs. Asked again without JSON mode.
             var fake = new Service((url, body) => body.Contains("response_format") ? Status(400) : Reply("好"));
             var (ling, _) = Using(fake, "custom", key: null, new AppSettings { AiCustomBase = "http://192.168.1.20:8000/v1", AiModels = { ["custom"] = "m" } });
             Equal("好", await ling.Chat("x", "Notes.", Priority.Translate, json: true), "answered without JSON mode");
@@ -2171,7 +2089,6 @@ static class Tests
             var (ling, _) = Using(fake, "custom", key: null, s);
             await ling.Check();
             Check(ling.Health[AICheck.StepId.Text].Kind == AICheck.Kind.Ok && ling.Health.Failure?.Why != AICheck.Reason.NoJSON, ling.Health.Summary);
-            // One that can't answer JSON at all still fails.
             var plain = new Service((url, body) => url.EndsWith("/models") ? Status(404) : body.Contains("response_format") ? Status(400) : Reply("ok"));
             var (other, _) = Using(plain, "custom", key: null, s);
             await other.Check();
@@ -2194,8 +2111,6 @@ static class Tests
         var n = NotesEngine.Parse("```json\n{\"summary\": \"周五发布\", \"topics\": []}\n```", [0.0], 0);
         Check(n is not null, "fenced notes parse");
     }
-
-    // 语音和文字只发给你的服务 (issue #15; the Mac's GoogleOffTests): Google is never asked.
 
     public static void CustomOnlyActsWithTheCustomServiceAlone()
     {
@@ -2239,7 +2154,6 @@ static class Tests
             Check(!t.SentencesUntranslated && changes == 2, "and the notice goes");
             Equal(0, google.Sent.Count, "still no Google");
 
-            // Off again: Google stands in as before.
             t.GoogleOff = false;
             up = false;
             Equal("谷歌的译文", await t.Translate("We ship on Friday.", "en", "zh-CN", Translator.Kind.Sentence), "Google once more");
@@ -2285,7 +2199,6 @@ static class Tests
 
     // MARK: Notes apart (LingTests.swift › Notes apart)
 
-    /// A custom service whose notes use "big"; with `own`, at notes.example with 另一个服务.
     static (LingClient ling, AppSettings settings, Service fake) NotesClient(bool own, Func<string, string, HttpResponseMessage> respond, string? notesKey = null, GateClock? clock = null)
     {
         var s = new AppSettings
@@ -2312,7 +2225,6 @@ static class Tests
             Equal("big,mt", string.Join(",", fake.Sent.Select(x => JsonNode.Parse(x.body)!["model"]!.GetValue<string>())), "models");
             Equal("https://notes.example/v1/chat/completions,https://main.example/v1/chat/completions", string.Join(",", fake.Sent.Select(x => x.url)), "servers");
             Equal("Bearer sk-notes-222222222,Bearer sk-main-1111111111", string.Join(",", fake.Auth), "keys");
-            // A live line's corrections ride at Notes priority but are translation's.
             await ling.Chat("z", "JSON only.", Priority.Notes, notes: false);
             Check(fake.Sent[^1].url.StartsWith("https://main.example/") && fake.Auth[^1] == "Bearer sk-main-1111111111", "corrections stay with translation");
         }
@@ -2328,13 +2240,11 @@ static class Tests
             await ling.Chat("x", "Notes.", Priority.Notes);
             Equal("Bearer sk-main-1111111111", fake.Auth[0], "不填就用上面的 key");
             Check(!ling.NotesHasOwnKey, "no key of their own");
-            // The same service, another model: same address and key, even with a notes key file left over.
             var (same, _, f2) = NotesClient(false, (_, _) => Reply("{}"), notesKey: "sk-notes-222222222");
             await same.Chat("x", "Notes.", Priority.Notes);
             Check(f2.Sent[0].url.StartsWith("https://main.example/") && f2.Auth[0] == "Bearer sk-main-1111111111", "same service: its key");
             Equal("big", JsonNode.Parse(f2.Sent[0].body)!["model"]!.GetValue<string>(), "the notes model");
             Check(!same.NotesHasOwnKey, "同一个服务 has no key of its own");
-            // 另一个服务 at an http address on the internet: notes aren't sent anywhere else instead.
             var (bad, s3, f3) = NotesClient(true, (_, _) => Reply("{}"), notesKey: "sk-notes-222222222");
             s3.AiCustomNotesBase = "http://notes.example/v1";
             try { await bad.Chat("x", "Notes.", Priority.Notes); Check(false, "not sent"); } catch (LingException) { }
@@ -2370,7 +2280,6 @@ static class Tests
             try { await ling.Chat("x", "Notes.", Priority.Notes); Check(false, "busy"); }
             catch (LingException e) { Equal(LingException.Kind.RateLimited, e.Failure, "notes gave up"); }
             Check(clock.Now > clock.Start, "notes waited at their own gate");
-            // A translation fails at once while its server cools down; this one isn't.
             Equal("好", await ling.Chat("y", "Translate.", Priority.Translate), "translation's gate isn't paused");
             Check(ling.Health.Failure is null && !ling.Health.NotesFailed, "busy is no failure: " + ling.Health.Summary);
         }
@@ -2384,11 +2293,8 @@ static class Tests
         Check(!plain.NotesApart && plain.ForNotes == plain, "nothing set: translation's");
         var model = new AIConfig(AIProvider.Custom, b, "mt", "", NotesModel: "big");
         Check(model.NotesApart && model.ForNotes.TextModel == "big" && model.ForNotes.Base == b, "another model, same address");
-        // Only the custom service splits.
         var ling = new AIConfig(AIProvider.Ling, AIProvider.Ling.Base, "x", "", NotesModel: "big");
         Check(!ling.NotesApart && ling.ForNotes.TextModel == "x", "Ling doesn't");
-        // From settings: the translation model named again is no model of its own; 另一个服务 off keeps
-        // the address but doesn't use it; an http address on the internet can't be used.
         var s = new AppSettings { AiProvider = "custom", AiCustomBase = "https://main.example/v1", AiModels = { ["custom"] = "mt", ["custom.notes"] = "mt" } };
         Check(!s.AIConfig().NotesApart, "same model: not apart");
         s.AiCustomNotesBase = "https://notes.example/v1";
@@ -2407,7 +2313,6 @@ static class Tests
         var old = LingClient.Spacing; LingClient.Spacing = 0;
         try
         {
-            // The notes model is gone from the notes server; translation's model, typed by hand, isn't listed but answers.
             var (ling, _, fake) = NotesClient(true, (url, body) =>
                 url == "https://main.example/v1/models" ? Status(200, "{\"data\":[{\"id\":\"other\"}]}")
                 : url == "https://notes.example/v1/models" ? Status(200, "{\"data\":[{\"id\":\"n1\"},{\"id\":\"n2\"}]}")
@@ -2435,7 +2340,7 @@ static class Tests
             var (ling, s) = Using(fake, "custom", key: null, new AppSettings { AiCustomBase = "http://localhost:8000/v1", AiModels = { ["custom"] = "m" } });
             var slow = Task.Run(ling.Check);
             while (fake.Sent.Count == 0) await Task.Delay(5);
-            s.AiCustomBase = "https://api.example.com/v1"; // remote now, and no key
+            s.AiCustomBase = "https://api.example.com/v1";
             await ling.Check();
             gate.SetResult();
             await slow;
@@ -2530,7 +2435,6 @@ static class Tests
         {
             var fake = new Service((_, _) => Reply("LANG: en\nORIGINAL: Hi.\nTRANSLATION: 嗨。", finish: null));
             var (ling, _) = Using(fake);
-            // No finish reason: Ling's search essays come without one, other services may just omit it.
             var r = await ling.Chat("c", "i", Priority.Translate, model: "qwen/qwen3.8-omni-flash", audio: [1]);
             Check(r.Contains("ORIGINAL: Hi."), "kept without a finish reason");
             Equal("https://zenmux.ai/api/v1/chat/completions", fake.Sent[0].url, "the service's address");
@@ -2600,7 +2504,6 @@ static class Tests
         var old = LingClient.Spacing; LingClient.Spacing = 0;
         try
         {
-            // ZenMux lists modalities at the top level: the text model is gone, and the hear model doesn't take audio.
             var (ling, _) = Using(new Service((url, _) => url.EndsWith("models")
                 ? Status(200, "{\"data\":[{\"id\":\"qwen/qwen3.8-flash\",\"input_modalities\":[\"text\"]},{\"id\":\"qwen/qwen3.8-omni-flash\",\"input_modalities\":[\"text\"]},{\"id\":\"a/ears\",\"input_modalities\":[\"audio\",\"text\"]}]}")
                 : Reply("OK")));
@@ -2708,7 +2611,6 @@ static class Tests
         var m = new AICheck();
         m.Fail(AICheck.StepId.Key, AICheck.Reason.MgmtKey, reached: false);
         Equal(AICheck.Kind.Untested, m[AICheck.StepId.Reach].Kind, "nothing sent");
-        // Hearing doesn't need the text model, nor the other way round.
         var t = new AICheck();
         t.Fail(AICheck.StepId.Text, AICheck.Reason.NoModel, 404);
         Equal("reach=ok key=ok text=fail(noModel 404) hear=untested", t.Summary, "text");
@@ -2778,7 +2680,6 @@ static class Tests
         Equal("inclusionai/ling-3.0-flash,qwen/qwen3.8-flash", string.Join(",", ids!.Order()), "ids");
         Equal(null, AICheck.ListedModels("{}"), "no data");
         Equal(null, AICheck.ListedModels("{\"data\":[]}"), "empty");
-        // OpenRouter says modalities under architecture; a list that says nothing proves nothing about hearing.
         var hearing = AICheck.ListedHearing("{\"data\":[{\"id\":\"a\",\"architecture\":{\"input_modalities\":[\"text\",\"audio\"]}},{\"id\":\"b\",\"architecture\":{\"input_modalities\":[\"text\"]}}]}");
         Equal("a", string.Join(",", hearing!), "hearing");
         Equal(null, AICheck.ListedHearing("{\"data\":[{\"id\":\"a\"}]}"), "nothing said");
@@ -2826,7 +2727,6 @@ static class Tests
         var old = LingClient.Spacing; LingClient.Spacing = 0;
         try
         {
-            // ZenMux: server-sent base64, with `stream`.
             var sse = new Service((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("data: {\"audio\":\"AQACAA==\"}\n\ndata: {\"type\":\"speech.audio.done\"}\n\n", System.Text.Encoding.UTF8, "text/event-stream"),
@@ -2837,15 +2737,12 @@ static class Tests
             Equal("https://zenmux.ai/api/v1/audio/speech", sse.Sent[0].url, "speech address");
             Equal(("google/gemini-3.8-flash-tts", "Puck", true), (b["model"]!.GetValue<string>(), b["voice"]!.GetValue<string>(), b["stream"]!.GetValue<bool>()), "body");
             Check(b["language_id"] is null, "language_id is Ming's only");
-            // A voice that isn't this service's (a Ming name left in settings) becomes its first one.
             await Joined(ling.Speech("Hello", "US_Emma"));
             Equal("Kore", JsonNode.Parse(sse.Sent[1].body)!["voice"]!.GetValue<string>(), "first voice");
-            // OpenRouter streams the PCM bytes themselves, without `stream`.
             var raw = new Service((_, _) => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([5, 0, 6, 0]) { Headers = { ContentType = new("audio/pcm") } } });
             (ling, _) = Using(raw, "openrouter");
             Equal("5,0,6,0", await Joined(ling.Speech("Hi", null)), "raw PCM");
             Check(JsonNode.Parse(raw.Sent[0].body)!["stream"] is null, "no stream for OpenRouter");
-            // One JSON with a WAV in it.
             var wav = Wav.Bytes([7, 8], 24000);
             var one = new Service((_, _) => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($"{{\"audio\":\"{Convert.ToBase64String(wav)}\"}}", System.Text.Encoding.UTF8, "application/json") });
             (ling, _) = Using(one, "custom", s: new AppSettings { AiCustomBase = "https://x.example/v1", AiModels = { ["custom"] = "m" }, AiVoiceModels = { ["custom"] = "kokoro" }, AiCustomVoice = "af_heart" });
@@ -2883,7 +2780,6 @@ static class Tests
         var settings = new AppSettings { SpeakVoices = { ["en"] = "ming:US_Emma" } };
         Equal("cloud:Kore", VoiceCatalog.Chosen(settings, "en", zen, true), "a Ming voice isn't sent to ZenMux");
         Equal("ming:US_Emma", VoiceCatalog.Chosen(settings, "en", new AppSettings().AIConfig(), true), "and is used again on Ling");
-        // #22: Windows' voice saved for a language this PC has no voice for.
         var system = new AppSettings { SpeakVoices = { ["en"] = "system" } };
         var ling = new AppSettings().AIConfig();
         Equal("system", VoiceCatalog.Chosen(system, "en", ling, true, windowsHasIt: true), "kept where Windows has it");
@@ -2967,7 +2863,6 @@ static class Tests
             var reference = new VoiceReference(new PlainProtector(), folder);
             var voice = new NoVoice();
             var engine = new SpeakEngine(ling, new Translator(ling), new SessionStore(), s, () => "ja", () => null, voice);
-            // Not recorded: Ming's default voice for Japanese.
             Check(await engine.Voice("こんにちは", "ja", new Sink()), "spoken");
             Equal("ming", engine.LastVoice, "Ming's own voice before the recording");
             engine.Reference = reference;
@@ -2978,7 +2873,6 @@ static class Tests
             var body = JsonNode.Parse(sse.Sent[^1].body)!;
             Check(body["references"] is JsonArray { Count: 1 } && body["voice"] is null, "the recording went with it");
             Equal("ja", body["language_id"]!.GetValue<string>(), "with Ming's language");
-            // Ling failing: Windows speaks the translation instead (never the original).
             var down = new Service((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError));
             var (ling2, s2) = Using(down, "ling");
             s2.SpeakVoices["ja"] = "clone";
@@ -2991,7 +2885,6 @@ static class Tests
 
     public static void TellsASlowRecordingApart()
     {
-        // 21 characters read over 4 s of sound (a second of silence each side): an ordinary pace.
         var samples = new float[16000 * 6];
         for (var i = 16000; i < 16000 * 5; i++) samples[i] = (float)Math.Sin(i * 0.05) * 0.3f;
         var text = "大家好我是这次会议的主持人今天我们讨论计划";
@@ -3020,7 +2913,6 @@ static class Tests
         var (ok, text, kept) = await VoiceCloneCheck.Check(Spoken(12), _ => Task.FromResult<string?>(" " + passage + " "));
         Equal((VoiceCloneCheck.Outcome.Ready, passage), (ok, text), "an ordinary reading is kept with its words");
         Equal(11.4, Math.Round((kept.Length - 44) / 32000.0, 2), "and without its quiet ends (11 s read, 0.2 s kept each side)");
-        // 9.5 s read and a 3 s pause before 读完了: 12.5 s recorded, but under 10 s of reading.
         var paused = Spoken(10.5).Concat(new byte[16000 * 3 * 2]).ToArray();
         BitConverter.GetBytes(paused.Length - 44).CopyTo(paused, 40);
         Equal(VoiceCloneCheck.Outcome.TooShort, (await VoiceCloneCheck.Check(paused, _ => Task.FromResult<string?>(passage))).outcome, "the minimum is of the reading");
@@ -3028,7 +2920,6 @@ static class Tests
 
     public static void TrimsTheQuietEndsOfTheRecording()
     {
-        // 1 s quiet, 3 s of reading, 1 s quiet (the pause before 读完了 made Ming's clone silent).
         var pcm = new short[16000 * 5];
         for (var i = 16000; i < 16000 * 4; i++) pcm[i] = (short)(Math.Sin(i * 0.05) * 9000);
         var trimmed = VoicePace.Trim(Wav.Bytes(pcm));
@@ -3065,18 +2956,14 @@ static class Tests
     {
         Check(ListenEngine.Words(LingException.Kind.Http, 400, "ZenMux").Settings, "a hear model that refuses audio is fixed in settings");
         Check(ListenEngine.Words(LingException.Kind.Network, 0, "ZenMux").Body.Contains("ZenMux"), "named");
-        // One status line: subtitles and notes both wait, since the service hears the meeting here.
         Equal((null, "字幕和纪要等 Ling 恢复 · 连上后自动继续", false), ListenEngine.Words(LingException.Kind.Timeout, 0, "Ling"), "unreachable is one line");
         Check(!ListenEngine.Words(LingException.Kind.Http, 400, "Ling").Settings, "Ling's 400 is the network bar");
-        // A gateway's 502 in front of the server: the service erring, not the network, nothing in settings.
         Equal((null, "ZenMux 暂时出错（HTTP 502），稍后再试。", false), ListenEngine.Words(LingException.Kind.Http, 502, "ZenMux"), "a 5xx is the service's trouble");
         Equal("Ling 暂时出错（HTTP 503），稍后再试。", ListenEngine.Words(LingException.Kind.Http, 503, "Ling").Body, "Ling's too");
     }
 
     public static async Task ServerErrorsInARowAreSaidAndClearOnTheNextLine()
     {
-        // Every stretch answered 502 by a gateway: no subtitles, so from the third in a row the bar
-        // says the service is erring; the next stretch heard clears it. Two blips say nothing.
         var calls = 0;
         var seen = new List<(LingException.Kind? kind, int status, int calls)>();
         var fake = new Fake(body =>
@@ -3095,7 +2982,6 @@ static class Tests
             var path = Path.Combine(Path.GetTempPath(), $"cicada-502-{Environment.ProcessId}.wav");
             short[] stretches = [.. Tone(1), .. Silence(3), .. Tone(1), .. Silence(3), .. Tone(1), .. Silence(3), .. Tone(1), .. Silence(3)];
             File.WriteAllBytes(path, Wav.Bytes(stretches));
-            // Four times real time: each reply is back before the next stretch goes, as in a meeting.
             var src = new FileAudioSource(path, speed: 4);
             var ended = new TaskCompletionSource();
             src.Ended += _ => ended.TrySetResult();
@@ -3131,7 +3017,6 @@ static class Tests
     }
 
     // MARK: 改正听错的词 (the Mac's CorrectionTests, VocabularyTests and LiveFixesTests, case for case;
-    // cases from a 21-minute meeting recording, a DeFi team's weekly)
 
     static Correction.Verdict Verdict(string from, string to, double c, (string, string)[]? known = null, (string, string)[]? rejected = null) =>
         Correction.Decide(new Correction.Edit(from, to, c), (a, b) => (known ?? []).Contains((a, b)), (a, b) => (rejected ?? []).Contains((a, b)));
@@ -3143,7 +3028,6 @@ static class Tests
         Equal(Correction.Verdict.Apply, Verdict("两个代笔", "两个代币", 0.9), "代笔");
         Equal(Correction.Verdict.Apply, Verdict("管理房", "管理方", 0.9), "管理房");
         Equal(Correction.Verdict.Apply, Verdict("追压", "质押", 0.85), "追压");
-        // Only the changed part is compared: 花/概 share nothing, though the phrase around them does.
         Equal(Correction.Verdict.Drop, Verdict("花了大花", "花了大概", 0.85), "花/概");
         Equal(Correction.Verdict.Apply, Verdict("FFT制押", "FFT质押", 0.9), "FFT制押");
     }
@@ -3172,7 +3056,6 @@ static class Tests
         Equal(Correction.Verdict.Drop, Verdict("莫纳", "Morpho", 0.7), "莫纳");
     }
 
-    /// A learned "S平 → X平" never reaches into "iOS平台"; on its own it still applies.
     public static void FixLearnedWordsStayWhole()
     {
         Check(Correction.WordIn("S平", "iOS平台很好") < 0, "inside iOS");
@@ -3183,7 +3066,6 @@ static class Tests
         Equal("iOS平台和X平台", Correction.Apply([new("S平", "X平")], "iOS平台和S平台").Text, "applied to the whole one");
     }
 
-    /// A translation isn't a misheard name: one 对 to "X平台 → X platform" taught 平台 → platform.
     public static void FixTranslationsAreNotAsked()
     {
         Equal(Correction.Verdict.Drop, Verdict("X平台", "X platform", 0.9), "X平台");
@@ -3212,7 +3094,6 @@ static class Tests
         Equal(("Un450P三", "Uniswap V3"), Correction.Core("Un450P三", "Uniswap V3"), "a Latin word stays whole");
         Equal(("莫拉", "Morpho"), Correction.Core("解释这个莫拉的", "解释这个Morpho的"), "name");
         Equal(("cransfer", "transfer"), Correction.Core("找了cransfer记录", "找了transfer记录"), "spelling");
-        // A Chinese change next to a Latin word leaves the word out.
         Equal(("制押", "质押"), Correction.Core("FFT制押", "FFT质押"), "beside a Latin word");
     }
 
@@ -3232,7 +3113,6 @@ static class Tests
         var (t2, m2) = Correction.Apply([new("质压", "质押"), new("莫拉", "Morpho")], "莫拉说质压");
         Equal("Morpho说质押", t2, "later fix shifts");
         Equal("Morpho|质押", string.Join("|", m2.Select(m => t2.Substring(m.Start, m.Length))), "earlier marks kept");
-        // The words went away (the line was heard again differently): nothing breaks.
         Equal("解释这个摩托的", Correction.Apply([new("莫拉", "Morpho")], "解释这个摩托的").Text, "skipped");
     }
 
@@ -3274,26 +3154,21 @@ static class Tests
 
     public static void FixAddedWordStaysOnItsLineAndNeverMatchesPunctuation()
     {
-        // "now" added before the full stop: the fix is the last word, unique in the line, not ".".
         const string line = "Great, let's lock that in.";
         var e = Correction.UserEdit(line, "Great, let's lock that in now.", line, []);
         Equal("in", e?.Fix.From, "from");
         Equal("in now", e?.Fix.To, "to");
         Equal(false, e?.Swap, "added, not swapped");
         Equal("Great, let's lock that in now.", Correction.Apply([e!.Value.Fix], line).Text, "applied");
-        // A word added at the start.
         var s = Correction.UserEdit(line, "OK Great, let's lock that in.", line, []);
         Equal("Great", s?.Fix.From, "start from");
         Equal("OK Great", s?.Fix.To, "start to");
         Equal(false, s?.Swap, "start swap");
-        // A word that appears twice: grown until the span is unique.
         var t = Correction.UserEdit("in the room in the hall", "in the room inside the hall", "in the room in the hall", []);
         Equal("in the room inside the hall", Correction.Apply([t!.Value.Fix], "in the room in the hall").Text, "unique span");
-        // Chinese: an inserted word takes its neighbour.
         var c = Correction.UserEdit("好的我来看一下", "好的OK我来看一下", "好的我来看一下", []);
         Equal("好的OK我来看一下", c is { } cc ? Correction.Apply([cc.Fix], "好的我来看一下").Text : null, "Chinese insert");
         Equal(false, c?.Swap, "Chinese swap");
-        // A real swap is still a swap.
         Equal(true, Correction.UserEdit("我木娜找了", "我Monad找了", "我木娜找了", [])?.Swap, "swap");
     }
 
@@ -3483,7 +3358,6 @@ static class Tests
         Check(FixLine(store, id, "l0").Shown.Contains("跑跑的"), "sound-alike applied");
         fx.Answer(fx.Pending(id)[0].Fix, true, id);
         Equal("最近那个Curve提了，这个是跑跑的测试", FixLine(store, id, "l0").Shown, "yes");
-        // The second pass, with the lines after it in view, proposes nothing.
         fx.Received(id, "l0", []);
         Equal("最近那个Curve提了，这个是跑好的测试", FixLine(store, id, "l0").Shown, "guess taken back, yes kept");
     }
@@ -3506,7 +3380,6 @@ static class Tests
         Equal("Monad那边也有", FixLine(store, id, "l1").Shown, "everywhere");
         Check(fx.Vocabulary.Knows("木娜", "Monad"), "taught");
         Check(fx.Toast?.Text.Contains("Monad") == true, "toast");
-        // A later pass can't override what the user wrote.
         fx.Received(id, "l1", [new("木娜", "Mona", 0.95)]);
         Equal("Monad那边也有", FixLine(store, id, "l1").Shown, "user wins");
         fx.Undo();
@@ -3562,8 +3435,6 @@ static class Tests
         Equal(null, FixLine(store, id, "l0").Fixes, "nothing fixed");
     }
 
-    /// A finished line goes to the AI service again with fixes asked for, in one request with the
-    /// Mac's prompt and no JSON mode; its translation (of the sentence as fixed) replaces Ming's.
     public static async Task FixesRideOnTheSentencesTranslation()
     {
         var fake = new Fake(body =>
@@ -3729,7 +3600,6 @@ static class Tests
 
     static byte[] UnB64Url(string s) => Convert.FromBase64String(s.Replace('-', '+').Replace('_', '/').PadRight((s.Length + 3) / 4 * 4, '='));
 
-    /// Answers the share service's routes and checks each signed request as server/src/auth.js does.
     sealed class ShareServer(Func<HttpRequestMessage, string, HttpResponseMessage> respond) : HttpMessageHandler
     {
         public readonly List<string> Seen = [];
@@ -3769,7 +3639,6 @@ static class Tests
             if (path == "/api/v1/devices") return Status(201, "{\"device\":\"0123456789abcdef0123456789abcdef\"}");
             if (path == "/api/v1/shares" && r.Method == HttpMethod.Post)
             {
-                // The first signed call finds the device forgotten: the client registers again once.
                 if (forgotten) { forgotten = false; return Status(401, "{\"code\":\"unknown_device\"}"); }
                 var j = JsonNode.Parse(body)!;
                 Check(r.Headers.GetValues("Idempotency-Key").First().StartsWith("20261106-140000-"), "idempotency key");
@@ -3842,7 +3711,6 @@ static class Tests
         }
     }
 
-    /// The name: the user's title, else the notes', else the imported file's, never the display title.
     public static void FolderExportNamePrecedence()
     {
         var s = FolderSession();
@@ -3892,7 +3760,6 @@ static class Tests
             var index = Path.Combine(dir, "FolderExport.json");
             var ex = new FolderExporter(store, settings, index) { Delay = TimeSpan.FromMilliseconds(20) };
             var stem = FolderExportFormat.Stem(store.Get(s.Id)!);
-            // A file Cicada didn't write is never overwritten.
             Directory.CreateDirectory(folder);
             File.WriteAllText(Path.Combine(folder, stem + ".md"), "mine");
             ex.Choose(folder);
@@ -3907,7 +3774,6 @@ static class Tests
             Check(text.StartsWith("---\ncicada: 1\n") && text.Contains("title: \"周会\""), "frontmatter, then the body");
             Check(!Directory.GetFiles(folder, ".cicada*").Any(), "no temporary or check file left");
             Check(Json.Read<FolderExporter.Index>(File.ReadAllText(index))!.Files.ContainsKey(s.Id), "the index keeps it");
-            // A new name moves the file.
             store.Rename(s.Id, "周会改");
             store.Flush();
             ex.Saved(s.Id);
@@ -3916,17 +3782,14 @@ static class Tests
             var moved = ex.FileFor(s.Id)!;
             Check(Path.GetFileName(moved).EndsWith("周会改.md"), "renamed: " + Path.GetFileName(moved));
             Check(!File.Exists(Path.Combine(folder, stem + " 2.md")), "the old file went");
-            // Unchanged content isn't written again.
             var at = File.GetLastWriteTimeUtc(moved);
             ex.Saved(s.Id);
             await Task.Delay(200);
             await ex.Idle();
             Equal(at, File.GetLastWriteTimeUtc(moved), "unchanged");
-            // Deleting the record leaves its file.
             ex.Deleted(s.Id);
             Check(File.Exists(moved), "the file stays");
             store.Delete(s.Id);
-            // A folder whose parent is gone isn't made.
             ex.Choose(Path.Combine(dir, "gone", "Cicada"));
             await ex.Idle();
             Equal(FolderExporter.Kind.Missing, ex.Trouble?.Kind, "missing");
@@ -3963,7 +3826,6 @@ static class Tests
     {
         var notes = new List<NoteTerm> { new() { Name = "江充", Heard = ["江松"] }, new() { Name = "Ling" } };
         Equal("江充,江松", string.Join(",", TranscriptSearch.Terms("江充", notes)), "the name and how it was heard");
-        // Searching the misheard form finds the right one too; an unrelated term stays out.
         Equal("江松,江充", string.Join(",", TranscriptSearch.Terms(" 江松 ", notes)), "the misheard form finds the name");
         Equal(0, TranscriptSearch.Terms("  ", notes).Count, "a blank query finds nothing");
     }
@@ -3976,7 +3838,6 @@ static class Tests
         Equal("b", string.Join(",", TranscriptSearch.Matches(lines, ["BUDGET"])), "the translation, any case");
         Equal("a,b", string.Join(",", TranscriptSearch.Matches(lines, ["预算", "budget"])), "every term, in line order");
         Equal(0, TranscriptSearch.Matches(lines, []).Count, "no terms, no matches");
-        // A fixed word is searched as shown, not as heard.
         var fixedLine = new TranscriptLine { Id = "f", Src = "莫拉的方案", Fixes = [new LineFix("莫拉", "Morpho")] };
         Equal("f", string.Join(",", TranscriptSearch.Matches([fixedLine], ["morpho"])), "the shown text");
     }

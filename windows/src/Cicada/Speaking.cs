@@ -7,7 +7,6 @@ using System.Windows.Controls;
 
 namespace Cicada.App;
 
-/// Windows' own voice (OneCore), for when Ming's can't speak: always there, no key needed.
 sealed class WindowsVoice : ISystemVoice
 {
     public async Task<(byte[] pcm, int rate)?> Speak(string text, string language)
@@ -19,7 +18,6 @@ sealed class WindowsVoice : ISystemVoice
             var voice = Windows.Media.SpeechSynthesis.SpeechSynthesizer.AllVoices
                 .Where(v => v.Language.StartsWith(language, StringComparison.OrdinalIgnoreCase) || v.Language.StartsWith(head, StringComparison.OrdinalIgnoreCase))
                 .OrderByDescending(v => v.Language.Equals(language, StringComparison.OrdinalIgnoreCase)).FirstOrDefault();
-            // No voice for the language: say nothing rather than read it in another language's voice.
             if (voice is null) { Log.Debug($"windows voice: none for {language}"); return null; }
             synth.Voice = voice;
             using var stream = await synth.SynthesizeTextToStreamAsync(text);
@@ -44,7 +42,6 @@ sealed class WindowsVoice : ISystemVoice
         catch { return false; }
     }
 
-    /// The PCM inside a 16-bit WAV, mixed to mono, at its own rate.
     static (byte[], int)? Pcm(byte[] wav)
     {
         if (wav.Length < 44) return null;
@@ -73,26 +70,17 @@ sealed class WindowsVoice : ISystemVoice
     }
 }
 
-/// Hold the talk key (right Ctrl unless changed) to talk, anywhere. RegisterHotKey can't see a key
-/// being let go, so this is a low-level keyboard hook. A modifier talk key is passed on to other
-/// apps and only counts held alone: another key pressed meanwhile (Ctrl C) ends the press as
-/// Interrupted. Any other talk key (Caps Lock, F13…) is kept from them. (Alt can't be one: released
-/// alone it opens the window's menu, and right Alt is AltGr on many keyboards.)
 sealed class PushToTalk : IDisposable
 {
-    /// The key in use, read by every label that names it.
     public static TalkKey.Key Current { get; set; } = TalkKey.Named(null);
     public static string Label => Strings.L(Current.Label);
     const int WhKeyboardLl = 13, WmKeyDown = 0x100, WmKeyUp = 0x101, WmSysKeyDown = 0x104, WmSysKeyUp = 0x105;
-    readonly HookProc proc; // held, or the GC collects it and Windows calls freed memory
+    readonly HookProc proc;
     readonly IntPtr hook;
     bool down, combo;
     public event Action? Pressed, Released, Interrupted;
-    /// Choosing a new talk key: the next key pressed comes here (its virtual-key code) and until
-    /// then no key reaches any app. Whoever sets it clears it when the choosing ends.
     public Action<int>? Capture;
 
-    // 同声传译 on: with it off a Caps Lock or F5 talk key goes on working as itself.
     readonly Func<bool> enabled;
 
     public PushToTalk(Func<bool> enabled)
@@ -137,12 +125,8 @@ sealed class PushToTalk : IDisposable
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandle(string? name);
 }
 
-/// Installs VB-Cable: VB-Audio's own package, downloaded when the user asks, checked against the
-/// pinned SHA-256 before anything runs, then its installer with Windows' admin prompt.
 static class CableInstaller
 {
-    /// 电脑没声了？ in onboarding and settings: shown while the cable holds the speaker, one button
-    /// gives a real speaker back.
     public static FrameworkElement SpeakerStrip(Window owner, Action changed)
     {
         var text = new StackPanel { Children = { Ui.Text(Strings.L("电脑没声了？"), 14, Palette.Ink), Ui.Text(Strings.L("Windows 把播放设备改成了 CABLE Input"), 13, Palette.WarnIcon) } };
@@ -175,9 +159,7 @@ static class CableInstaller
         }
         catch (Exception e) { Log.Debug($"cable: extract failed {e.GetType().Name}"); return Result.Failed; }
         progress(Strings.L("正在安装…"));
-        // Windows may hand the new cable the default speaker and mic (CableDefaults): remember them.
         var before = Endpoints.Defaults();
-        // The x64 installer also puts the ARM64 driver on Windows on ARM.
         var setup = Path.Combine(dir, Environment.Is64BitOperatingSystem ? "VBCABLE_Setup_x64.exe" : "VBCABLE_Setup.exe");
         try
         {
@@ -196,8 +178,6 @@ static class CableInstaller
         return Result.Failed;
     }
 
-    /// Windows switches the default a moment after the endpoint appears, not always at once: look
-    /// for a few seconds.
     internal static async Task GiveBackDefaults(Dictionary<string, string> before)
     {
         for (int i = 0; i < 8; i++)

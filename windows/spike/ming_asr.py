@@ -1,29 +1,17 @@
 #!/usr/bin/env python3
-"""M0 spike: can Ming's audio model stand in for on-device recognition on Windows?
-
-Cuts a recording the way the Windows AudioRouter would (loudness only: a pause of 0.6 s or 8 s
-of audio ends a segment), sends each segment to Ming-3.0-audio-flash in one call that returns the
-language, the original and the translation, and reports latency, tokens and the character error
-rate against a reference text.
-
-    python3 ming_asr.py clips/en.wav --ref clips/en.txt --target zh-CN
-
-macOS only (afconvert); stdlib only. The key is read from the app's key file and never printed.
-"""
 import argparse, base64, io, json, os, re, statistics, subprocess, sys, tempfile, time, unicodedata, urllib.request, wave
 
 RATE = 16000
-FRAME = 480                      # 30 ms
-THRESHOLD = 0.01                 # same loudness gate as AudioRouter.swift (about -40 dBFS)
+FRAME = 480
+THRESHOLD = 0.01
 PAUSE, MAX_SEG, MIN_SEG = 0.6, 8.0, 0.25
-GAP = 0.6                        # LingClient spaces request starts at least 0.6 s apart
+GAP = 0.6
 NAMES = {"en": "English", "zh-CN": "Simplified Chinese", "ja": "Japanese", "ko": "Korean"}
 KEY_FILES = ["~/Library/Application Support/LiveSubs Dev/ling-api-key",
              "~/Library/Application Support/LiveSubs/ling-api-key"]
 
 
 def load_pcm(path):
-    """16 kHz mono Int16 samples of any file afconvert reads."""
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "a.wav")
         subprocess.run(["afconvert", "-f", "WAVE", "-d", f"LEI16@{RATE}", "-c", "1", path, out], check=True)
@@ -32,7 +20,6 @@ def load_pcm(path):
 
 
 def segments(pcm):
-    """(start, end) sample ranges, cut on pauses or length, like the Windows router will."""
     import array
     a = array.array("h", pcm)
     loud = []
@@ -90,7 +77,6 @@ def ask(key, wav, target):
 
 
 def norm(s):
-    """Letters and digits only, lower case: punctuation and spacing don't count as errors."""
     return [c for c in unicodedata.normalize("NFKC", s).lower() if c.isalnum()]
 
 

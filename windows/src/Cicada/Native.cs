@@ -4,8 +4,6 @@ using System.Windows.Interop;
 
 namespace Cicada.App;
 
-/// Win32 bits WPF doesn't expose: windows that never take focus and stay out of screen captures,
-/// and DPAPI for the key file.
 static class Native
 {
     const int GWL_EXSTYLE = -20;
@@ -18,12 +16,8 @@ static class Native
     [DllImport("user32.dll")] static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
     [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
 
-    /// A second launch has the foreground (the user just opened it); this lets the running Cicada
-    /// bring its records window forward instead of flashing in the taskbar behind other windows.
-    public static void LetOthersTakeForeground() => AllowSetForegroundWindow(-1 /* ASFW_ANY */);
+    public static void LetOthersTakeForeground() => AllowSetForegroundWindow(-1);
 
-    /// Makes a window like the Mac's non-activating panel: clicks and drags work, but the app the
-    /// user is in keeps the keyboard focus, and the window isn't in Alt+Tab or the taskbar.
     public static void MakeNonActivating(Window window)
     {
         var hwnd = new WindowInteropHelper(window).EnsureHandle();
@@ -40,22 +34,17 @@ static class Native
     [DllImport("dwmapi.dll")] static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
     [StructLayout(LayoutKind.Sequential)] struct Margins { public int Left, Right, Top, Bottom; }
 
-    /// A frameless window drawn by DWM: Windows 11's rounded corners and soft shadow, composited on
-    /// the GPU. (A transparent WPF window would have to draw its own shadow, in software, on every
-    /// change.) On Windows 10 the corners stay square.
     public static void UseSystemFrame(Window window, bool dark = false)
     {
         var hwnd = new WindowInteropHelper(window).EnsureHandle();
-        int round = 2; // DWMWCP_ROUND
-        DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
+        int round = 2;
+        DwmSetWindowAttribute(hwnd, 33, ref round, sizeof(int));
         int on = dark ? 1 : 0;
-        DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, ref on, sizeof(int));
-        // A one-pixel frame margin is what gives a frameless window DWM's shadow.
+        DwmSetWindowAttribute(hwnd, 20, ref on, sizeof(int));
         var m = new Margins { Left = 0, Right = 0, Top = 1, Bottom = 0 };
         DwmExtendFrameIntoClientArea(hwnd, ref m);
     }
 
-    /// Out of screenshots and screen sharing (Windows 10 2004+), unless the user lets the other side see it.
     public static bool SetCaptureVisible(Window window, bool visible)
     {
         var hwnd = new WindowInteropHelper(window).EnsureHandle();
@@ -65,7 +54,6 @@ static class Native
     }
 }
 
-/// DPAPI, current user: the key file can only be opened by this Windows account.
 sealed class DpapiProtector : IKeyProtector
 {
     public string Tag => "dpapi";

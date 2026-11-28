@@ -7,19 +7,13 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// 设置 › 词表 (the Mac's WordListSettings.swift): the switches for 改正听错的词, and the word list
-/// itself: each word, what it has been heard as, where it came from and how often it fixed a line.
-/// Everything is edited in place; changes count from the next sentence on.
 sealed partial class SettingsWindow
 {
     string wordQuery = "";
-    /// A deleted word, shown in its place with 撤销 for a few seconds.
     (Vocabulary.Term Term, int Index)? deleted;
     DateTime deletedAt;
-    /// The word whose spelling is being changed, and what was typed as a heard form per word.
     string? renaming;
     readonly Dictionary<string, string> newHeard = [];
-    /// A heard form typed under a word that another word already has: whose it should be.
     (string Word, string Heard, string Owner)? conflict;
 
     FrameworkElement[] WordCards()
@@ -78,7 +72,6 @@ sealed partial class SettingsWindow
                 rows.Add(row);
             }
             var q = Vocabulary.Key(wordQuery);
-            // Most recently useful first, then the rest newest first.
             var shown = Enumerable.Reverse(terms).OrderByDescending(t => t.Used ?? DateTimeOffset.MinValue)
                 .Where(t => q.Length == 0 || Vocabulary.Key(t.Word).Contains(q) || t.Heard.Any(h => Vocabulary.Key(h).Contains(q)));
             foreach (var t in shown) rows.Add(WordRow(t, terms));
@@ -91,7 +84,6 @@ sealed partial class SettingsWindow
 
     void FocusSearch()
     {
-        // The page is drawn again on each key: give the search box its focus back.
         var box = FindChild<TextBox>(scroll, b => System.Windows.Automation.AutomationProperties.GetName(b) == L("搜索词表"));
         if (box is not null) { box.Focus(); box.CaretIndex = box.Text.Length; }
     }
@@ -107,8 +99,6 @@ sealed partial class SettingsWindow
         return null;
     }
 
-    /// One word: its spelling (a click changes it), what it was heard as (× takes one off, a field
-    /// adds one), where it came from, how often it fixed a line, and delete.
     FrameworkElement WordRow(Vocabulary.Term t, List<Vocabulary.Term> all)
     {
         FrameworkElement word;
@@ -147,7 +137,6 @@ sealed partial class SettingsWindow
         {
             BorderBrush = Palette.FieldLine, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(5), Margin = new Thickness(0, 2, 4, 2),
             Child = new Grid { Children = { add, hint } },
-            // Only while pointed at (or typed in): hidden, it would still take room and wrap the forms.
             Visibility = add.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed,
         };
         add.BorderThickness = new Thickness(0); add.Background = Brushes.Transparent;
@@ -222,8 +211,6 @@ sealed partial class SettingsWindow
         Render();
     }
 
-    /// 粘贴导入: many words at once, each line one word, heard forms after "=". The counts follow
-    /// what is pasted, and the button says how many go in.
     void ImportWords()
     {
         var dialog = new Window
@@ -299,10 +286,8 @@ sealed partial class SettingsWindow
         importing = null;
     }
 
-    /// The paste dialog while it is open (the debug pipe types into it).
     Window? importing;
 
-    /// Debug: paste `text` into an open 粘贴导入, or open it first.
     public void DebugImport(string text)
     {
         if (importing is null) { Dispatcher.BeginInvoke(ImportWords); Dispatcher.BeginInvoke(() => DebugImport(text), System.Windows.Threading.DispatcherPriority.ApplicationIdle); return; }

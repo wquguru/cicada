@@ -6,7 +6,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// How a meeting is described in lists: "10:03 · 23 分钟 · 待办 2".
 static class Records
 {
     public static string Meta(Session s, Controller app)
@@ -17,7 +16,6 @@ static class Records
             ? local.ToString("HH:mm", Culture)
             : local.ToString(L("M月d日"), Culture);
         var parts = new List<string> { day, LF("%@ 分钟", Math.Max(1, (int)Math.Round(s.Duration.TotalMinutes))) };
-        // The Mac marks these with a mic and a display; a word reads the same here.
         if (Places.HeardBoth(s.Lines)) parts.Add(L("电脑和会议室"));
         if (s.Notes?.Todos.Count is > 0 and var n) parts.Add(LF("待办 %@", n));
         return string.Join(" · ", parts);
@@ -31,10 +29,6 @@ static class Records
     }
 }
 
-/// 会议记录, as the Mac's main window with no title bar: a grey list of one-line titles grouped by
-/// day, the chosen one on a white pill, and the meeting set out like a document on one white
-/// sheet: when and how long over a big title, 纪要 / 文字记录, the conclusions and to-dos in one
-/// grey block, the summary, then the numbered topics.
 sealed class MainWindow : Window
 {
     readonly Controller app;
@@ -44,7 +38,6 @@ sealed class MainWindow : Window
     string? selected;
     string tab = "notes";
     double? jumpTo;
-    /// A line to show, marked for a moment (the fix banner's 听成 … → …？).
     string? jumpLine;
     string? shownKey;
     bool refreshQueued;
@@ -53,8 +46,6 @@ sealed class MainWindow : Window
     readonly DispatcherTimer tick = new() { Interval = TimeSpan.FromMilliseconds(120) };
     readonly double[] levels = new double[8];
     FrameworkElement? left;
-    // The pill is rebuilt only when what it says changes (a rebuild between press and release
-    // would lose the click); the bars and the clock move in place.
     string? pillKey;
     readonly List<System.Windows.Shapes.Rectangle> bars = [];
     TextBlock? clock;
@@ -65,7 +56,6 @@ sealed class MainWindow : Window
         selected = select;
         Title = L("会议记录") + " · " + L("知了");
         Width = 1180; Height = Math.Min(780, SystemParameters.WorkArea.Height - 24); MinWidth = 860; MinHeight = 520;
-        // One white sheet, as the Mac's main window: no cards, no second layer.
         Background = Palette.Surface; FontFamily = Palette.Font; Icon = AppIcon.Image;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
@@ -73,7 +63,6 @@ sealed class MainWindow : Window
         grid.ColumnDefinitions.Add(listColumn);
         grid.ColumnDefinitions.Add(new ColumnDefinition());
 
-        // The search box, with its icon and placeholder drawn over it
         var placeholder = Ui.Text(L("搜索标题、纪要和原话"), 13, Palette.Secondary, wrap: false);
         placeholder.IsHitTestVisible = false; placeholder.Margin = new Thickness(31, 0, 0, 0); placeholder.VerticalAlignment = VerticalAlignment.Center;
         var glass = Ui.Icon(Icons.Search, 16, Palette.Secondary);
@@ -97,14 +86,12 @@ sealed class MainWindow : Window
         {
             if (e.Key == System.Windows.Input.Key.F && System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control) { search.Focus(); search.SelectAll(); e.Handled = true; }
             else if (e.Key == System.Windows.Input.Key.Escape && search.IsKeyboardFocused) { search.Text = ""; e.Handled = true; }
-            // Enter goes to the next line found in the shown meeting (Shift+Enter: the one before).
             else if (e.Key == System.Windows.Input.Key.Enter && search.IsKeyboardFocused)
             {
                 Step(System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Shift ? -1 : 1);
                 e.Handled = true;
             }
         };
-        // 本场 n / N under the search box, only while the shown meeting has lines found.
         matchText.VerticalAlignment = VerticalAlignment.Center;
         matchText.Typography.NumeralAlignment = FontNumeralAlignment.Tabular;
         var prev = Ui.IconButton(Icons.ChevronUp, L("上一个"), () => Step(-1), Palette.Secondary, 26, 14);
@@ -118,7 +105,6 @@ sealed class MainWindow : Window
         matchBar.Visibility = Visibility.Collapsed;
         DockPanel.SetDock(matchBar, Dock.Top);
 
-        // The list pane on the ground's grey, the logo where the title bar was.
         var logo = AppIcon.Small(20);
         logo.HorizontalAlignment = HorizontalAlignment.Left; logo.Margin = new Thickness(18, 14, 0, 6);
         var left = new DockPanel { Background = Palette.Mica };
@@ -133,12 +119,10 @@ sealed class MainWindow : Window
         var right = new Border { Background = Palette.Surface, Child = detail };
         Grid.SetColumn(right, 1);
         grid.Children.Add(left); grid.Children.Add(right);
-        // The Mac's toolbar pill, centred in the title bar: the brand is the listening switch.
         System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(pill, true);
         Grid.SetColumnSpan(pill, 2);
         grid.Children.Add(pill);
         Content = Ui.Frameless(this, grid);
-        // The pill's clock and level move while listening; nothing else needs a timer.
         tick.Tick += (_, _) => { if (app.Listen.Listening) Pill(); else { tick.Stop(); Pill(); } };
         Closed += (_, _) => { tick.Stop(); ClosePlayer(); };
         playTick.Tick += (_, _) => UpdatePlayer();
@@ -167,9 +151,7 @@ sealed class MainWindow : Window
 
     readonly DockPanel matchBar = new();
     readonly TextBlock matchText = Ui.Text("", 12, Palette.Secondary, wrap: false);
-    /// Which of the shown meeting's lines found the search is on.
     int matchIndex;
-    /// The query changed or another meeting was opened: start again at the first line found.
     bool searchMoved;
 
     List<string> SearchTerms(Session? s) => s is null ? [] : TranscriptSearch.Terms(search.Text, s.Notes?.Terms);
@@ -177,7 +159,6 @@ sealed class MainWindow : Window
     string? CurrentMatch(Session? s) { var f = Found(s); return f.Count == 0 ? null : f[Math.Min(matchIndex, f.Count - 1)]; }
     Session? Shown => selected is null ? null : app.Store.Get(selected);
 
-    /// A search that finds lines in the shown meeting opens its transcript at the first one.
     void ShowMatches()
     {
         searchMoved = false;
@@ -190,7 +171,7 @@ sealed class MainWindow : Window
         var n = Found(Shown).Count;
         if (n == 0) return;
         matchIndex = (Math.Min(matchIndex, n - 1) + d + n) % n;
-        centredFound = null;   // Enter goes to the line even when it is the only one
+        centredFound = null;
         tab = "transcript";
         UpdateMatchBar();
         ShowDetail();
@@ -203,7 +184,6 @@ sealed class MainWindow : Window
         if (n > 0) matchText.Text = LF("本场 %lld / %lld", Math.Min(matchIndex, n - 1) + 1, n);
     }
 
-    /// Debug `search <text>` / `searchstep <1|-1>`: types into the search box or steps, as Enter does.
     public System.Text.Json.Nodes.JsonObject DebugSearch(string? text, int step)
     {
         if (text is not null) search.Text = text; else Step(step);
@@ -218,7 +198,6 @@ sealed class MainWindow : Window
     {
         Pill();
         var all = app.Store.All();
-        // No meetings yet: only the welcome. An empty list and search box are noise.
         listColumn.Width = new GridLength(all.Count == 0 ? 0 : 260);
         if (left is not null) left.Visibility = all.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         var q = search.Text.Trim();
@@ -237,14 +216,12 @@ sealed class MainWindow : Window
             }
             list.Children.Add(Item(s));
         }
-        // An empty page replaces the meeting, so the next real one must draw again.
         if (all.Count == 0) { selected = null; shownKey = null; detail.Content = Welcome(); UpdateMatchBar(); return; }
         if (shown.Count == 0) { shownKey = null; detail.Content = Empty(L("没有找到"), ""); matchBar.Visibility = Visibility.Collapsed; return; }
         if (selected is null || shown.All(s => s.Id != selected)) { selected = shown[0].Id; if (q.Length > 0) searchMoved = true; }
         if (searchMoved) ShowMatches();
         UpdateMatchBar();
         foreach (var child in list.Children.OfType<Button>()) Paint(child);
-        // Store changes come in a burst while a meeting runs; redraw the open page only if it changed.
         if (PageKey() == shownKey) { ShowToast(); return; }
         ShowDetail();
     }
@@ -275,13 +252,11 @@ sealed class MainWindow : Window
     void Paint(Button b)
     {
         var on = (string)b.Tag == selected;
-        // The Mac's list: the chosen meeting on a white pill on the grey pane.
         b.Background = on ? Palette.Surface : Brushes.Transparent;
         var label = b.Content as TextBlock ?? (b.Content as Panel)?.Children.OfType<TextBlock>().FirstOrDefault();
         if (label is not null) label.FontWeight = on ? FontWeights.Bold : FontWeights.Normal;
     }
 
-    /// A list row: white and raised when chosen, a grey wash under the mouse otherwise.
     static ControlTemplate RowTemplate()
     {
         var t = new ControlTemplate(typeof(Button));
@@ -301,8 +276,6 @@ sealed class MainWindow : Window
 
     // MARK: Welcome and the pill
 
-    /// No meetings yet (Views.swift › welcome): the logo, one line and the one thing to do; or,
-    /// not set up yet, what is left, each step opening the onboarding where it is.
     FrameworkElement Welcome()
     {
         var s = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 480, Margin = new Thickness(24, 40, 24, 60) };
@@ -333,13 +306,10 @@ sealed class MainWindow : Window
     {
         var (key, audio, sample) = app.SetupDone;
         var first = !key ? 0 : !audio ? 1 : !sample ? 2 : 3;
-        // The key is in but the service turned it down (or can't be reached, or can't hear): the
-        // reason, and the settings page that fixes it.
         var ling = app.Ling;
         var broken = app.KeyStepFailed ? ling.Health.Message(ling.ServiceLabel, ling.ServiceHost, ling.Config.TextModel, ling.HearName) : null;
         (string title, string detail, bool done)[] steps =
         [
-            // A service whose check passed ticks it; another service is named (接上 ZenMux).
             (ling.Config.IsLing ? L("接上 Ling") : LF("接上 %@", ling.Config.Name), broken ?? (key ? L("key 已加密存在这台电脑上") : L("识别、翻译和纪要都靠它，约 1 分钟")), key),
             (L("听一下电脑里的声音"), L("放一段测试声音，看音量条动起来"), audio),
             (L("看看效果"), L("一段 9 秒的英文会议，字幕和纪要一句句出来"), sample),
@@ -377,8 +347,6 @@ sealed class MainWindow : Window
         static FrameworkElement Center(FrameworkElement e) { e.HorizontalAlignment = HorizontalAlignment.Center; e.VerticalAlignment = VerticalAlignment.Center; return e; }
     }
 
-    /// The title bar's switch (ListenPill.swift), led by the logo: a white pill while idle or not
-    /// set up, an ink one with the level, the time and 结束 while listening.
     void Pill()
     {
         var listen = app.Listen;
@@ -441,7 +409,6 @@ sealed class MainWindow : Window
         return new Border { Background = Palette.Ink, CornerRadius = new CornerRadius(16), Height = 32, Padding = new Thickness(5, 0, 4, 0), Child = Ui.Row(0, show, end) };
     }
 
-    /// A rounded button with no theme chrome: the pill and its parts.
     static Button Capsule(UIElement content, Brush background, Brush? border, double height, Thickness padding, Action click, string name)
     {
         var b = new Button { Content = content, Height = height, Padding = padding, Background = background, BorderBrush = border ?? Brushes.Transparent, BorderThickness = new Thickness(border is null ? 0 : 1), Cursor = System.Windows.Input.Cursors.Hand, Focusable = false };
@@ -471,7 +438,6 @@ sealed class MainWindow : Window
         return s;
     }
 
-    /// What the open page shows; a store change that leaves it the same doesn't redraw it.
     string? PageKey() => selected is not null && app.Store.Get(selected) is { } cur
         ? $"{selected}|{tab}|{SessionStore.DisplayTitle(cur)}|{cur.Lines.Count}|{cur.Notes?.Covered}|{cur.Notes?.Final}|{app.Listen.Listening}|{app.Notes.GeneratingId == selected}|{cur.HasAudio}|{Recording.Playable(cur)}|{app.Settings.RecordAudio}|{FixKey(cur)}|{cur.Lines.Sum(l => l.Dst?.Length ?? 0)}|{FolderExportUi.Key(app, selected)}|{search.Text.Trim()}|{matchIndex}"
         : null;
@@ -486,7 +452,6 @@ sealed class MainWindow : Window
         redrawing = keep is not null;
         var top = new StackPanel();
 
-        // When, how long, and from what into what, above the title.
         var local = s.StartedAt.ToLocalTime();
         var spoken = s.Lines.Select(l => l.SrcLang).FirstOrDefault(x => x is not null);
         var into = s.Lines.Select(l => l.DstLang).FirstOrDefault(x => x is not null);
@@ -500,7 +465,6 @@ sealed class MainWindow : Window
         var rename = Ui.IconButton(Icons.Pencil, L("重命名"), () => Rename(s), Palette.Tertiary, 30, 15);
         var titleRow = Ui.Row(6, title, rename);
         titleRow.Margin = new Thickness(0, 6, 0, 0);
-        // As the Mac's context menu: only when the notes have a name to go back to.
         if ((s.Renamed ?? !s.Title.StartsWith("会议 ")) && !string.IsNullOrEmpty(s.Notes?.Title))
         {
             var reset = Ui.LinkText(L("恢复自动标题"), () => app.Store.ResetTitle(s.Id));
@@ -509,13 +473,10 @@ sealed class MainWindow : Window
             titleRow.Children.Add(reset);
         }
         top.Children.Add(titleRow);
-        // 存到文件夹: where its file is, or why it isn't there yet.
         if (!live && FolderExportUi.Line(app, s) is { } exported) top.Children.Add(exported);
         if (PlayerArea(s, live) is { } audio) top.Children.Add(audio);
-        // Under the page, not in its header: the controls stay while the transcript scrolls.
         var footer = player is not null ? PlayerFooter() : null;
 
-        // 纪要 / 文字记录 on the left, what to do with it on the right, one hairline under both.
         FrameworkElement Tabs(double size) => Ui.Tabs([("notes", L("纪要")), ("transcript", s.Lines.Count > 0 ? $"{L("文字记录")} {s.Lines.Count}" : L("文字记录"))], tab, t => { tab = t; ShowDetail(); }, size);
         var tabs = Tabs(15);
         var tools = Tools(s, live);
@@ -524,10 +485,8 @@ sealed class MainWindow : Window
         top.Children.Add(bar);
         top.Children.Add(new Border { Height = 1, Background = Palette.Line });
 
-        // One centred column, like a page: content runs into the old title bar's height.
         var page = new StackPanel { MaxWidth = 700, Margin = new Thickness(48, 56, 48, 48) };
         page.Children.Add(top);
-        // The notes have no lines to light: the rows (and 回到正在播放) go with the transcript.
         if (tab != "transcript") { rows.Clear(); lit = -1; hovered = null; barTick.Stop(); }
         var body = tab == "transcript" ? Transcript(s) : Notes(s, live);
         body.Margin = new Thickness(0, 28, 0, 0);
@@ -535,8 +494,6 @@ sealed class MainWindow : Window
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = page };
         pageScroll = scroll; pageScrollKey = thisPage;
 
-        // Once the title block scrolls away, a slim bar on top keeps the title (a click goes back
-        // up), the tabs and the tools in view: the Mac's pinned bar.
         var pinnedTitle = Ui.Text(SessionStore.DisplayTitle(s), 14, Palette.Ink, FontWeights.Bold, wrap: false);
         pinnedTitle.TextTrimming = TextTrimming.CharacterEllipsis;
         pinnedTitle.VerticalAlignment = VerticalAlignment.Center;
@@ -555,8 +512,6 @@ sealed class MainWindow : Window
         {
             Background = Palette.Surface, BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 0, 0, 1),
             VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed, Child = pinnedRow,
-            // Under the 44 px caption strip (the pill and window buttons), which it paints white so
-            // the lines don't scroll behind the pill.
             Padding = new Thickness(0, 44, 0, 0), Margin = new Thickness(0, 0, SystemParameters.VerticalScrollBarWidth, 0),
         };
         scroll.ScrollChanged += (_, _) =>
@@ -567,12 +522,9 @@ sealed class MainWindow : Window
         if (pendingJump is { } jump) { pendingJump = null; jump(scroll); }
         else if (keep is { } y)
         {
-            // The new page has no extent until laid out, so the offset goes back on once it is.
             void Keep(object? _, RoutedEventArgs __) { scroll.Loaded -= Keep; scroll.ScrollToVerticalOffset(y); }
             scroll.Loaded += Keep;
         }
-        // Scrolling by hand while it plays stops the transcript following the recording. Only input
-        // counts (wheel and touchpad, the scroll bar, keys, touch): the page's own scrolling doesn't.
         scroll.PreviewMouseWheel += (_, _) => UserScrolled();
         scroll.AddHandler(System.Windows.Controls.Primitives.ScrollBar.ScrollEvent, new System.Windows.Controls.Primitives.ScrollEventHandler((_, _) => UserScrolled()), true);
         scroll.PreviewKeyDown += (_, e) =>
@@ -581,7 +533,6 @@ sealed class MainWindow : Window
                 or System.Windows.Input.Key.Down or System.Windows.Input.Key.Home or System.Windows.Input.Key.End) UserScrolled();
         };
         scroll.ManipulationStarted += (_, _) => UserScrolled();
-        // The last fix decision with 撤销, along the bottom of the page.
         toastHost.Margin = new Thickness(0, 0, 0, 18);
         toastHost.VerticalAlignment = VerticalAlignment.Bottom; toastHost.HorizontalAlignment = HorizontalAlignment.Center;
         if (toastHost.Parent is Grid old) old.Children.Remove(toastHost);
@@ -607,7 +558,6 @@ sealed class MainWindow : Window
         toastHost.Content = FixViews.Toast(app.Fixes);
     }
 
-    /// 生成纪要 or 复制纪要, 导出… and ···, beside the tabs (and again in the pinned bar).
     StackPanel Tools(Session s, bool live)
     {
         var tools = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
@@ -631,7 +581,6 @@ sealed class MainWindow : Window
             tools.Children.Add(copy);
         }
         tools.Children.Add(Spaced(Small(Ui.Button(L("导出…"), () => Export(s), Ui.Kind.Standard, height: 32)), 8));
-        // Not while the meeting is still going, nor with nothing in it.
         var share = Small(Ui.Button(L("分享…"), () => app.ShareSheet(s), Ui.Kind.Standard, height: 32));
         share.IsEnabled = !live && (s.Lines.Count > 0 || hasNotes);
         tools.Children.Add(Spaced(share, 8));
@@ -661,7 +610,6 @@ sealed class MainWindow : Window
         var article = new StackPanel();
         void Jump(double t) { tab = "transcript"; jumpTo = t; ShowDetail(); }
 
-        // The conclusions first, in one quiet grey block; to-dos with an open circle.
         var items = n.Conclusions.Select(c => (c, todo: false)).Concat(n.Todos.Select(t => (c: t, todo: true))).ToList();
         if (items.Count > 0)
         {
@@ -697,7 +645,6 @@ sealed class MainWindow : Window
             article.Children.Add(sum);
         }
 
-        // The topics as numbered rows between hairlines.
         if (n.Topics.Count > 0)
         {
             var label = Ui.Text(L("议题"), 13, Palette.Secondary);
@@ -740,7 +687,6 @@ sealed class MainWindow : Window
         return article;
     }
 
-    // 改这句…: the line being rewritten and what the editor opens with.
     string? editingLine;
     string editingStart = "";
 
@@ -752,14 +698,12 @@ sealed class MainWindow : Window
 
     void EditDone() { editingLine = null; ShowDetail(); }
 
-    /// Debug: 改这句… on line `line` of record `id`, as from its menu.
     public void DebugEdit(string id, string line)
     {
         selected = id;
         if (app.Store.Get(id)?.Lines.FirstOrDefault(l => l.Id == line) is { } l) EditLine(l, l.Shown);
     }
 
-    /// A fix count and state per record, so a decision redraws the page.
     static string FixKey(Session s) => string.Join(",", s.Lines.Where(l => l.Fixes is not null).Select(l => string.Join("", l.Fixes!.Select(f => $"{f.From}>{f.To}{(f.Ask == true ? "?" : "")}{(f.Off == true ? "x" : "")}{(f.User == true ? "u" : "")};"))));
 
     FrameworkElement Transcript(Session s)
@@ -768,21 +712,17 @@ sealed class MainWindow : Window
         PlayRow? target = null;
         rows.Clear(); lit = -1; hovered = null;
         Action<double>? play = player is not null ? PlayFrom : null;
-        // 改正听错的词: over a finished meeting, the fixes waiting for the user and how many were made.
         var live = app.Listen.Listening && app.Listen.SessionId == s.Id;
         if (!live && FixViews.Banner(s, app.Fixes, id => { jumpLine = id; ShowDetail(); }, EditLine) is { } banner)
         {
             banner.Margin = new Thickness(0, 0, 0, 14);
             body.Children.Add(banner);
         }
-        // The line nearest the topic's time (older notes may hold a time no line has), or the one asked for.
         var nearest = jumpLine is { } jl ? s.Lines.FirstOrDefault(l => l.Id == jl)
             : jumpTo is { } t0 && s.Lines.Count > 0 ? s.Lines.MinBy(l => Math.Abs(l.T - t0)) : null;
-        // The search's terms and the line found being looked at, which the page opens on (centred).
         var terms = SearchTerms(s);
         var found = CurrentMatch(s);
         PlayRow? foundRow = null;
-        // Opened at a line while the recording plays: stay there (回到正在播放 goes back).
         if ((nearest is not null || found is not null) && playing) following = false;
         foreach (var (l, who, ink, place) in NotesWindow.Speakers(s.Lines, app.Settings.SpeakerVoices))
         {
@@ -799,14 +739,11 @@ sealed class MainWindow : Window
             if (l.Id == found) foundRow = r;
             body.Children.Add(r.Card);
         }
-        // Centred when the search moves to it or the page opens, not on every redraw: a live
-        // meeting's next line mustn't pull the reader back from wherever they scrolled.
         var foundKey = found is null ? null : $"{s.Id}|{search.Text.Trim()}|{found}";
         var centre = foundKey != centredFound || !redrawing;
         centredFound = foundKey;
         if (target is null && centre && foundRow is { Card: var foundCard })
         {
-            // Measured once laid out, as below.
             pendingJump = scroll =>
             {
                 void Jump(object? _, RoutedEventArgs __) { foundCard.Loaded -= Jump; Center(foundCard); }
@@ -815,11 +752,9 @@ sealed class MainWindow : Window
         }
         if (target is { } marked)
         {
-            // A topic's time opens the transcript at what was said then, marked for a moment.
             marked.Marked = true;
             Paint(marked);
             var row = marked.Card;
-            // Measured once laid out: before that every row is at the top.
             pendingJump = scroll =>
             {
                 void Jump(object? _, RoutedEventArgs __)
@@ -842,8 +777,6 @@ sealed class MainWindow : Window
     static TextBlock? FindTime(Panel row) =>
         row.Children.OfType<Panel>().FirstOrDefault()?.Children.OfType<TextBlock>().FirstOrDefault(t => (t.Tag as string) == "time");
 
-    /// A transcript line in the record: the row on a rounded fill (the line playing, or under the
-    /// pointer when a click would play it) with the playing bars at its right edge.
     sealed class PlayRow(double t, Border card, TextBlock? time, StackPanel bars, bool playable)
     {
         public double T = t;
@@ -855,7 +788,6 @@ sealed class MainWindow : Window
 
     PlayRow Row(TranscriptLine l, Panel line, bool playable)
     {
-        // The row's own bottom gap goes inside the fill, half above and half below the text.
         line.Margin = new Thickness(0, line.Margin.Top, 0, line.Margin.Bottom / 2);
         var bars = new StackPanel { Orientation = Orientation.Horizontal, Height = 12, Width = 13, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(8, line.Margin.Top + 3, 0, 0), Visibility = Visibility.Hidden };
         for (int i = 0; i < 3; i++)
@@ -875,8 +807,6 @@ sealed class MainWindow : Window
         if (!playable) { bars.Visibility = Visibility.Collapsed; return r; }
         card.MouseEnter += (_, _) => { hovered = r; Paint(r); };
         card.MouseLeave += (_, _) => { if (hovered == r) hovered = null; Paint(r); };
-        // A click anywhere on the line plays from it: a press and release without moving (a drag
-        // is left alone), not on the time or the line's links, which act on their own.
         Point? down = null;
         card.PreviewMouseLeftButtonDown += (_, e) => down = OnLink(e.OriginalSource as DependencyObject, card) ? null : e.GetPosition(card);
         card.MouseLeftButtonUp += (_, e) =>
@@ -890,7 +820,6 @@ sealed class MainWindow : Window
         return r;
     }
 
-    /// The time, 改回 and 改这句… are links (a hand cursor) or buttons that handle their own click.
     static bool OnLink(DependencyObject? d, FrameworkElement stop)
     {
         for (; d is not null && d != stop; d = d is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d))
@@ -899,8 +828,6 @@ sealed class MainWindow : Window
         return false;
     }
 
-    /// The line playing on the pale accent with its time in the accent and, while it plays, the
-    /// bars; under the pointer a light fill and ▶ before the time; else as it was.
     void Paint(PlayRow r)
     {
         var current = lit >= 0 && lit < rows.Count && rows[lit] == r;
@@ -918,8 +845,6 @@ sealed class MainWindow : Window
         time.Inlines.Add(new System.Windows.Documents.Run(clock));
     }
 
-    /// The bars beside the playing line bounce (as the Mac's PlayingBars); held still when the
-    /// system turns animations off.
     void Bounce()
     {
         if (lit < 0 || lit >= rows.Count) return;
@@ -932,8 +857,6 @@ sealed class MainWindow : Window
 
     // MARK: 回放
 
-    // One player for the open record, kept while the page redraws (lines and notes arriving) and
-    // closed when another record opens, the record is deleted or the window closes.
     MediaPlayer? player;
     string? playerPath;
     bool playing, opened;
@@ -941,25 +864,16 @@ sealed class MainWindow : Window
     double? pendingSeek;
     readonly DispatcherTimer playTick = new() { Interval = TimeSpan.FromMilliseconds(200) };
     ScrollViewer? pageScroll;
-    /// Which meeting and tab `pageScroll` shows: the same page drawn again (a live meeting's new
-    /// line, the notes updating) stays where the reader had it instead of going back to the top.
     string? pageScrollKey;
-    /// This draw is the same page again (set by ShowDetail for Transcript).
     bool redrawing;
-    /// The search's line the page last centred: a redraw that leaves it the same doesn't pull back to it.
     string? centredFound;
-    // The transcript's lines with their times, in time order, the one at the playhead and the one
-    // under the pointer.
     readonly List<PlayRow> rows = [];
     int lit = -1;
     PlayRow? hovered;
     readonly DispatcherTimer barTick = new() { Interval = TimeSpan.FromMilliseconds(50) };
-    /// The transcript keeps the playing line in view. Scrolling it by hand stops that until a line
-    /// is picked, the bar is used or 回到正在播放 is pressed: following would yank the page away.
     bool following = true;
     Button? backButton;
     TextBlock? backText;
-    // The bar's moving parts, rebuilt with the page.
     TextBlock? nowText, lengthText, speedText;
     Border? played;
     FrameworkElement? thumb;
@@ -967,8 +881,6 @@ sealed class MainWindow : Window
     Button? playButton;
     double fallbackLength;
 
-    /// Under the title: the player for a recording; while live, that it plays afterwards; else
-    /// why there is none (and where to turn recording on).
     FrameworkElement? PlayerArea(Session s, bool live)
     {
         FrameworkElement Note(FrameworkElement e) { e.Margin = new Thickness(0, 12, 0, 0); return e; }
@@ -981,7 +893,6 @@ sealed class MainWindow : Window
         if (path is null)
         {
             ClosePlayer();
-            // Just ended: system.aac is being rewrapped into system.m4a, a moment.
             if (File.Exists(Recording.Partial(Recording.SystemAudio(s.Id)))) return null;
             if (s.HasAudio || s.SourcePath is not null) return Note(Ui.Text(L("找不到录音，没法播放"), 12, Palette.Secondary));
             if (s.Lines.Count == 0) return null;
@@ -997,7 +908,7 @@ sealed class MainWindow : Window
             player.MediaOpened += (_, _) =>
             {
                 opened = true;
-                if (!playing) player!.Pause(); // MediaPlayer starts playing by itself once opened
+                if (!playing) player!.Pause();
                 if (pendingSeek is { } t) { pendingSeek = null; player!.Position = TimeSpan.FromSeconds(t); }
                 UpdatePlayer();
             };
@@ -1011,7 +922,6 @@ sealed class MainWindow : Window
         return null;
     }
 
-    /// The player along the bottom of the record, on white under a hairline.
     FrameworkElement PlayerFooter()
     {
         var bar = PlayerBar();
@@ -1020,7 +930,6 @@ sealed class MainWindow : Window
         return new Border { Background = Palette.Surface, BorderBrush = Palette.Line, BorderThickness = new Thickness(0, 1, 0, 0), Child = bar };
     }
 
-    /// Scrolled away from what is playing: one way back, at the bottom of the transcript.
     FrameworkElement BackToPlaying()
     {
         backText = Ui.Text("", 13, Brushes.White, FontWeights.SemiBold, wrap: false);
@@ -1043,7 +952,6 @@ sealed class MainWindow : Window
         if (show) backText.Text = L("回到正在播放") + " · " + Languages.Clock(rows[lit].T);
     }
 
-    /// The transcript was scrolled by hand while it plays.
     void UserScrolled()
     {
         if (!following || !playing || player is null || tab != "transcript") return;
@@ -1052,7 +960,6 @@ sealed class MainWindow : Window
         UpdateBack();
     }
 
-    /// 回到正在播放 (and a line picked, or the bar used): follow again, from the playing line.
     void Follow()
     {
         var was = following;
@@ -1072,7 +979,6 @@ sealed class MainWindow : Window
         var speedButton = Capsule(speedText, Palette.Surface, Palette.Line, 26, new Thickness(9, 0, 9, 0), CycleSpeed, L("播放速度"));
         speedButton.ToolTip = L("播放速度");
 
-        // The slider: a grey rail, the played part in the accent, a round handle; click or drag.
         var rail = new Border { Height = 4, CornerRadius = new CornerRadius(2), Background = Palette.Line, VerticalAlignment = VerticalAlignment.Center };
         played = new Border { Height = 4, CornerRadius = new CornerRadius(2), Background = Palette.Live, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
         thumb = new System.Windows.Shapes.Ellipse { Width = 12, Height = 12, Fill = Palette.Live, Stroke = Brushes.White, StrokeThickness = 2, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
@@ -1128,7 +1034,6 @@ sealed class MainWindow : Window
         UpdatePlayer(reveal: playing);
     }
 
-    /// A line's time: play from there.
     void PlayFrom(double t)
     {
         if (player is null) return;
@@ -1145,14 +1050,12 @@ sealed class MainWindow : Window
         if (player is null) return;
         t = Math.Clamp(t, 0, Math.Max(0, Length()));
         if (opened) player.Position = TimeSpan.FromSeconds(t); else pendingSeek = t;
-        // A seek (the bar, or a line picked) follows the recording again.
         var resume = !following;
         following = true;
         UpdatePlayer();
         if (resume && lit >= 0 && lit < rows.Count) Center(rows[lit].Card);
     }
 
-    /// Played to the end: back to the start, paused.
     void Ended()
     {
         if (player is null) return;
@@ -1170,16 +1073,13 @@ sealed class MainWindow : Window
         if (speedText is not null) speedText.Text = SpeedLabel();
     }
 
-    /// The bar and the lit line follow the playhead (every 200 ms while playing).
     void UpdatePlayer() => UpdatePlayer(false);
 
-    /// `reveal`: playing just started, so the lit line is scrolled to even if it was lit already.
     void UpdatePlayer(bool reveal)
     {
         if (player is null) return;
         var now = Now();
         var length = Length();
-        // MediaEnded doesn't always come (a PC with no sound device plays on past the end).
         if (playing && opened && length > 0 && now >= length) { Ended(); return; }
         if (nowText is not null) nowText.Text = Languages.Clock(now);
         if (lengthText is not null) lengthText.Text = Languages.Clock(length);
@@ -1200,15 +1100,12 @@ sealed class MainWindow : Window
             played.Width = x;
             thumb.Margin = new Thickness(Math.Max(0, Math.Min(track.ActualWidth - thumb.Width, x - thumb.Width / 2)), 0, 0, 0);
         }
-        // The line being said: the last one starting by now (a little ahead, so it lights as it
-        // begins); once playback has begun it stays lit while paused.
         var at = playing || now > 0 ? rows.FindLastIndex(r => r.T <= now + 0.2) : -1;
         var was = lit;
         lit = at;
         if (was != at && was >= 0 && was < rows.Count) Paint(rows[was]);
         if (at >= 0)
         {
-            // Every tick: the bars come and go with play and pause.
             Paint(rows[at]);
             if (playing && following && (at != was || reveal)) Center(rows[at].Card);
         }
@@ -1216,7 +1113,6 @@ sealed class MainWindow : Window
         UpdateBack();
     }
 
-    /// Scrolls the playing line to the middle of the transcript.
     void Center(FrameworkElement row)
     {
         if (pageScroll is not { } scroll || !row.IsLoaded) return;
@@ -1241,14 +1137,11 @@ sealed class MainWindow : Window
         following = true;
     }
 
-    /// For the debug pipe: where playback is, the lit line (index and time), whether the transcript
-    /// follows it (and 回到正在播放 shows), and the line under the pointer.
     public string PlayerState() => player is null ? "none"
         : $"{(playing ? "playing" : "paused")} {Now():F1}/{Length():F1} x{speed} line {lit}{(lit >= 0 && lit < rows.Count ? $"@{rows[lit].T:F1}" : "")}"
           + $" following {(following ? "yes" : "no")} back {(backButton?.Visibility == Visibility.Visible ? "shown" : "hidden")}"
           + $" hover {(hovered is { } h ? rows.IndexOf(h) : -1)} offset {pageScroll?.VerticalOffset:F0}";
 
-    /// "follow": 回到正在播放, as clicked; "row <i>": line i clicked.
     public void DebugPlay(string arg)
     {
         if (arg == "toggle") TogglePlay();
@@ -1293,9 +1186,9 @@ sealed class MainWindow : Window
     {
         if (Dialogs.Confirm(this, L("删除这次会议？"), LF("“%@”的纪要和文字记录都会删掉，没法恢复。", SessionStore.DisplayTitle(s)), L("删除"), danger: true))
         {
-            ClosePlayer(); // it holds the recording open
+            ClosePlayer();
             app.Store.Delete(s.Id);
-            app.FolderExport.Deleted(s.Id); // its file in the folder stays
+            app.FolderExport.Deleted(s.Id);
         }
     }
 }

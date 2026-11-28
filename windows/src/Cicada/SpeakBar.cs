@@ -6,9 +6,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// The pill while I speak: the key, a level, 正在听你说 while it's held, then what I said and what
-/// the room heard, or why nothing went out. Like the notes panel it never takes focus and stays out of
-/// screen captures; it sits above the taskbar (above the subtitle bar when that is showing).
 sealed class SpeakBar : Window
 {
     readonly Controller app;
@@ -36,8 +33,6 @@ sealed class SpeakBar : Window
         Left = area.Left + (area.Width - ActualWidth) / 2;
         var above = app.Settings.View == "subtitles" && app.NotesVisible ? 150 : 16;
         Top = area.Bottom - ActualHeight - above + Ui.ShadowRoom;
-        // Centred, it would sit over the notes panel's live card on a small screen: centre it in the
-        // wider free side instead, if it fits there.
         if (app.NotesBounds is { } n && new Rect(Left, Top, ActualWidth, ActualHeight).IntersectsWith(n))
         {
             double leftRoom = n.Left - area.Left, rightRoom = area.Right - n.Right;
@@ -83,7 +78,6 @@ sealed class SpeakBar : Window
         Place();
     }
 
-    /// 右 Ctrl as a pill: the accent while held, a dim one after.
     static FrameworkElement Key(bool held) => new Border
     {
         CornerRadius = new CornerRadius(14), Padding = new Thickness(11, 4, 11, 5), VerticalAlignment = VerticalAlignment.Center,
@@ -91,8 +85,6 @@ sealed class SpeakBar : Window
         Child = Ui.Text(PushToTalk.Label, 13, Brushes.White, FontWeights.Bold, wrap: false),
     };
 
-    /// 同传, outlined like the notes' MeTag: what goes out is the translation, as the Mac's subtitle
-    /// bar says with 同传 · 你在说….
     static FrameworkElement Interpreted() => new Border
     {
         BorderBrush = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0x8A, 0x5C)), BorderThickness = new Thickness(1),
@@ -100,7 +92,6 @@ sealed class SpeakBar : Window
         Child = Ui.Text(L("同传"), 11, new SolidColorBrush(Color.FromRgb(0xFF, 0x8A, 0x5C)), wrap: false),
     };
 
-    /// A still level mark: an animated one would redraw this software-rendered window every frame.
     static FrameworkElement Wave()
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -109,8 +100,6 @@ sealed class SpeakBar : Window
         return row;
     }
 
-    /// The key, then what was said taking whatever width is left, then the status at the right: in a
-    /// plain row a long sentence pushed the status out past the bar's edge.
     static FrameworkElement Fill(FrameworkElement key, FrameworkElement said, FrameworkElement status)
     {
         var dock = new DockPanel { LastChildFill = true };

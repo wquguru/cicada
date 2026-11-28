@@ -3,11 +3,6 @@ using System.Security.Cryptography;
 
 namespace Cicada;
 
-/// Ed25519 signatures (RFC 8032 §5.1), for the share service's device key. .NET 10 has no Ed25519
-/// of its own (only inside composite ML-DSA) and Windows CNG can't sign with it, so this is the
-/// RFC's reference algorithm over BigInteger with the built-in SHA-512, checked against the RFC's
-/// test vectors. Not constant-time: the key only names this install to the share service (rate
-/// limits, owning its shares), and anyone can make a new one, so a local timing attack gains nothing.
 public static class Ed25519
 {
     static readonly BigInteger P = BigInteger.Pow(2, 255) - 19;
@@ -111,7 +106,6 @@ public static class Ed25519
         return Number(sha.GetHashAndReset()) % L;
     }
 
-    /// A new private key (the 32-byte seed RFC 8032 calls the secret key).
     public static byte[] NewKey() => RandomNumberGenerator.GetBytes(32);
 
     public static byte[] PublicKey(ReadOnlySpan<byte> seed) => Compress(Multiply(Expand(seed).a, G));

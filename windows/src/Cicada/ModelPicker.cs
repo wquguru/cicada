@@ -8,11 +8,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// A custom service's model once its `/models` listed some (AISettings.swift › ModelPicker): a
-/// button that opens the list with a search box on top. A name the service doesn't list can be
-/// typed (an alias, a model it hides): 用 X（列表里没有）. Return takes the only match, else what
-/// was typed. `sameLabel` is a first choice that clears the value (和翻译模型一样). Without a list
-/// the settings show a plain field instead (SettingsWindow.ModelField).
 static class ModelPicker
 {
     public static FrameworkElement Make(string value, string? sameLabel, IReadOnlyList<string> catalog, string host,
@@ -25,7 +20,6 @@ static class ModelPicker
         var chevron = Ui.Icon(Icons.Chevron, 14, Palette.Secondary, stroke: 1.8);
         chevron.Margin = new Thickness(8, 0, 0, 0);
         DockPanel.SetDock(chevron, Dock.Right);
-        // Ui.Choice's look; its own menu would open beside the popup.
         var button = new Button
         {
             Content = new DockPanel { LastChildFill = true, Children = { chevron, label } }, Width = width, Height = 34,

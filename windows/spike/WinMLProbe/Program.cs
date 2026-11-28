@@ -1,6 +1,3 @@
-// usage: WinMLProbe <model.onnx> <ref.json> <feats dir>
-// Loads the model with Windows.AI.MachineLearning, embeds each fixture's features, and prints the
-// cosine to the Mac's onnxruntime embedding and the time per clip.
 using System.Diagnostics;
 using System.Text.Json;
 using Windows.AI.MachineLearning;

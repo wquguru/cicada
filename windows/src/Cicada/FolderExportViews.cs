@@ -8,8 +8,6 @@ using static Cicada.Strings;
 
 namespace Cicada.App;
 
-/// 存到文件夹 (FolderExport.cs): the folder as Explorer names it, the choice of folder, and the
-/// record's line under its title. As the Mac's FolderExportViews.swift.
 static class FolderExportUi
 {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -22,18 +20,14 @@ static class FolderExportUi
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SHGetFileInfo(string path, uint attributes, ref FileInfo info, uint size, uint flags);
     const uint DisplayNameFlag = 0x200;
 
-    /// Explorer's name for a folder ("文档" for Documents, "Windows (C:)" for a drive); null when it
-    /// isn't there.
     static string? ShellName(string path)
     {
         var info = new FileInfo();
         return SHGetFileInfo(path, 0, ref info, (uint)Marshal.SizeOf<FileInfo>(), DisplayNameFlag) != IntPtr.Zero && info.DisplayName is { Length: > 0 } n ? n : null;
     }
 
-    /// "文档 › Cicada".
     public static string ShortPath(string folder) => FolderExportFormat.ShortPath(folder, ShellName);
 
-    /// Not SettingsWindow.OpenFolder: that makes the folder, and on a drive that's gone it would throw.
     public static void Open(string folder)
     {
         if (!Directory.Exists(folder)) return;
@@ -46,14 +40,12 @@ static class FolderExportUi
         else if (Path.GetDirectoryName(file) is { } dir) Open(dir);
     }
 
-    /// Windows 安全中心 › 勒索软件防护, where controlled folder access lets an app through.
     public static void OpenSecurity()
     {
         try { Process.Start(new ProcessStartInfo("windowsdefender://ransomwareprotection") { UseShellExecute = true }); }
         catch (Exception e) { Log.Debug($"folder export: security page not opened {e.GetType().Name}"); }
     }
 
-    /// 存到哪里: an Obsidian vault first (a new Cicada folder in it), then 文档 › Cicada, or any folder.
     public static string? Choose(Window? owner, string? current)
     {
         var options = new List<(string Title, string? Detail, string? Path)>();
@@ -70,8 +62,6 @@ static class FolderExportUi
         return dialog.ShowDialog(owner) == true ? dialog.FolderName : null;
     }
 
-    /// The record's line under its title: where its file is, or why it isn't there yet. Null when
-    /// there is nothing to say.
     public static FrameworkElement? Line(Controller app, Session s)
     {
         var ex = app.FolderExport;
@@ -90,13 +80,10 @@ static class FolderExportUi
         return line;
     }
 
-    /// What the line shows, for MainWindow's PageKey.
     public static string Key(Controller app, string id) =>
         $"{app.FolderExport.On}|{app.FolderExport.FileFor(id)}|{app.FolderExport.IsPending(id)}|{app.FolderExport.Trouble?.Kind}";
 }
 
-/// 设置 › 隐私与启动 › 会后存一份 (the Mac has it in 通用, under the records' location, which on
-/// Windows is this page).
 sealed partial class SettingsWindow
 {
     IEnumerable<FrameworkElement> ExportCards()
@@ -112,7 +99,6 @@ sealed partial class SettingsWindow
             var shortPath = FolderExportUi.ShortPath(folder);
             if (ex.Checking) cards.Add(Card(null, LF("正在确认能写入 %@…", shortPath), null, new Border()));
             else if (ex.Trouble is { } problem) cards.Add(ProblemRow(problem, folder, shortPath));
-            // Ui.Row spaces only the children it is given.
             var place = new List<UIElement>();
             if (FolderExportFormat.Vault(folder) is not null) place.Add(Ui.Badge(L("Obsidian 库")));
             place.Add(Ui.Button(L("打开"), () => FolderExportUi.Open(folder), height: 32));
@@ -127,13 +113,10 @@ sealed partial class SettingsWindow
             var local = at.ToLocalTime();
             var last = Ui.Text(LF("上次存于 %@ · %@", local.ToString(L("M月d日 HH:mm"), Strings.Culture), name), 12, Palette.Tertiary, wrap: false);
             last.TextTrimming = TextTrimming.CharacterEllipsis;
-            // Section sets each part's margin: the indent goes on a wrapper.
             yield return new Border { Padding = new Thickness(6, 0, 0, 0), Child = last };
         }
     }
 
-    /// Access denied looks the same whoever said no; inside the folders controlled folder access
-    /// protects, Windows 安全中心 is the likely fix.
     FrameworkElement ProblemRow(FolderExporter.Problem problem, string folder, string shortPath)
     {
         var waiting = app.FolderExport.State.Pending.Count;
@@ -179,6 +162,5 @@ sealed partial class SettingsWindow
         Render();
     }
 
-    /// The exporter's state changed: only 隐私与启动 shows it.
     public void ExportChanged() { if (current == "privacy") Render(); }
 }

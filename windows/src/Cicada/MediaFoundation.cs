@@ -2,14 +2,8 @@ using System.Runtime.InteropServices;
 
 namespace Cicada.App;
 
-/// 保存会议录音 with Windows' own AAC encoder (Media Foundation's sink writer): no package, nothing
-/// to install. The COM calls go through the vtables by slot (the interfaces are long and only a
-/// few methods are used), so each `Slot` number below is that method's place in its interface.
 unsafe sealed class MediaFoundationAudio : IAudioFiles
 {
-    // The Mac's recordings are AAC mono at ~32 kbps. Windows 11 encodes 16 kHz at 32 kbps; the
-    // encoder's documentation promises only 44.1/48 kHz from 96 kbps, so a PC that refuses gets
-    // those, the 16 kHz upsampled by three.
     static readonly (int Rate, uint Bytes)[] Formats = [(16000, 4000), (48000, 4000), (16000, 12000), (48000, 12000)];
     static readonly Lazy<bool> Started = new(() =>
     {
@@ -17,7 +11,6 @@ unsafe sealed class MediaFoundationAudio : IAudioFiles
         if (hr != 0) Log.Debug($"audio: Media Foundation unavailable 0x{hr:X8}");
         return hr == 0;
     });
-    /// The format the encoder took last time, so later meetings don't try again.
     static (int Rate, uint Bytes)? chosen;
 
     public IAudioWriter? Open(string path)
@@ -41,7 +34,6 @@ unsafe sealed class MediaFoundationAudio : IAudioFiles
         return null;
     }
 
-    /// The ADTS frames into an MP4 track as they are: no re-encoding, so an hour takes a moment.
     public bool Rewrap(string from, string to, double? until)
     {
         if (!Started.Value) return false;
@@ -70,7 +62,6 @@ unsafe sealed class MediaFoundationAudio : IAudioFiles
             AacType(type, config.Rate, (uint)(bytes / seconds), (uint)config.Channels);
             SetUInt32(type, PayloadType, 0);
             SetUInt32(type, ProfileLevel, 0x29);
-            // HEAACWAVEINFO after its WAVEFORMATEX: raw frames (payload 0), then the AudioSpecificConfig.
             var info = new byte[12 + config.SpecificConfig.Length];
             info[2] = 0x29;
             config.SpecificConfig.CopyTo(info, 12);
@@ -123,7 +114,6 @@ unsafe sealed class MediaFoundationAudio : IAudioFiles
         SetUInt32(t, NumChannels, channels); SetUInt32(t, AvgBytesPerSecond, bytes);
     }
 
-    /// One meeting's ADTS file, 16 kHz mono in.
     sealed class AacWriter : IAudioWriter
     {
         IntPtr writer;
@@ -178,7 +168,6 @@ unsafe sealed class MediaFoundationAudio : IAudioFiles
                 var o = (short*)data;
                 if (factor == 1) pcm.CopyTo(new Span<short>(o, count));
                 else
-                    // Straight lines between the 16 kHz samples: the encoder's low-pass does the rest.
                     for (int i = 0, j = 0; i < pcm.Length; i++)
                     {
                         int a = previous, b = pcm[i];
@@ -221,7 +210,6 @@ unsafe sealed class MediaFoundationAudio : IAudioFiles
     static void* Slot(IntPtr p, int i) => (*(void***)p)[i];
     static uint Release(IntPtr p) => ((delegate* unmanaged[Stdcall]<IntPtr, uint>)Slot(p, 2))(p);
 
-    // IMFAttributes (IMFMediaType and IMFSample start with it)
     static int SetBlob(IntPtr a, Guid key, byte[] blob)
     {
         fixed (byte* p = blob) return ((delegate* unmanaged[Stdcall]<IntPtr, Guid*, byte*, uint, int>)Slot(a, 26))(a, &key, p, (uint)blob.Length);
@@ -229,17 +217,14 @@ unsafe sealed class MediaFoundationAudio : IAudioFiles
     static int SetUInt32(IntPtr a, Guid key, uint v) => ((delegate* unmanaged[Stdcall]<IntPtr, Guid*, uint, int>)Slot(a, 21))(a, &key, v);
     static int SetGuid(IntPtr a, Guid key, Guid v) => ((delegate* unmanaged[Stdcall]<IntPtr, Guid*, Guid*, int>)Slot(a, 24))(a, &key, &v);
 
-    // IMFSample
     static int SetSampleTime(IntPtr s, long t) => ((delegate* unmanaged[Stdcall]<IntPtr, long, int>)Slot(s, 36))(s, t);
     static int SetSampleDuration(IntPtr s, long d) => ((delegate* unmanaged[Stdcall]<IntPtr, long, int>)Slot(s, 38))(s, d);
     static int AddBuffer(IntPtr s, IntPtr b) => ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, int>)Slot(s, 42))(s, b);
 
-    // IMFMediaBuffer
     static int Lock(IntPtr b, byte** data, uint* max, uint* current) => ((delegate* unmanaged[Stdcall]<IntPtr, byte**, uint*, uint*, int>)Slot(b, 3))(b, data, max, current);
     static int Unlock(IntPtr b) => ((delegate* unmanaged[Stdcall]<IntPtr, int>)Slot(b, 4))(b);
     static int SetCurrentLength(IntPtr b, uint n) => ((delegate* unmanaged[Stdcall]<IntPtr, uint, int>)Slot(b, 6))(b, n);
 
-    // IMFSinkWriter
     static int AddStream(IntPtr w, IntPtr type, uint* index) => ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, uint*, int>)Slot(w, 3))(w, type, index);
     static int SetInputMediaType(IntPtr w, uint index, IntPtr type, IntPtr parameters) => ((delegate* unmanaged[Stdcall]<IntPtr, uint, IntPtr, IntPtr, int>)Slot(w, 4))(w, index, type, parameters);
     static int BeginWriting(IntPtr w) => ((delegate* unmanaged[Stdcall]<IntPtr, int>)Slot(w, 5))(w);

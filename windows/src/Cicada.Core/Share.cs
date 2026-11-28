@@ -9,14 +9,8 @@ using System.Text.Json.Serialization;
 
 namespace Cicada;
 
-// 分享…: a meeting as a link on cicada.indaloop.app, as on the Mac (ShareProjection.swift,
-// ShareClient.swift). Only the share document leaves the computer, the same bytes the Mac makes
-// (Tests/fixtures/share); server/src/doc.js reads exactly these fields.
-
 public enum ShareScope { Notes, Full }
 
-/// The share document (v1). Never the record's file paths, Ling's guesses at names with the lines
-/// they came from, or the record's own bookkeeping. Speakers are 说话人 N unless names are asked for.
 public sealed record ShareDoc(string Title, string StartedAt, int Duration, List<string> Langs, ShareDoc.NotesPart? Notes, List<ShareDoc.Line> Lines, int Hidden)
 {
     public sealed record Line(double T, string Who, string Src, string? Dst);
@@ -28,11 +22,9 @@ public sealed record ShareDoc(string Title, string StartedAt, int Duration, List
 
 public static class ShareProjection
 {
-    /// `removed`: indices into the record's lines the user took out; `dropNotes` leaves the notes out.
     public static ShareDoc Doc(Session s, ShareScope scope, bool names, ISet<int>? removed = null, bool dropNotes = false)
     {
         removed ??= new HashSet<int>();
-        // Not gated on 说话人识别, as on the Mac: the numbers come from the record's voices.
         var numbers = SpeakerLabels.Numbers(s.Lines);
         var nameMap = names ? SpeakerLabels.Names(s) : [];
         string Who(TranscriptLine l)
@@ -66,11 +58,9 @@ public static class ShareProjection
             Languages(s.Lines), notes, lines, hidden);
     }
 
-    /// The record lines a full share sends, in order: the server's line numbers index this list.
     public static List<int> Kept(Session s, ShareScope scope, ISet<int> removed) =>
         scope == ShareScope.Full ? [.. Enumerable.Range(0, s.Lines.Count).Where(i => !removed.Contains(i) && s.Lines[i].Src.Length > 0)] : [];
 
-    /// The meeting's usual direction ("en" → "zh"), by the most lines; ties go to the earliest.
     public static List<string> Languages(IReadOnlyList<TranscriptLine> lines)
     {
         var count = new Dictionary<string, int>();
@@ -90,21 +80,17 @@ public static class ShareProjection
 
     static string Base(string code) => (code.Split('-', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? code).ToLowerInvariant();
 
-    /// One decimal, rounded half away from zero as Swift's `rounded()`: the same bytes everywhere.
     static double Round(double t) => Math.Round(t * 10, MidpointRounding.AwayFromZero) / 10;
 
-    /// Ling wrote "说话人 6" before anyone named them: the name since given (SpeakerLabels.named).
     public static string Named(string text, IReadOnlyDictionary<int, string> names)
     {
         if (names.Count == 0 || !(text.Contains("说话人") || text.Contains("Speaker"))) return text;
-        foreach (var (n, name) in names.OrderByDescending(kv => kv.Key))   // 说话人 12 before 说话人 1
+        foreach (var (n, name) in names.OrderByDescending(kv => kv.Key))
             foreach (var form in new[] { $"说话人 {n}", $"说话人{n}", $"Speaker {n}" })
                 text = text.Replace(form, name, StringComparison.Ordinal);
         return text;
     }
 
-    /// Compact, sorted keys, slashes unescaped, whole numbers without ".0": Swift's JSONEncoder with
-    /// [.sortedKeys, .withoutEscapingSlashes], written by hand so no encoder default can drift.
     public static string Encode(ShareDoc d)
     {
         var b = new StringBuilder();
@@ -159,10 +145,8 @@ public static class ShareProjection
         b.Append(']');
     }
 
-    /// Shortest round-trip text; a whole number has no fraction (605, not 605.0).
     static void Num(StringBuilder b, double v) => b.Append(v.ToString("R", CultureInfo.InvariantCulture));
 
-    /// As Swift escapes: quote, backslash and control characters only; everything else as is.
     static void Str(StringBuilder b, string s)
     {
         b.Append('"');
@@ -183,9 +167,6 @@ public static class ShareProjection
     }
 }
 
-/// A meeting shared as a link: what this computer keeps about it. The manage token (needed to turn
-/// the link off) and the password live only in Shares/<record id>.json, sealed like the AI keys,
-/// never in the record, exports or logs.
 public sealed class ShareRecord
 {
     [JsonPropertyName("createdAt")] public DateTimeOffset CreatedAt { get; set; }
@@ -196,9 +177,6 @@ public sealed class ShareRecord
     [JsonPropertyName("token")] public string Token { get; set; } = "";
     [JsonPropertyName("url")] public string Url { get; set; } = "";
 
-    /// What 生成并复制 and 复制 put on the clipboard, in the UI's language (the Mac's
-    /// ShareSheet.clipboardText): the title, the link on a line of its own (chat apps then make it
-    /// a link), the password and how long it stays open.
     public string Message(string title, DateTimeOffset now)
     {
         var left = DaysLeft(now);
@@ -207,19 +185,15 @@ public sealed class ShareRecord
         return string.Join("\n", Strings.LF("「%@」会议记录", title), Url, last);
     }
 
-    /// Whole days until the link closes, at least 1. The server sets the expiry from its own clock,
-    /// so a computer a second behind it would round a fresh 7-day link up to 8: an hour's slack.
     public int DaysLeft(DateTimeOffset now) => Math.Max(1, (int)Math.Ceiling((ExpiresAt - now - TimeSpan.FromHours(1)).TotalDays));
 }
 
-/// Where the review found a problem: the notes, or lines `from`…`to` of what was sent.
 public sealed record ShareHit(
     [property: JsonPropertyName("part")] string Part,
     [property: JsonPropertyName("from")] int? From,
     [property: JsonPropertyName("to")] int? To,
     [property: JsonPropertyName("questions")] List<string> Questions)
 {
-    /// The record's line indices behind the hits, given which record lines were sent (`kept`).
     public static HashSet<int> RecordLines(IEnumerable<ShareHit> hits, IReadOnlyList<int> kept)
     {
         var outp = new HashSet<int>();
@@ -236,12 +210,9 @@ public static class SharePassword
 {
     public const int Iterations = 210_000;
 
-    /// PBKDF2-SHA256, 32 bytes: what the browser derives from the password (site/share.js). The
-    /// server keeps only its hash, so the password itself never leaves either side.
     public static byte[] Verifier(string password, byte[] salt, int iterations = Iterations) =>
         Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password), salt, iterations, HashAlgorithmName.SHA256, 32);
 
-    /// "ruby-41-lake": easy to read out and type; the server limits how many can be tried.
     public static string Make()
     {
         var w = Words.Split(' ');
@@ -251,7 +222,6 @@ public static class SharePassword
     const string Words = "amber apple arrow aspen basil beach birch bloom brook cedar cherry cloud coral comet dawn delta dune ember fern field flint frost grove harbor hazel honey iris island jade lake lark lemon lily linen maple meadow mint moss olive orbit pearl pine plum pond quartz rain reed river ruby sage sand shell silk sky slate snow spruce stone storm sun tide tulip velvet willow wind";
 }
 
-/// A file only this user can read: DPAPI-sealed on Windows ("dpapi:" + base64, as AIKey), 0600 elsewhere.
 public static class SecretFile
 {
     public static bool Write(IKeyProtector protector, string path, string text)
@@ -291,7 +261,6 @@ public static class SecretFile
     }
 }
 
-/// Shares/<record id>.json, sealed.
 public sealed class ShareStore(IKeyProtector protector, string? folder = null)
 {
     public string Folder => folder ?? Path.Combine(Paths.Root, "Shares");
@@ -338,10 +307,6 @@ public abstract record ShareOutcome
     public sealed record Failed(string Code, int? RetryAfter) : ShareOutcome;
 }
 
-/// Talks to the share service (server/). No accounts: this install is an Ed25519 key made on first
-/// use (share-device.json, sealed), registered once with a small proof of work, and every write is
-/// signed (method, path, time, nonce, body hash), as server/src/auth.js checks. Not an AI call, so
-/// not LingClient: the review runs on the server.
 public sealed class ShareClient
 {
     readonly IKeyProtector protector;
@@ -360,7 +325,6 @@ public sealed class ShareClient
 
     readonly string? root;
 
-    /// A dev build can point at a local Worker: CICADA_SHARE_SERVER=http://127.0.0.1:8787.
     public Uri Base => Environment.GetEnvironmentVariable("CICADA_SHARE_SERVER") is { Length: > 0 } s && Uri.TryCreate(s, UriKind.Absolute, out var u)
         ? u : new Uri("https://cicada.indaloop.app");
 
@@ -388,8 +352,6 @@ public sealed class ShareClient
 
     void SaveDevice(Device d) => SecretFile.Write(protector, DeviceFile, JsonSerializer.Serialize(d, Json.Compact));
 
-    /// The key and device id, registering this install with the server first if needed. One at a
-    /// time: the server allows only a few registrations a day from one address.
     async Task<(byte[] key, string id)> Registered(bool force = false)
     {
         await registering.WaitAsync();
@@ -418,7 +380,6 @@ public sealed class ShareClient
         finally { registering.Release(); }
     }
 
-    /// 20 leading zero bits of sha256(public key ‖ 8-byte big-endian nonce): about a million hashes.
     public static byte[] ProofOfWork(byte[] pub)
     {
         var work = new byte[pub.Length + 8];
@@ -449,7 +410,6 @@ public sealed class ShareClient
             var time = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
             var nonce = B64Url(RandomNumberGenerator.GetBytes(16));
             var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(body ?? "")));
-            // The path as it goes on the wire, query included, so the server's URL reads the same.
             var message = $"{method}\n{req.RequestUri!.PathAndQuery}\n{time}\n{nonce}\n{hash}";
             req.Headers.TryAddWithoutValidation("X-Cicada-Device", id);
             req.Headers.TryAddWithoutValidation("X-Cicada-Time", time);
@@ -468,7 +428,6 @@ public sealed class ShareClient
         }
     }
 
-    /// A signed call; registers again once if the server no longer knows this install.
     async Task<(string body, int status)> Signed(string method, string path, string? body = null, Dictionary<string, string>? headers = null)
     {
         var signer = await Registered();
@@ -481,7 +440,6 @@ public sealed class ShareClient
         return (data, status);
     }
 
-    /// Never throws: the dialog awaits it from an event handler.
     public async Task<ShareOutcome> Share(Session s, ShareOptions o)
     {
         try { return await Attempt(s, o); }
@@ -507,8 +465,6 @@ public sealed class ShareClient
             var v = await Task.Run(() => SharePassword.Verifier(pw, salt));
             body["password"] = new JsonObject { ["salt"] = B64Url(salt), ["iter"] = SharePassword.Iterations, ["hash"] = B64Url(SHA256.HashData(v)) };
         }
-        // The same meeting, content and settings sent again (the answer was lost) gets the same link
-        // back; any other setting makes a new share.
         var settings = $"{scope}|{o.Days}|{(o.Names ? "true" : "false")}|{o.Password ?? ""}|{(o.SummaryInPreview ? "true" : "false")}";
         var idem = s.Id + "-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(doc + settings))[..8]);
         try
@@ -547,14 +503,12 @@ public sealed class ShareClient
         }
     }
 
-    /// Turns the link off on the server and forgets it here. `sessionId` null: it is being replaced.
     public async Task<bool> Revoke(ShareRecord r, string? sessionId)
     {
         bool ok;
         try
         {
             var (data, status) = await Signed("DELETE", "/api/v1/shares/" + r.Id, null, new() { ["Authorization"] = "Bearer " + r.Token });
-            // 404: already gone (or never ours); either way nothing to keep.
             ok = status is 204 or 404;
             if (!ok) Log.Debug($"share: revoke failed {status} {Field(data, "code") ?? "?"}");
         }

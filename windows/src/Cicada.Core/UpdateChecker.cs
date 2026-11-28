@@ -5,16 +5,8 @@ using System.Text.Json.Serialization;
 
 namespace Cicada;
 
-/// Checks GitHub Releases for a Windows build newer than the running one, as the Mac's
-/// UpdateChecker: at launch, then whenever the last answer is 4 hours old (a 15-minute tick, so a
-/// laptop that sleeps a lot still checks), and when the tray panel opens once it is an hour old.
-/// Failures (offline, rate-limited, the repository not public: 404) are silent. This only finds
-/// the update; the app offers the release's installer (Cicada-<v>-Windows-<arch>.exe) for download,
-/// which upgrades the installed copy when opened.
 public sealed class UpdateChecker
 {
-    /// `Setup` is this PC's installer when the release has one; `Size` is the download's;
-    /// `Checksums` the release's checksums.txt, which the in-app download is checked against.
     public sealed record Update(string Version, string Page, string? Zip, long Size, string? Setup = null, string? Checksums = null)
     {
         public string? Download => Setup ?? Zip;
@@ -23,25 +15,16 @@ public sealed class UpdateChecker
     public static readonly TimeSpan Every = TimeSpan.FromHours(4);
     public static readonly TimeSpan Stale = TimeSpan.FromHours(1);
 
-    /// `CICADA_UPDATE_FEED` (or the `updatefeed` debug command) points at another release JSON,
-    /// a list or a single release; a file path or file:// URL works, for testing.
-    /// The list, not `releases/latest`: a release that ships only the Mac, Android or Linux has no
-    /// Windows zip, so the newest Windows release may be further down.
     public string Feed { get; set; } = Environment.GetEnvironmentVariable("CICADA_UPDATE_FEED") is { Length: > 0 } f
         ? f : "https://api.github.com/repos/wquguru/cicada/releases?per_page=20";
 
-    /// The running version, three parts ("1.4.0"), from VERSION via Directory.Build.props.
     public string Current { get; set; } = "0";
 
-    /// The newer release, or null (none, or not checked yet).
     public Update? Available { get; private set; }
-    /// When the feed last answered; kept in settings across launches.
     public DateTimeOffset? LastChecked { get; private set; }
     public event Action? Changed;
 
-    /// How long the feed, checksums.txt or the installer's headers may take to answer.
     public static readonly TimeSpan Within = TimeSpan.FromSeconds(30);
-    /// The download fails when no bytes arrive for this long (not when it is merely slow).
     public TimeSpan Stall { get; set; } = TimeSpan.FromSeconds(30);
 
     readonly HttpClient http;
@@ -54,10 +37,7 @@ public sealed class UpdateChecker
         LastChecked = lastChecked;
         this.remember = remember;
         http = new HttpClient(handler ?? Handler());
-        // No overall timeout: an 85 MB installer on a slow line takes minutes. Each request has its
-        // own limit instead (Within), and the download a stall limit (Stall).
         http.Timeout = System.Threading.Timeout.InfiniteTimeSpan;
-        // GitHub's API refuses requests without a User-Agent.
         http.DefaultRequestHeaders.UserAgent.ParseAdd("Cicada-Windows");
         http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
@@ -71,10 +51,8 @@ public sealed class UpdateChecker
     public Task CheckIfDue(TimeSpan age) => Due(LastChecked, DateTimeOffset.UtcNow, age) ? Check() : Task.CompletedTask;
 
     public static bool Due(DateTimeOffset? last, DateTimeOffset now, TimeSpan age) =>
-        // A clock set back leaves `last` in the future: check rather than wait for it.
         last is not { } l || now - l >= age || l > now;
 
-    /// False when the feed couldn't be reached or answered with something unexpected.
     public async Task<bool> Check()
     {
         if (Interlocked.Exchange(ref checking, 1) == 1) return true;
@@ -104,10 +82,6 @@ public sealed class UpdateChecker
         return await r.Content.ReadAsStringAsync(cts.Token);
     }
 
-    /// The default handler: sockets with a 4 MB receive buffer instead of Windows' 64 KB default.
-    /// On the test VM's throttled direct path to GitHub it was never slower in paired runs and
-    /// sometimes several times faster (once 14 MB/s against 0.07); the path itself swung so much
-    /// that the gain isn't pinned down. A system proxy still applies: the callback then connects to it.
     static SocketsHttpHandler Handler() => new()
     {
         ConnectCallback = async (context, cancel) =>
@@ -118,7 +92,6 @@ public sealed class UpdateChecker
         },
     };
 
-    /// The zip this PC should run: ARM64 on an ARM PC (even when this copy is the emulated x64 one).
     public static string Arch => RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "ARM64" : "x64";
 
     public static List<Release>? Decode(string text)
@@ -136,9 +109,6 @@ public sealed class UpdateChecker
         catch (JsonException) { return null; }
     }
 
-    /// The newest published release with a Windows build (installer or zip). A release without one
-    /// only carries other platforms (Windows had no change), so it is skipped. On ARM, an x64-only
-    /// release still counts.
     public static Update? NewestWindows(IEnumerable<Release> releases, string arch)
     {
         Update? best = null;
@@ -156,18 +126,12 @@ public sealed class UpdateChecker
         static bool IsZip(string name, string arch) => name.StartsWith("Cicada-") && name.EndsWith($"-Windows-{arch}.zip");
     }
 
-    /// The installer's release asset, named like every platform's file: Cicada-1.2.0-Windows-x64.exe.
-    /// 1.1.0 named it Cicada-Setup.exe / Cicada-Setup-arm64.exe and only finds those, so releases
-    /// still carry copies under the old names (release.yml) and this accepts both.
     public static bool IsSetup(string name, string arch) =>
         (name.StartsWith("Cicada-") && name.EndsWith($"-Windows-{arch}.exe")) || name == LegacySetupName(arch);
     public static string LegacySetupName(string arch) => arch == "ARM64" ? "Cicada-Setup-arm64.exe" : "Cicada-Setup.exe";
 
-    /// One notification per version (the version last told is kept in settings), and none while
-    /// listening: the next stop tells. Full screen and screen sharing are Windows' Do Not Disturb.
     public static bool ShouldNotify(string version, string? notified, bool busy) => !busy && version != notified;
 
-    /// The SHA-256 of `name` in a sha256sum listing ("<hex>  <name>", or "<hex> *<name>").
     public static string? ChecksumFor(string text, string name)
     {
         foreach (var line in text.Split('\n'))
@@ -178,10 +142,6 @@ public sealed class UpdateChecker
         return null;
     }
 
-    /// Downloads the release's installer into a fresh temp folder and checks it against
-    /// checksums.txt; returns its path. Fetched by the app, not the browser, the file carries no
-    /// mark of the web, so SmartScreen doesn't stop the unsigned installer. Throws Failure (a
-    /// string key) when there's nothing to install or the file doesn't match.
     public async Task<string> Download(Update u, Action<double>? progress = null)
     {
         if (u.Setup is null || u.Checksums is null) throw new Failure("这个版本没有可安装的文件");
@@ -199,7 +159,6 @@ public sealed class UpdateChecker
         }
         catch (Exception e) when (e is HttpRequestException or IOException or OperationCanceledException)
         {
-            // Why, for the log: a stall, a refused connection, a 404…
             var why = e is OperationCanceledException ? (stage == "installer" && e.Data["stalled"] is true ? $"nothing arrived for {Stall.TotalSeconds:0} s" : "timed out") : e.Message;
             Log.Debug($"update: download failed at {stage}: {e.GetType().Name}: {why}{(e.InnerException is { } inner ? $" ({inner.GetType().Name}: {inner.Message})" : "")}");
             try { Directory.Delete(folder, true); } catch { }
@@ -216,8 +175,6 @@ public sealed class UpdateChecker
         return file;
     }
 
-    /// Removes installers left from earlier updates (each ~80 MB). Called at launch: by then the
-    /// installer that ran has quit, or it's still letting go and the next launch gets it.
     public static void CleanDownloads(string? temp = null)
     {
         try
@@ -242,14 +199,12 @@ public sealed class UpdateChecker
         long got = 0; int n, last = -1;
         while (true)
         {
-            // The limit restarts with every read: slow is fine, stopped is not.
             cts.CancelAfter(Stall);
             try { n = await src.ReadAsync(buffer, cts.Token); }
             catch (OperationCanceledException e) { e.Data["stalled"] = true; Log.Debug($"update: stalled after {got} of {total} bytes"); throw; }
             if (n == 0) break;
             await dst.WriteAsync(buffer.AsMemory(0, n));
             got += n;
-            // Whole percents only: each one re-renders the flyout and settings.
             if (total > 0 && (int)(got * 100 / total) is var pct && pct != last) { last = pct; progress?.Invoke(Math.Min(1, (double)got / total)); }
         }
         if (r.Content.Headers.ContentLength is { } length && got != length) throw new IOException($"the connection ended after {got} of {length} bytes");
@@ -257,10 +212,8 @@ public sealed class UpdateChecker
         Log.Debug($"update: fetched {got / 1e6:0.0} MB in {seconds:0.0} s ({got / 1e6 / seconds:0.0} MB/s)");
     }
 
-    /// Why installing didn't work: a shared string key, said to the user (the browser fallback opens).
     public sealed class Failure(string key) : Exception(key) { public string Key => Message; }
 
-    /// Dotted numeric versions: "2.10.0" is newer than "2.9.1".
     public static bool IsNewer(string a, string b)
     {
         var x = a.Split('.').Select(p => int.TryParse(p, out var n) ? n : 0).ToArray();
