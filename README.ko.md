@@ -27,7 +27,7 @@
 
 <p align="center">⭐ 쓸 만하다면 나중에 다시 찾기 쉽게 Star를 눌러 주세요</p>
 
-<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.vi.md">Tiếng Việt</a></p>
 
 > [!WARNING]
 > **공지**: Cicada는 어떤 암호화폐, 토큰, NFT와도 관련이 없습니다. 코인을 발행한 적이 없고 앞으로도 발행하지 않습니다.

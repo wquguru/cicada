@@ -27,7 +27,7 @@
 
 <p align="center">⭐ 役に立ったら Star を。あとで見つけやすくなります</p>
 
-<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.vi.md">Tiếng Việt</a></p>
 
 > [!WARNING]
 > **お知らせ**: Cicada はいかなる暗号資産・トークン・NFT とも無関係です。コインを発行したことはなく、今後も発行しません。

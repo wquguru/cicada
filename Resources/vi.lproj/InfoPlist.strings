@@ -1,0 +1,11 @@
+CFBundleName = "Cicada";
+CFBundleDisplayName = "Cicada";
+NSAudioCaptureUsageDescription = "Cicada đọc âm thanh máy Mac đang phát để tạo phụ đề trực tiếp.";
+NSMicrophoneUsageDescription = "Khi bạn giữ phím nói, Cicada dùng micrô để dịch lời bạn nói sang ngôn ngữ của phía bên kia. Khi nghe cuộc họp trong phòng, micrô thu tiếng của những người có mặt.";
+NSSpeechRecognitionUsageDescription = "Cicada dùng nhận dạng giọng nói để chuyển âm thanh thành văn bản.";
+NSLocalNetworkUsageDescription = "Chỉ để kết nối tới máy chủ AI bạn thiết lập trong mạng nội bộ. Cicada không tìm kiếm hay kết nối tới các thiết bị khác.";
+NSDocumentsFolderUsageDescription = "Để lưu biên bản và bản chép lời của mỗi cuộc họp vào thư mục bạn đã chọn.";
+NSDesktopFolderUsageDescription = "Để lưu biên bản và bản chép lời của mỗi cuộc họp vào thư mục bạn đã chọn.";
+NSDownloadsFolderUsageDescription = "Để lưu biên bản và bản chép lời của mỗi cuộc họp vào thư mục bạn đã chọn.";
+NSRemovableVolumesUsageDescription = "Để lưu biên bản và bản chép lời của mỗi cuộc họp vào thư mục bạn đã chọn.";
+NSNetworkVolumesUsageDescription = "Để lưu biên bản và bản chép lời của mỗi cuộc họp vào thư mục bạn đã chọn.";

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds the website (served from Cloudflare, see scripts/deploy-site.sh) from site/ into build/site/.
 
-Languages: Chinese at /, English, Japanese and Korean under /en/, /ja/, /ko/. Each has the home page
+Languages: Chinese at /, English, Japanese, Korean and Vietnamese under /en/, /ja/, /ko/, /vi/. Each has the home page
 (site/index.html), the downloads (site/download.html → download/) and the setup guide (site/start.html
 → start/); {{t.key}} in a template is filled
 from site/i18n/<lang>.json, and the build stops if a language lacks a key the others have.
@@ -46,7 +46,7 @@ OLD_ASSETS = {("windows", "1.1.0"): {"x64": "Cicada-Setup.exe", "arm64": "Cicada
 FIRST_INTEL = (1, 3, 0)
 # The author on X: the app is not notarized yet, so a real person to ask helps people trust the first launch.
 X = "https://x.com/wquguru"
-STATIC = ["style.css", "icon.svg", "icon.png", "og.png", "og-en.png", "og-ja.png", "og-ko.png", "img", "audio", "share.js"]
+STATIC = ["style.css", "icon.svg", "icon.png", "og.png", "og-en.png", "og-ja.png", "og-ko.png", "og-vi.png", "img", "audio", "share.js"]
 # The home page's meeting with sound, in the language its reader listens to (the English page's is
 # Chinese): file, length in seconds, and who talks when as (person, start, end), one turn per
 # subtitle. Both clips come from scripts/make-sample.sh; the English one is the app's onboarding
@@ -55,12 +55,12 @@ SAMPLES = {
     "en": ("audio/meeting-en.m4a", 8.8, [(0, 0.25, 2.34), (1, 2.56, 6.97), (0, 7.17, 8.45)]),
     "zh": ("audio/meeting-zh.m4a", 7.8, [(0, 0.25, 2.21), (1, 2.43, 5.89), (0, 6.09, 7.45)]),
 }
-SAMPLE_FOR = {"zh": "en", "ja": "en", "ko": "en", "en": "zh"}
+SAMPLE_FOR = {"zh": "en", "ja": "en", "ko": "en", "vi": "en", "en": "zh"}
 # The 同声传译 scene's line as the room hears it (make-sample.sh speak), and when in the scene's
 # 10 s loop it starts: at 说进会议.
 SPEAK_AT = 5.5
 # (code, path prefix); the first is the default language, served at the root.
-LANGS = [("zh", ""), ("en", "en/"), ("ja", "ja/"), ("ko", "ko/")]
+LANGS = [("zh", ""), ("en", "en/"), ("ja", "ja/"), ("ko", "ko/"), ("vi", "vi/")]
 FONT_BASE = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;family=Noto+Sans+SC:wght@400;500;700;900"
 FONT_EXTRA = {"ja": "&amp;family=Noto+Sans+JP:wght@400;500;700;900", "ko": "&amp;family=Noto+Sans+KR:wght@400;500;700;900"}
 KINDS = [("new", "新功能"), ("improved", "改进"), ("changed", "改动"), ("fixed", "修复")]

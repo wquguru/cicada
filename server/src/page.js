@@ -5,12 +5,13 @@
 import { visible } from "./shares.js";
 import { SECURITY } from "./util.js";
 
-const LANGS = { zh: "", en: "en/", ja: "ja/", ko: "ko/" };
+const LANGS = { zh: "", en: "en/", ja: "ja/", ko: "ko/", vi: "vi/" };
 const WORDS = {
   zh: { brand: "知了", min: (n) => `${n} 分钟`, made: "知了生成的双语会议纪要。" },
   en: { brand: "Cicada", min: (n) => `${n} min`, made: "Bilingual meeting notes by Cicada." },
   ja: { brand: "Cicada", min: (n) => `${n} 分`, made: "Cicada が作成したバイリンガル議事録。" },
   ko: { brand: "Cicada", min: (n) => `${n}분`, made: "Cicada가 만든 이중 언어 회의록." },
+  vi: { brand: "Cicada", min: (n) => `${n} phút`, made: "Biên bản cuộc họp song ngữ do Cicada tạo." },
 };
 const LANG_NAMES = { zh: "中文", en: "English", ja: "日本語", ko: "한국어", es: "Español", fr: "Français", de: "Deutsch", ru: "Русский", pt: "Português", it: "Italiano", ar: "العربية", th: "ไทย", vi: "Tiếng Việt", id: "Bahasa Indonesia" };
 
