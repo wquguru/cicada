@@ -1,5 +1,5 @@
 """UI text. The Chinese text is the key, as on the Mac, and the translations are the Mac's own
-`Resources/{en,ja,ko}.lproj/Localizable.strings`, plus `Linux.strings` (linux/strings/<lang>.lproj)
+`Resources/{en,ja,ko,vi}.lproj/Localizable.strings`, plus `Linux.strings` (linux/strings/<lang>.lproj)
 for text only the Linux app has, and the Mac's `Localizable.stringsdict` for plurals ("1 line",
 "2 lines"). Placeholders are the Mac's `%@`, filled in order (or `%1$@`). Never for prompts, logs or
 stored values."""
@@ -14,11 +14,11 @@ language = "zh-Hans"
 
 
 def load(ui: str, folders: list) -> None:
-    """Loads the table for `ui` ("en", "ja", "ko"; anything else is Chinese) from each folder's
+    """Loads the table for `ui` ("en", "ja", "ko", "vi"; anything else is Chinese) from each folder's
     <lang>.lproj/{Localizable,Linux}.strings, later folders over earlier ones."""
     global _table, _plurals, language
     head = ui.replace("_", "-").split("-")[0]
-    language = head if head in ("en", "ja", "ko") else "zh-Hans"
+    language = head if head in ("en", "ja", "ko", "vi") else "zh-Hans"
     t: dict = {}
     for folder in folders:
         for name in ("Localizable.strings", "Linux.strings"):

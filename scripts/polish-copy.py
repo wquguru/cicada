@@ -19,9 +19,9 @@ import urllib.request
 
 MODEL = "google/gemini-4-argon"
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-LANGS = {"en": "English", "ja": "Japanese", "ko": "Korean"}
+LANGS = {"en": "English", "ja": "Japanese", "ko": "Korean", "vi": "Vietnamese"}
 # English is the README GitHub shows; Chinese stays the source the others are translated from.
-READMES = {"zh": "README.zh-CN.md", "en": "README.md", "ja": "README.ja.md", "ko": "README.ko.md"}
+READMES = {"zh": "README.zh-CN.md", "en": "README.md", "ja": "README.ja.md", "ko": "README.ko.md", "vi": "README.vi.md"}
 
 STYLE = """文风：像一个懂行的朋友在说话，口语、直接、短句；先说用户得到什么，再说必要的条件。
 去掉翻译腔和公文腔（“进行”“将”“该”“对…进行”“实现了”“得以”），去掉重复和不必要的解释，少用分号堆叠长句。

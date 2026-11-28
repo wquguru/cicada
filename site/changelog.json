@@ -40,6 +40,17 @@
         ],
         "title": "在笔记窗口的文字记录里搜索，会滚到找到的那句。",
         "text": "以前计数会变，但那句可能停在看不到的地方。"
+      },
+      {
+        "kind": "new",
+        "platforms": [
+          "mac",
+          "windows",
+          "linux",
+          "android"
+        ],
+        "title": "界面支持越南语。",
+        "text": "知了的界面新增越南语：Mac 上跟随系统语言，Windows、Linux 和 Android 在 设置 › 界面语言 里选。网站也加了越南语页面。"
       }
     ]
   },

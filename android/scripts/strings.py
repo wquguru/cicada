@@ -16,7 +16,7 @@ def table(path):
     if not path.exists(): return {}
     return dict(re.findall(r'^"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)";', path.read_text(encoding="utf-8"), re.M))
 missing_any = False
-for lang in ["en", "ja", "ko"]:
+for lang in ["en", "ja", "ko", "vi"]:
     mine = here / f"app/src/main/strings/{lang}.lproj/Android.strings"
     have = table(root / f"Resources/{lang}.lproj/Localizable.strings") | table(mine)
     missing = [k for k in keys if k not in have]

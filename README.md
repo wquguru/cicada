@@ -27,7 +27,7 @@
 
 <p align="center">⭐ Star this repo if you find it useful so you can find it again later</p>
 
-<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.vi.md">Tiếng Việt</a></p>
 
 > [!WARNING]
 > **Notice**: Cicada has nothing to do with any cryptocurrency, token or NFT. We have never issued a coin and never will.

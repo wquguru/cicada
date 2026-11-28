@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- The website's share cards, 1200×630: site-og.html?lang=zh → site/og.png, ?lang=en|ja|ko → site/og-<lang>.png.
+<!-- The website's share cards, 1200×630: site-og.html?lang=zh → site/og.png, ?lang=en|ja|ko|vi → site/og-<lang>.png.
      Rendered by scripts/site-images.sh. The right half shows what the app does (notes + a subtitle) rather than
      leaving room empty; its wording follows the app's own UI strings in Resources/<lang>.lproj. -->
 <html lang="zh-CN">
@@ -83,6 +83,12 @@ const CARDS = {
     notes: "실시간 회의록", meeting: "출시 회의 · 23:14", decisionLabel: "결론", decision: "출시는 다음 주 목요일, 화요일까지 기능 동결.",
     todoLabel: "할 일", todos: ["Emma: 월요일까지 릴리스 노트", "나: 자막 용어 확인"],
     heard: "So the launch moves to next Thursday, right?", said: "출시가 다음 주 목요일로 미뤄지죠?" },
+  vi: { lang: "vi", cjk: "'Inter'", name: "Cicada", en: "", slogan: "Mọi cuộc gọi,<br>mọi luồng phát,<br>không rào cản ngôn ngữ.", size: "54px",
+    sub: ["Hiểu. ", "Lên tiếng.", " Ghi nhớ."],
+    pill: "Miễn phí · Mã nguồn mở · Mac · Windows · Linux · Android", apps: "Zoom · Teams · Meet · YouTube",
+    notes: "Biên bản trực tiếp", meeting: "Họp ra mắt · 23:14", decisionLabel: "Kết luận", decision: "Ra mắt dời sang thứ Năm tuần sau; đóng băng tính năng trước thứ Ba.",
+    todoLabel: "Việc cần làm", todos: ["Emma: ghi chú phát hành trước thứ Hai", "Tôi: kiểm tra thuật ngữ phụ đề"],
+    heard: "So the launch moves to next Thursday, right?", said: "Vậy ra mắt dời sang thứ Năm tuần sau, đúng không?" },
 };
 const c = CARDS[new URLSearchParams(location.search).get("lang")] || CARDS.zh;
 const $ = id => document.getElementById(id);

@@ -64,7 +64,7 @@ class SettingsActivity : Activity() {
         page.addView(ui.group(listOf(
             choiceRow(L("翻译成"), targets, s.target) { s.target = it; app.saveSettings() },
             choiceRow(L("纪要语言"), listOf("system" to L("和字幕一样")) + Languages.targets.map { it.code to it.name }, s.notesLanguage) { s.notesLanguage = it; app.saveSettings() },
-            choiceRow(L("界面语言"), listOf("system" to L("跟随系统"), "zh-Hans" to "简体中文", "en" to "English", "ja" to "日本語", "ko" to "한국어"), s.uiLanguage) {
+            choiceRow(L("界面语言"), listOf("system" to L("跟随系统"), "zh-Hans" to "简体中文", "en" to "English", "ja" to "日本語", "ko" to "한국어", "vi" to "Tiếng Việt"), s.uiLanguage) {
                 s.uiLanguage = it; app.saveSettings(); app.loadStrings(); shown = null; recreate()
             })))
 

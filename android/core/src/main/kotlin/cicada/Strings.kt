@@ -3,7 +3,7 @@ package cicada
 import java.util.Locale
 
 /// UI text. The Chinese text is the key, as on the Mac, and the translations are the Mac's own
-/// `Resources/{en,ja,ko}.lproj/Localizable.strings` (copied into the APK's assets at build time),
+/// `Resources/{en,ja,ko,vi}.lproj/Localizable.strings` (copied into the APK's assets at build time),
 /// plus `Android.strings` for text only the Android app has, and the Mac's
 /// `Localizable.stringsdict` for plurals ("1 line", "2 lines"). Placeholders are the Mac's `%@`,
 /// filled in order. Never for prompts, logs or stored values.
@@ -17,14 +17,14 @@ object Strings {
     @Volatile var language = "zh-Hans"; private set
 
     val locale: Locale get() = when (language) {
-        "en" -> Locale.ENGLISH; "ja" -> Locale.JAPANESE; "ko" -> Locale.KOREAN; else -> Locale.SIMPLIFIED_CHINESE
+        "en" -> Locale.ENGLISH; "ja" -> Locale.JAPANESE; "ko" -> Locale.KOREAN; "vi" -> Locale.forLanguageTag("vi-VN"); else -> Locale.SIMPLIFIED_CHINESE
     }
 
-    /// Loads the table for `ui` ("en", "ja", "ko"; anything else is Chinese). `read` returns the
+    /// Loads the table for `ui` ("en", "ja", "ko", "vi"; anything else is Chinese). `read` returns the
     /// text of "<lang>.lproj/<name>" or null.
     fun load(ui: String, read: (String) -> String?) {
         val head = ui.split('-', '_')[0]
-        language = if (head == "en" || head == "ja" || head == "ko") head else "zh-Hans"
+        language = if (head == "en" || head == "ja" || head == "ko" || head == "vi") head else "zh-Hans"
         val t = HashMap<String, String>()
         // The Mac's table, then the Android-only strings over it (same format).
         for (name in listOf("Localizable.strings", "Android.strings")) {

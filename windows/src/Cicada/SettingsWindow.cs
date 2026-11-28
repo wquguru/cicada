@@ -69,7 +69,7 @@ sealed partial class SettingsWindow : Window
         Section(page, "lang", L("语言"), Group(
             Card(Icons.Globe, L("翻译成"), null, Ui.Choice(Ui.TargetOptions(), app.Settings.Target, app.SetTarget)),
             Card(null, L("纪要语言"), null, Ui.Choice([("system", L("和字幕一样")), .. Languages.Targets.Select(t => (t.Code, t.Name))], app.Settings.NotesLanguage, v => { app.Settings.NotesLanguage = v; Save(); })),
-            Card(null, L("界面语言"), L("重新打开知了后生效"), Ui.Choice([("system", L("跟随系统")), ("zh-Hans", "简体中文"), ("en", "English"), ("ja", "日本語"), ("ko", "한국어")], app.Settings.UiLanguage, v => { app.Settings.UiLanguage = v; Save(); }))));
+            Card(null, L("界面语言"), L("重新打开知了后生效"), Ui.Choice([("system", L("跟随系统")), ("zh-Hans", "简体中文"), ("en", "English"), ("ja", "日本語"), ("ko", "한국어"), ("vi", "Tiếng Việt")], app.Settings.UiLanguage, v => { app.Settings.UiLanguage = v; Save(); }))));
         if (current == "words") Section(page, "words", L("词表"), WordCards());
         var size = new Slider { Minimum = 18, Maximum = 32, Value = app.Settings.SubtitleSize, Width = 200, IsSnapToTickEnabled = true, TickFrequency = 1, VerticalAlignment = VerticalAlignment.Center };
         System.Windows.Automation.AutomationProperties.SetName(size, L("字幕文字大小"));

@@ -27,7 +27,7 @@
 
 <p align="center">⭐ 觉得有用请点个 Star，方便随时找回</p>
 
-<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a></p>
+<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.ko.md">한국어</a> · <a href="README.vi.md">Tiếng Việt</a></p>
 
 > [!WARNING]
 > **声明**: 知了与任何加密货币、代币或 NFT 无关，从未发行、也不会发行任何币。

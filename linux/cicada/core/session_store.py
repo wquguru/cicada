@@ -412,7 +412,7 @@ def display_title(s: Session) -> str:
 
 
 # The Mac's dateText(_, "yMMMdHHmm"), as its DateFormatter writes it in each UI language.
-_DATE_TIME = {"zh-Hans": "y年M月d日 HH:mm", "en": "MMM d, y 'at' HH:mm", "ja": "y年M月d日 H:mm", "ko": "y년 M월 d일 HH:mm"}
+_DATE_TIME = {"zh-Hans": "y年M月d日 HH:mm", "en": "MMM d, y 'at' HH:mm", "ja": "y年M月d日 H:mm", "ko": "y년 M월 d일 HH:mm", "vi": "d MMM y 'lúc' HH:mm"}
 
 
 def header(s: Session) -> str:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UI strings: Chinese source text is the key; Resources/<lang>.lproj/Localizable.strings (en, ja, ko)
+"""UI strings: Chinese source text is the key; Resources/<lang>.lproj/Localizable.strings (en, ja, ko, vi)
 hold the translations, and each value must use the same format specifiers as its key.
 
     python3 scripts/strings.py          # check: every key in the code has an entry in every language
@@ -14,7 +14,7 @@ The ports read these tables too: a key the Mac no longer uses stays while a port
 import glob, json, os, re, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LANGS = ["en", "ja", "ko"]
+LANGS = ["en", "ja", "ko", "vi"]
 TABLE = os.path.join(ROOT, "Resources/{}.lproj/Localizable.strings")
 ZH = os.path.join(ROOT, "Resources/zh-Hans.lproj/Localizable.strings")
 DICT = os.path.join(ROOT, "Resources/en.lproj/Localizable.stringsdict")
